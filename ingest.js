@@ -44,17 +44,22 @@ async function getText(url){
   return (await res.text()).trim();
 }
 
+const GENERIC = new Set(["base","set","the","and","of","cards","series","pokemon","tcg"]);
+const toks = s => (s.toLowerCase().match(/[a-z0-9]+/g)) || [];
 function score(name, g){
-  const a = norm(name), tail = norm(setTail(g.name)), full = norm(g.name);
-  if (a === tail) return 100;
-  if (tail.endsWith(a) || full.endsWith(a)) return 80;
-  if (a && (tail.includes(a) || full.includes(a))) return 60;
-  if (tail && a.includes(tail)) return 50;
-  const at = new Set((name.toLowerCase().match(/[a-z0-9]+/g)) || []);
-  const gt = new Set((g.name.toLowerCase().match(/[a-z0-9]+/g)) || []);
-  if (at.size && gt.size){ let i = 0; at.forEach(x => { if (gt.has(x)) i++; });
-    return Math.round(i / new Set([...at, ...gt]).size * 40); }
-  return 0;
+  const Q = toks(name);
+  const tailT = toks(setTail(g.name));
+  // all of the set name's words appear in the group's set-name portion?
+  if (Q.length && Q.every(t => tailT.includes(t))){
+    const extra = tailT.filter(t => !Q.includes(t) && !GENERIC.has(t)); // distinctive extras = a DIFFERENT set
+    if (extra.length === 0) return 100;   // the base/exact set
+    if (extra.length === 1) return 70;
+    return 50;
+  }
+  // fallbacks: whole-name substring, then token overlap
+  if (norm(g.name).includes(norm(name))) return 45;
+  const G = new Set(toks(g.name)); let i = 0; Q.forEach(t => { if (G.has(t)) i++; });
+  return Q.length ? Math.round(i / Q.length * 40) : 0;
 }
 
 function priceMap(rows){            // productId -> {subTypeName: {m,l}}
