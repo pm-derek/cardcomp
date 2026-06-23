@@ -120,6 +120,13 @@
   <div id="status"></div>
   <div id="results"></div>
 </div>
+<div id="cart" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--panel);border-top:1px solid var(--gold);padding:10px 16px;max-width:680px;margin:0 auto">
+  <div id="cartitems" style="display:none;max-height:40vh;overflow:auto;margin-bottom:8px"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <span id="cartsum" style="font-size:13px;cursor:pointer">🛒 0</span>
+    <button id="cartclear" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer">clear cart</button>
+  </div>
+</div>
 <script>(function (global, factory) {
     typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
     typeof define === 'function' && define.amd ? define(factory) :
@@ -2203,7 +2210,7 @@ async function loadPrices(card, host){
   if(!e || !Object.keys(e).length){ host.innerHTML='<div class="muted">No price for this card (below the bid floor, or not on TCGplayer).</div>'; return; }
   const prices={};
   for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l}; }
-  renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null}, prices, "TCGCSV");
+  renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
 }
 function renderPrices(host, data, prices, src){
   const tgt=getNum("target",75)/100, mfloor=getNum("tgtmargin",15)/100;
@@ -2212,8 +2219,12 @@ function renderPrices(host, data, prices, src){
   const upd=(data.tcgplayer&&data.tcgplayer.updatedAt)||"";
   const pid=data.pid||null;
   const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
+  const card=data.card||null;
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}
+    <div style="display:flex;gap:10px;align-items:center;margin:9px 0 2px;flex-wrap:wrap">
+      <button class="addcart" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">+ add to cart</button>
+      ${tcgUrl?`<a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:""}
+    </div>
     <div class="finep">market = ${src||"TCGplayer"}${upd?(" · "+upd):""} · lowest listed = cheapest live listing · raw market, not graded — slabs need eBay-sold comps · margin = profit ÷ your bid (after ${getNum("feepct",12.75)}% + $${getNum("flatfee",0.30)}${getNum("trackthresh",50)?(" + $"+getNum("trackfee",5)+" over $"+getNum("trackthresh",50)):""}, listed +${getNum("listmarkup",4)}%)</div>`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
   const draw=()=>{
@@ -2225,9 +2236,37 @@ function renderPrices(host, data, prices, src){
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
+  const ac=host.querySelector(".addcart");
+  if(ac) ac.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0)}); ac.textContent="✓ in cart"; } };
   draw();
 }
 function zoom(url){ const z=$("#zoom"); z.querySelector("img").src=url; z.classList.add("open"); }
+
+/* ---------- cart ---------- */
+let CART = [];
+function saveCart(){ try{ localStorage.setItem("cardcomp_cart", JSON.stringify(CART)); }catch(e){} }
+function loadCart(){ try{ CART = JSON.parse(localStorage.getItem("cardcomp_cart")||"[]")||[]; }catch(e){ CART=[]; } }
+function addToCart(item){
+  if(CART.some(x=>x.id===item.id && x.printing===item.printing)) return;
+  CART.push(item); saveCart(); renderCart();
+}
+function clearCart(){ CART=[]; saveCart(); renderCart(); }
+function renderCart(){
+  const bar=$("#cart"); if(!bar) return;
+  if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
+  bar.style.display="block";
+  const tgt=getNum("target",75)/100, nmm=mult("NM");
+  let totMkt=0, totBid=0;
+  const rows=CART.map((it,i)=>{
+    const bid=it.market*nmm*tgt; totMkt+=it.market; totBid+=bid;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
+      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · $${it.market.toFixed(2)}</span></span>
+      <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
+  }).join("");
+  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b></span></div>`;
+  $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
+  $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
+}
 
 /* ---------- domain layer ---------- */
 const NICK = [
@@ -2446,13 +2485,16 @@ $("#q").addEventListener("input", e=>{ clearTimeout(t); t=setTimeout(()=>run(e.t
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=i.value); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem("cardcomp_cfg")||"{}"); document.querySelectorAll("#settings input").forEach(i=>{ const k=i.id||("m_"+i.dataset.c); if(o[k]!=null&&o[k]!=="") i.value=o[k]; }); }catch(e){} }
 loadCfg();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", saveCfg));
+document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); }));
 $("#gear").onclick = ()=> $("#settings").classList.toggle("open");
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
 setLang("en", true);
+loadCart(); renderCart();
+$("#cartclear").onclick = clearCart;
+$("#cartsum").onclick = ()=>{ const it=$("#cartitems"); it.style.display = (it.style.display==="none"?"block":"none"); };
 boot();
 </script>
 </body></html>
