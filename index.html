@@ -58,7 +58,7 @@
   .maxbid{font-size:14px;margin-bottom:11px}
   .maxbid b{font-family:"Bricolage Grotesque",sans-serif;font-size:24px;color:var(--gold);vertical-align:-2px}
   .maxbid .mbsub{color:var(--faint);font-size:12px}
-  .condgrid{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:7px 12px;font-size:13px;align-items:baseline}
+  .condgrid{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto;gap:7px 12px;font-size:13px;align-items:baseline}
   .condgrid .h{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
   .condgrid .mk{color:var(--dim)}
@@ -2181,9 +2181,9 @@ function condGridHTML(prices, key, tgt, mfloor){
   const rows=CONDS.map(cond=>{
     const atc=base*mult(cond), bid=atc*tgt, mgn=marginAt(listSale(atc),bid);
     const col=COND_COLORS[cond], mcol=mgn>=mfloor?"var(--green)":"var(--red)";
-    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd" style="color:${col}">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span>`;
+    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd" style="color:${col}">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="background:none;border:1px solid var(--line);border-radius:6px;color:var(--gold);cursor:pointer;font-size:12px;line-height:1;padding:3px 8px">+</button>`;
   }).join("");
-  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">bid ${Math.round(tgt*100)}%</span><span class="mg h">margin</span>${rows}`;
+  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">bid ${Math.round(tgt*100)}%</span><span class="mg h">margin</span><span class="h"></span>${rows}`;
 }
 let PRICE_INDEX=null, PRICE_UPDATED="", _indexLoad=null;
 function loadIndex(){
@@ -2221,10 +2221,7 @@ function renderPrices(host, data, prices, src){
   const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
   const card=data.card||null;
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    <div style="display:flex;gap:10px;align-items:center;margin:9px 0 2px;flex-wrap:wrap">
-      <button class="addcart" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">+ add to cart</button>
-      ${tcgUrl?`<a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:""}
-    </div>
+    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}
     <div class="finep">market = ${src||"TCGplayer"}${upd?(" · "+upd):""} · lowest listed = cheapest live listing · raw market, not graded — slabs need eBay-sold comps · margin = profit ÷ your bid (after ${getNum("feepct",12.75)}% + $${getNum("flatfee",0.30)}${getNum("trackthresh",50)?(" + $"+getNum("trackfee",5)+" over $"+getNum("trackthresh",50)):""}, listed +${getNum("listmarkup",4)}%)</div>`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
   const draw=()=>{
@@ -2233,11 +2230,10 @@ function renderPrices(host, data, prices, src){
     const nm=base*mult("NM"), bid=nm*tgt, mgn=marginAt(listSale(nm),bid);
     mbEl.innerHTML=`max bid <b>$${bid.toFixed(2)}</b> <span class="mbsub">@ NM · ${Math.round(tgt*100)}% of $${nm.toFixed(2)}${low!=null?` · lowest listed $${low.toFixed(2)}`:""} · margin <span style="color:${mgn>=mfloor?'var(--green)':'var(--red)'}">${(mgn*100).toFixed(0)}%</span></span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, tgt, mfloor);
+    cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
-  const ac=host.querySelector(".addcart");
-  if(ac) ac.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0)}); ac.textContent="✓ in cart"; } };
   draw();
 }
 function zoom(url){ const z=$("#zoom"); z.querySelector("img").src=url; z.classList.add("open"); }
@@ -2247,7 +2243,7 @@ let CART = [];
 function saveCart(){ try{ localStorage.setItem("cardcomp_cart", JSON.stringify(CART)); }catch(e){} }
 function loadCart(){ try{ CART = JSON.parse(localStorage.getItem("cardcomp_cart")||"[]")||[]; }catch(e){ CART=[]; } }
 function addToCart(item){
-  if(CART.some(x=>x.id===item.id && x.printing===item.printing)) return;
+  if(CART.some(x=>x.id===item.id && x.printing===item.printing && x.cond===item.cond)) return;
   CART.push(item); saveCart(); renderCart();
 }
 function clearCart(){ CART=[]; saveCart(); renderCart(); }
@@ -2255,12 +2251,12 @@ function renderCart(){
   const bar=$("#cart"); if(!bar) return;
   if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
   bar.style.display="block";
-  const tgt=getNum("target",75)/100, nmm=mult("NM");
+  const tgt=getNum("target",75)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
-    const bid=it.market*nmm*tgt; totMkt+=it.market; totBid+=bid;
+    const cond=it.cond||"NM"; const atc=it.market*mult(cond); const bid=atc*tgt; totMkt+=atc; totBid+=bid;
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
-      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · $${it.market.toFixed(2)}</span></span>
+      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
   $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b></span></div>`;

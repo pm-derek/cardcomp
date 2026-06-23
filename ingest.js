@@ -20,7 +20,7 @@ const GH = "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master
 const TC = "https://tcgcsv.com/tcgplayer";
 const UA = "CardComp-Ingest/2.0 (East Bay Trader)";
 const SLEEP = 120;
-const FLOOR = 2.00;                 // keep only cards whose best printing >= this (USD)
+const FLOOR = 1.50;                 // keep only cards whose best printing >= this (USD)
 const INCLUDE_JP = true;            // set false to skip Japanese
 
 // Force an English set to a specific TCGCSV group if auto-match is wrong (see report):
