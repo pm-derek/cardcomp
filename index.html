@@ -29,10 +29,10 @@
   #read{color:var(--blue);font-size:13px;margin:14px 2px 4px;min-height:16px}
   #read .f{color:var(--gold)}
   #status{color:var(--dim);font-size:12px;margin:6px 2px 10px}
-  .card{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-top:10px}
-  .card img{width:58px;height:81px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
+  .card{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:9px;margin-top:7px}
+  .card img{width:50px;height:70px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
   .meta{min-width:0;flex:1}
-  .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:18px;line-height:1.15}
+  .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:16px;line-height:1.15}
   .tags{color:var(--dim);font-size:11.5px;margin-top:3px}
   .tags b{color:var(--blue);font-weight:500}
   .attrs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
@@ -58,7 +58,7 @@
   .maxbid{font-size:14px;margin-bottom:11px}
   .maxbid b{font-family:"Bricolage Grotesque",sans-serif;font-size:24px;color:var(--gold);vertical-align:-2px}
   .maxbid .mbsub{color:var(--faint);font-size:12px}
-  .condgrid{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto;gap:7px 12px;font-size:13px;align-items:baseline}
+  .condgrid{display:grid;grid-template-columns:auto auto auto auto 1fr;gap:8px 10px;font-size:13px;align-items:center}
   .condgrid .h{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
   .condgrid .mk{color:var(--dim)}
@@ -86,7 +86,6 @@
   <h1>CardComp<span class="dot">.</span></h1>
   <div class="sub">scan-to-comp</div>
   <button class="gear" id="gear">⚙ settings</button>
-  <div class="banner"><b>3,914 real cards</b>, 27 sets (Base 1999 → 2026). Tap any result for <b>TCGplayer prices</b> + your bid/margin grid. Drop a <b>prices.json</b> (from <code>ingest.py</code> → TCGCSV) beside this file and it uses that instantly, same-origin — no API. Until then it falls back to a pokemontcg.io stand-in, which needs your deployed link.</div>
   <div id="langtoggle" style="display:flex;gap:6px;margin:0 0 12px">
     <button data-lang="en" style="font-family:inherit;font-size:12px;padding:6px 14px;border-radius:999px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">EN</button>
     <button data-lang="jp" style="font-family:inherit;font-size:12px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">JP</button>
@@ -112,8 +111,11 @@
       <label>DMG<input data-c="DMG" type="number" value="0.40"></label>
     </div>
   </div>
-  <div class="searchrow">
-    <input id="q" placeholder="e.g. gren twm  /  fighting 310 hp shinobi blade" autocomplete="off">
+  <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px">
+    <div style="position:relative">
+      <input id="q" placeholder="search a card…" autocomplete="off" style="padding-right:38px">
+      <button id="qclear" title="clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--faint);font-size:18px;cursor:pointer;line-height:1;display:none">✕</button>
+    </div>
   </div>
   <div class="ex" id="ex"></div>
   <div id="read"></div>
@@ -2147,6 +2149,7 @@ const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
 function setLang(lang, silent){
   LANG = lang;
+  try{ localStorage.setItem("cardcomp_lang", LANG); }catch(e){}
   document.querySelectorAll("#langtoggle button").forEach(b=>{
     const on=b.dataset.lang===LANG;
     b.style.borderColor=on?"var(--gold)":"var(--line)";
@@ -2181,7 +2184,7 @@ function condGridHTML(prices, key, tgt, mfloor){
   const rows=CONDS.map(cond=>{
     const atc=base*mult(cond), bid=atc*tgt, mgn=marginAt(listSale(atc),bid);
     const col=COND_COLORS[cond], mcol=mgn>=mfloor?"var(--green)":"var(--red)";
-    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd" style="color:${col}">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="background:none;border:1px solid var(--line);border-radius:6px;color:var(--gold);cursor:pointer;font-size:12px;line-height:1;padding:3px 8px">+</button>`;
+    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd" style="color:${col}">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">bid ${Math.round(tgt*100)}%</span><span class="mg h">margin</span><span class="h"></span>${rows}`;
 }
@@ -2221,8 +2224,7 @@ function renderPrices(host, data, prices, src){
   const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
   const card=data.card||null;
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}
-    <div class="finep">market = ${src||"TCGplayer"}${upd?(" · "+upd):""} · lowest listed = cheapest live listing · raw market, not graded — slabs need eBay-sold comps · margin = profit ÷ your bid (after ${getNum("feepct",12.75)}% + $${getNum("flatfee",0.30)}${getNum("trackthresh",50)?(" + $"+getNum("trackfee",5)+" over $"+getNum("trackthresh",50)):""}, listed +${getNum("listmarkup",4)}%)</div>`;
+    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
   const draw=()=>{
     const base=prices[sel].market??prices[sel].mid??0;
@@ -2444,20 +2446,12 @@ function render(res, literal){
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card";
-    const typePills = (r.t||[]).map(t=>`<span class="pill ty" style="background:${TYPE_COLOR[t]||'#cfd8dc'}">${t}</span>`).join("");
-    const stagePills = (r.st||[]).map(s=>`<span class="pill st">${s}</span>`).join("");
     el.innerHTML = `
       <div class="row">
         <img src="${r.img}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
         <div class="meta">
           <div class="nm">${r.n}</div>
           <div class="tags"><b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}</div>
-          <div class="attrs">
-            ${r.hp?`<span class="pill hp">${r.hp} HP</span>`:""}
-            ${typePills}${stagePills}
-          </div>
-          ${r.atk?`<div class="atk"><b>attacks/abilities:</b> ${r.atk}</div>`:""}
-          <div class="tap">tap for price + bid ↓</div>
         </div>
       </div>
       <div class="detail"></div>`;
@@ -2475,7 +2469,9 @@ const exWrap = $("#ex");
 EXAMPLES.forEach(e=>{ const s=document.createElement("span"); s.textContent=e; s.onclick=()=>{ $("#q").value=e; run(e); }; exWrap.appendChild(s); });
 
 let t=null;
-$("#q").addEventListener("input", e=>{ clearTimeout(t); t=setTimeout(()=>run(e.target.value), 110); });
+$("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; t=setTimeout(()=>run(e.target.value), 110); });
+$("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
+$("#qclear").onclick = ()=>{ $("#q").value=""; $("#qclear").style.display="none"; $("#results").innerHTML=""; $("#read").innerHTML=""; $("#status").textContent=""; $("#q").focus(); };
 
 /* settings: persist (safe if storage blocked), toggle, zoom close */
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=i.value); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
@@ -2487,7 +2483,7 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
-setLang("en", true);
+setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
 $("#cartclear").onclick = clearCart;
 $("#cartsum").onclick = ()=>{ const it=$("#cartitems"); it.style.display = (it.style.display==="none"?"block":"none"); };
