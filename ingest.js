@@ -42,7 +42,7 @@ const SETS = [
 const OVERRIDE = {
   "base1": "Base Set",
   "base4": "Base Set 2",
-  // "svp": "SV: Scarlet & Violet Promo Cards",   // <- example; fill in after first run
+  "svp": "SV: Scarlet & Violet Promo Cards",   // <- example; fill in after first run
 };
 
 const norm = s => (s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
