@@ -87,6 +87,7 @@
   <div class="sub">scan-to-comp</div>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="banner"><b>3,914 real cards</b>, 27 sets (Base 1999 → 2026). Tap any result for <b>TCGplayer prices</b> + your bid/margin grid. Drop a <b>prices.json</b> (from <code>ingest.py</code> → TCGCSV) beside this file and it uses that instantly, same-origin — no API. Until then it falls back to a pokemontcg.io stand-in, which needs your deployed link.</div>
+  <div id="pxstat" style="font-size:12px;margin:0 0 10px;color:var(--faint)">checking prices.json…</div>
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
     <div class="sgrid">
@@ -2154,11 +2155,29 @@ function condGridHTML(prices, key, tgt, mfloor){
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">bid ${Math.round(tgt*100)}%</span><span class="mg h">margin</span>${rows}`;
 }
-let PRICE_INDEX=null, PRICE_UPDATED="";
-async function loadIndex(){
-  try{ const r=await fetch("./prices.json",{cache:"no-cache"}); if(!r.ok) return; const d=await r.json(); PRICE_INDEX=d.prices||{}; PRICE_UPDATED=d.updated||""; }catch(e){}
+let PRICE_INDEX=null, PRICE_UPDATED="", _indexLoad=null;
+function loadIndex(){
+  if(_indexLoad) return _indexLoad;
+  _indexLoad=(async()=>{
+    try{
+      const r=await fetch("./prices.json",{cache:"no-store"});
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      const d=await r.json();
+      PRICE_INDEX=d.prices||{}; PRICE_UPDATED=d.updated||"";
+    }catch(e){ PRICE_INDEX=null; }
+    indexStatus();
+    return PRICE_INDEX;
+  })();
+  return _indexLoad;
+}
+function indexStatus(){
+  const el=$("#pxstat"); if(!el) return;
+  if(PRICE_INDEX){ const n=Object.keys(PRICE_INDEX).length; el.textContent="✓ prices loaded — "+n+" cards"+(PRICE_UPDATED?(" · "+String(PRICE_UPDATED).slice(0,10)):""); el.style.color="var(--green)"; }
+  else { el.textContent="prices.json not loaded — tap uses pokemontcg.io fallback"; el.style.color="var(--gold)"; }
 }
 async function loadPrices(card, host){
+  host.innerHTML = '<div class="muted">checking price…</div>';
+  await loadIndex();                              // wait for the index before deciding
   // 1) same-origin TCGCSV index (no CORS, instant) — the production path
   if(PRICE_INDEX && PRICE_INDEX[card.id]){
     const idx=PRICE_INDEX[card.id]; const prices={};
@@ -2166,7 +2185,12 @@ async function loadPrices(card, host){
     renderPrices(host, {tcgplayer:{updatedAt:PRICE_UPDATED}}, prices, "TCGCSV");
     return;
   }
-  // 2) fallback stand-in: pokemontcg.io live query (decaying dependency)
+  // index loaded fine, but this exact id isn't in it (variant numbering) — say so plainly
+  if(PRICE_INDEX){
+    host.innerHTML='<div class="muted">Index loaded ('+Object.keys(PRICE_INDEX).length+' cards) but no entry for <b>'+card.id+'</b> — TCGplayer likely numbers this printing differently.</div>';
+    return;
+  }
+  // 2) fallback stand-in: pokemontcg.io live query (only reached if the index failed to load)
   host.innerHTML = '<div class="muted">loading TCGplayer price…</div>';
   const key=(($("#cfg-apikey")||{}).value||"").trim();
   const headers=key?{"X-Api-Key":key}:{};
