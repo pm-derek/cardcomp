@@ -2180,9 +2180,15 @@ async function loadPrices(card, host){
   await loadIndex();                              // wait for the index before deciding
   // 1) same-origin TCGCSV index (no CORS, instant) — the production path
   if(PRICE_INDEX && PRICE_INDEX[card.id]){
-    const idx=PRICE_INDEX[card.id]; const prices={};
-    for(const k in idx) prices[k]={market:idx[k], mid:idx[k]};
-    renderPrices(host, {tcgplayer:{updatedAt:PRICE_UPDATED}}, prices, "TCGCSV");
+    const e=PRICE_INDEX[card.id];
+    const srcMap=(e&&e.px)?e.px:e;              // new {id,px:{m,l}} or old flat {printing:market}
+    const pid=(e&&e.id)||null;
+    const prices={};
+    for(const k in srcMap){ const v=srcMap[k];
+      if(typeof v==="number") prices[k]={market:v, mid:v};
+      else { const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l}; }
+    }
+    renderPrices(host, {tcgplayer:{updatedAt:PRICE_UPDATED}, pid}, prices, "TCGCSV");
     return;
   }
   // index loaded fine, but this exact id isn't in it (variant numbering) — say so plainly
@@ -2218,13 +2224,17 @@ function renderPrices(host, data, prices, src){
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   const upd=(data.tcgplayer&&data.tcgplayer.updatedAt)||"";
+  const pid=data.pid||null;
+  const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    <div class="finep">market = ${src||"TCGplayer"}${upd?(" · "+upd):""} · raw market, not graded — slabs need eBay-sold comps · margin = profit ÷ your bid (after ${getNum("feepct",12.75)}% + $${getNum("flatfee",0.30)}${getNum("trackthresh",50)?(" + $"+getNum("trackfee",5)+" over $"+getNum("trackthresh",50)):""}, listed +${getNum("listmarkup",4)}%)</div>`;
+    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}
+    <div class="finep">market = ${src||"TCGplayer"}${upd?(" · "+upd):""} · lowest listed = cheapest live listing · raw market, not graded — slabs need eBay-sold comps · margin = profit ÷ your bid (after ${getNum("feepct",12.75)}% + $${getNum("flatfee",0.30)}${getNum("trackthresh",50)?(" + $"+getNum("trackfee",5)+" over $"+getNum("trackthresh",50)):""}, listed +${getNum("listmarkup",4)}%)</div>`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
   const draw=()=>{
     const base=prices[sel].market??prices[sel].mid??0;
+    const low=prices[sel].low;
     const nm=base*mult("NM"), bid=nm*tgt, mgn=marginAt(listSale(nm),bid);
-    mbEl.innerHTML=`max bid <b>$${bid.toFixed(2)}</b> <span class="mbsub">@ NM · ${Math.round(tgt*100)}% of $${nm.toFixed(2)} · margin <span style="color:${mgn>=mfloor?'var(--green)':'var(--red)'}">${(mgn*100).toFixed(0)}%</span></span>`;
+    mbEl.innerHTML=`max bid <b>$${bid.toFixed(2)}</b> <span class="mbsub">@ NM · ${Math.round(tgt*100)}% of $${nm.toFixed(2)}${low!=null?` · lowest listed $${low.toFixed(2)}`:""} · margin <span style="color:${mgn>=mfloor?'var(--green)':'var(--red)'}">${(mgn*100).toFixed(0)}%</span></span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, tgt, mfloor);
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");

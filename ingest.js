@@ -114,10 +114,13 @@ function resolveGroups(groups){
       priceRows = (await getJSON(`${BASE}/${CATEGORY}/${gid}/prices`)).results;   await sleep(SLEEP);
     } catch (e) { console.log(`  ! ${sid} group ${gid}: ${e.message}`); continue; }
 
-    const pmap = {};                                   // productId -> {subTypeName: market}
+    const pmap = {};                                   // productId -> {subTypeName: {m:market, l:lowestListed}}
     for (const row of priceRows){
-      let m = row.marketPrice; if (m == null) m = row.midPrice; if (m == null) continue;
-      (pmap[row.productId] || (pmap[row.productId] = {}))[row.subTypeName] = Math.round(m * 100) / 100;
+      let m = row.marketPrice; if (m == null) m = row.midPrice;
+      const l = row.lowPrice;
+      if (m == null && l == null) continue;
+      const r2 = c => c == null ? null : Math.round(c * 100) / 100;
+      (pmap[row.productId] || (pmap[row.productId] = {}))[row.subTypeName] = { m: r2(m), l: r2(l) };
     }
     for (const p of products){
       const ext = {}; (p.extendedData || []).forEach(d => ext[d.name] = d.value);
@@ -127,7 +130,8 @@ function resolveGroups(groups){
       if (/^\d+$/.test(num)) num = String(parseInt(num, 10)); // strip leading zeros: 029 -> 29
       if (!num) continue;
       const pr = pmap[p.productId]; if (!pr) continue;
-      prices[`${sid}-${num}`] = pr; matched++;
+      prices[`${sid}-${num}`] = { id: p.productId, px: pr };  // id -> tcgplayer.com/product/<id>
+      matched++;
     }
   }
 
