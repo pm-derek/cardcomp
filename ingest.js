@@ -1,142 +1,167 @@
 #!/usr/bin/env node
 /*
-  CardComp price ingest  —  TCGCSV  ->  prices.json      (Node 18+, NO dependencies)
+  CardComp ingest  ->  data.json        (Node 18+, NO dependencies)
 
-  WHY: the browser can't fetch TCGCSV (CORS). So this pulls it once, builds a
-       tiny static index, and you deploy that file next to cardcomp_poc.html.
-       Same-origin = no CORS, no API, instant prices.
+  Builds ONE lean file the app loads: every Pokemon card worth bidding on
+  (English + Japanese), each with its identity AND its TCGplayer prices baked in.
 
-  RUN:
-     1.  node ingest.js                 -> writes ./prices.json
-     2.  put prices.json in the SAME folder as cardcomp_poc.html
-     3.  deploy that folder to Netlify (drag-drop or your usual way)
-     Re-run whenever you want fresh prices (prices move slowly; a refresh
-     every few days, or before a big stream, is plenty).
+  Sources:
+    - English identity (name/set/number/attacks/hp/image) : pokemon-tcg-data on GitHub
+    - English prices                                       : TCGCSV  (category: Pokemon)
+    - Japanese identity + prices                           : TCGCSV  (category: Pokemon Japan)
 
-  It prints a set -> TCGCSV group report. If any row says CHECK/NONE, copy the
-  correct group name from the printed list into OVERRIDE below and re-run.
+  Prune: a card is kept only if its best printing's market (or low) >= FLOOR.
+  Set-agnostic and self-healing — a bulk card that spikes reappears next run.
+
+  RUN:  node ingest.js     ->  writes ./data.json   (deploy beside index.html)
 */
 const fs = require("fs");
-const BASE = "https://tcgcsv.com/tcgplayer";
-const CATEGORY = 3;                                  // 3 = Pokemon
-const UA = "CardComp-Ingest/1.0 (East Bay Trader)";  // TCGCSV asks for a custom UA
-const SLEEP = 120;                                   // be a good neighbor (~100ms)
+const GH = "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master";
+const TC = "https://tcgcsv.com/tcgplayer";
+const UA = "CardComp-Ingest/2.0 (East Bay Trader)";
+const SLEEP = 120;
+const FLOOR = 2.00;                 // keep only cards whose best printing >= this (USD)
+const INCLUDE_JP = true;            // set false to skip Japanese
 
-// (pokemontcg set id, set name). The set id prefixes every card id (swsh12-139),
-// so keying the index "{set id}-{number}" lines up with the app's card.id.
-const SETS = [
-  ["base1","Base"],["base2","Jungle"],["base3","Fossil"],["base4","Base Set 2"],
-  ["base5","Team Rocket"],["base6","Legendary Collection"],["gym1","Gym Heroes"],
-  ["gym2","Gym Challenge"],["neo1","Neo Genesis"],["neo4","Neo Destiny"],
-  ["ex7","Team Rocket Returns"],["ex11","Delta Species"],["ex13","Holon Phantoms"],
-  ["xy3","Furious Fists"],["g1","Generations"],["xy12","Evolutions"],
-  ["sv3pt5","151"],["sv6","Twilight Masquerade"],["sv6pt5","Shrouded Fable"],
-  ["sv8","Surging Sparks"],["sv8pt5","Prismatic Evolutions"],["sv9","Journey Together"],
-  ["sv10","Destined Rivals"],["swsh12","Silver Tempest"],
-  ["svp","Scarlet & Violet Black Star Promos"],["me4","Chaos Rising"],
-  ["me2pt5","Ascended Heroes"],
-];
-
-// Force a set to a specific TCGCSV group name if the auto-match is wrong:
-//   "ptcg_set_id": "EXACT TCGCSV group name"   (copy from the printed report)
+// Force an English set to a specific TCGCSV group if auto-match is wrong (see report):
 const OVERRIDE = {
   "base1": "Base Set",
   "base4": "Base Set 2",
-  "svp": "SV: Scarlet & Violet Promo Cards",
 };
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const norm = s => (s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
 const setTail = n => { const p = n.split(/:\s|\s-\s/); return p[p.length-1].trim(); };
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const r2 = c => c == null ? null : Math.round(c * 100) / 100;
 
-function score(our, g){
-  const a = norm(our), tail = norm(setTail(g.name)), full = norm(g.name);
+async function getJSON(url){
+  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  if (!res.ok) throw new Error("HTTP " + res.status + " " + url);
+  return res.json();
+}
+async function getText(url){
+  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  return (await res.text()).trim();
+}
+
+function score(name, g){
+  const a = norm(name), tail = norm(setTail(g.name)), full = norm(g.name);
   if (a === tail) return 100;
   if (tail.endsWith(a) || full.endsWith(a)) return 80;
   if (a && (tail.includes(a) || full.includes(a))) return 60;
   if (tail && a.includes(tail)) return 50;
-  const at = new Set((our.toLowerCase().match(/[a-z0-9]+/g)) || []);
+  const at = new Set((name.toLowerCase().match(/[a-z0-9]+/g)) || []);
   const gt = new Set((g.name.toLowerCase().match(/[a-z0-9]+/g)) || []);
-  if (at.size && gt.size){
-    let inter = 0; at.forEach(x => { if (gt.has(x)) inter++; });
-    const uni = new Set([...at, ...gt]).size;
-    return Math.round(inter / uni * 40);
-  }
+  if (at.size && gt.size){ let i = 0; at.forEach(x => { if (gt.has(x)) i++; });
+    return Math.round(i / new Set([...at, ...gt]).size * 40); }
   return 0;
 }
 
-async function getJSON(url){
-  const r = await fetch(url, { headers: { "User-Agent": UA } });
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
+function priceMap(rows){            // productId -> {subTypeName: {m,l}}
+  const pm = {};
+  for (const row of rows){
+    let m = row.marketPrice; if (m == null) m = row.midPrice;
+    const l = row.lowPrice;
+    if (m == null && l == null) continue;
+    (pm[row.productId] || (pm[row.productId] = {}))[row.subTypeName] = { m: r2(m), l: r2(l) };
+  }
+  return pm;
+}
+function bestPrice(px){
+  let best = 0;
+  for (const k in px){ const v = px[k]; const p = (v.m != null ? v.m : v.l) || 0; if (p > best) best = p; }
+  return best;
+}
+function num0(s){
+  let n = String(s).split("/")[0].trim().replace(/^SVP/i, "");
+  if (/^\d+$/.test(n)) n = String(parseInt(n, 10));     // 029 -> 29
+  return n;
+}
+async function categoryId(want){
+  const cats = (await getJSON(`${TC}/categories`)).results || [];
+  const hit = cats.find(c => (c.name||"").toLowerCase() === want.toLowerCase())
+           || cats.find(c => (c.name||"").toLowerCase().includes(want.toLowerCase()));
+  return hit ? hit.categoryId : null;
 }
 
-function resolveGroups(groups){
-  const byName = {}; groups.forEach(g => byName[g.name] = g);
-  const map = {};
-  console.log("\n  set id    our name                          -> TCGCSV group (id)                  conf");
-  console.log("  " + "-".repeat(94));
-  for (const [sid, name] of SETS){
-    let g, conf;
-    if (OVERRIDE[sid] && byName[OVERRIDE[sid]]) { g = byName[OVERRIDE[sid]]; conf = "OVERRIDE"; }
-    else {
-      let best = groups[0], sc = -1;
-      for (const cand of groups){ const s = score(name, cand); if (s > sc){ sc = s; best = cand; } }
-      g = sc >= 35 ? best : null;                          // refuse weak matches, don't mis-map
-      conf = g ? (sc >= 80 ? "high" : sc >= 50 ? "MED" : "LOW") : "NONE";
+async function englishCards(){
+  const sets = await getJSON(`${GH}/sets/en.json`);
+  const byId = {}; const cards = [];
+  for (const sm of sets){
+    let raw; try { raw = await getJSON(`${GH}/cards/en/${sm.id}.json`); } catch { continue; }
+    const year = parseInt((sm.releaseDate||"0").split("/")[0]) || 0;
+    for (const c of raw){
+      const atk = [...(c.attacks||[]), ...(c.abilities||[])].map(a => a.name||"").join(" ");
+      const card = { id:c.id, n:c.name, s:sm.name, c:sm.ptcgoCode||"", y:year, num:c.number,
+        r:c.rarity||"", hp:c.hp||"", t:c.types||[], st:c.subtypes||[],
+        atk, img:(c.images||{}).small||"", lang:"en" };
+      cards.push(card); byId[c.id] = card;
     }
-    map[sid] = g;
-    const gtxt = g ? `${g.name} (${g.groupId})` : "— no match —";
-    const flag = (conf === "high" || conf === "OVERRIDE") ? "" : "   <-- CHECK / add to OVERRIDE";
-    console.log(`  ${sid.padEnd(9)} ${name.padEnd(33)} -> ${gtxt.padEnd(36)} ${conf}${flag}`);
   }
-  return map;
+  console.log(`EN identity: ${cards.length} cards / ${sets.length} sets`);
+
+  const cat = 3;
+  const groups = (await getJSON(`${TC}/${cat}/groups`)).results;
+  console.log("\n  EN set -> group  (only low/med-confidence matches shown)");
+  for (const sm of sets){
+    let g, conf;
+    if (OVERRIDE[sm.id]) { g = groups.find(x => x.name === OVERRIDE[sm.id]); conf = "OVR"; }
+    if (!g){ let best=groups[0], sc=-1; for (const x of groups){ const s=score(sm.name,x); if(s>sc){sc=s;best=x;} }
+      g = sc >= 35 ? best : null; conf = g ? (sc>=80?"high":sc>=50?"med":"low") : "none"; }
+    if (!g) continue;
+    if (conf==="low"||conf==="med") console.log(`  ${sm.id} (${sm.name}) -> ${g.name} [${conf}]`);
+    let products, prices;
+    try {
+      products = (await getJSON(`${TC}/${cat}/${g.groupId}/products`)).results; await sleep(SLEEP);
+      prices   = (await getJSON(`${TC}/${cat}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
+    } catch { continue; }
+    const pm = priceMap(prices);
+    for (const p of products){
+      const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
+      if (!("Number" in ext)) continue;
+      const card = byId[`${sm.id}-${num0(ext.Number)}`]; const px = pm[p.productId];
+      if (card && px){ card.pid = p.productId; card.px = px; }
+    }
+  }
+  return cards;
+}
+
+async function japaneseCards(){
+  const cat = await categoryId("Pokemon Japan");
+  if (!cat){ console.log("JP: category not found, skipping"); return []; }
+  const groups = (await getJSON(`${TC}/${cat}/groups`)).results;
+  console.log(`\nJP: category ${cat}, ${groups.length} sets`);
+  const cards = [];
+  for (const g of groups){
+    let products, prices;
+    try {
+      products = (await getJSON(`${TC}/${cat}/${g.groupId}/products`)).results; await sleep(SLEEP);
+      prices   = (await getJSON(`${TC}/${cat}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
+    } catch { continue; }
+    const pm = priceMap(prices);
+    for (const p of products){
+      const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
+      if (!("Number" in ext)) continue;
+      const px = pm[p.productId]; if (!px) continue;
+      cards.push({ id:`jp:${p.productId}`, n:p.cleanName||p.name, s:g.name, c:g.abbreviation||"",
+        y:parseInt((g.publishedOn||"0").slice(0,4))||0, num:num0(ext.Number), r:ext.Rarity||"",
+        hp:ext.HP||"", t:[], st:[], atk:"", img:p.imageUrl||"", lang:"jp", pid:p.productId, px });
+    }
+  }
+  return cards;
 }
 
 (async () => {
-  let updated;
-  try { updated = (await (await fetch("https://tcgcsv.com/last-updated.txt", { headers: { "User-Agent": UA } })).text()).trim(); }
-  catch { updated = new Date().toISOString(); }
+  let updated; try { updated = await getText("https://tcgcsv.com/last-updated.txt"); } catch { updated = new Date().toISOString(); }
   console.log("TCGCSV last updated:", updated);
 
-  const groups = (await getJSON(`${BASE}/${CATEGORY}/groups`)).results;
-  console.log(`Fetched ${groups.length} Pokemon groups.`);
-  const map = resolveGroups(groups);
+  let all = await englishCards();
+  if (INCLUDE_JP) all = all.concat(await japaneseCards());
 
-  const prices = {};
-  let matched = 0, unmatchedSets = 0;
-  for (const [sid, g] of Object.entries(map)){
-    if (!g) { unmatchedSets++; continue; }
-    const gid = g.groupId;
-    let products, priceRows;
-    try {
-      products  = (await getJSON(`${BASE}/${CATEGORY}/${gid}/products`)).results; await sleep(SLEEP);
-      priceRows = (await getJSON(`${BASE}/${CATEGORY}/${gid}/prices`)).results;   await sleep(SLEEP);
-    } catch (e) { console.log(`  ! ${sid} group ${gid}: ${e.message}`); continue; }
+  const kept = all.filter(c => c.px && bestPrice(c.px) >= FLOOR);
+  const en = kept.filter(c => c.lang === "en").length, jp = kept.length - en;
 
-    const pmap = {};                                   // productId -> {subTypeName: {m:market, l:lowestListed}}
-    for (const row of priceRows){
-      let m = row.marketPrice; if (m == null) m = row.midPrice;
-      const l = row.lowPrice;
-      if (m == null && l == null) continue;
-      const r2 = c => c == null ? null : Math.round(c * 100) / 100;
-      (pmap[row.productId] || (pmap[row.productId] = {}))[row.subTypeName] = { m: r2(m), l: r2(l) };
-    }
-    for (const p of products){
-      const ext = {}; (p.extendedData || []).forEach(d => ext[d.name] = d.value);
-      if (!("Number" in ext)) continue;                // sealed product, not a card
-      let num = String(ext.Number).split("/")[0].trim();  // "139/195" -> "139"
-      num = num.replace(/^SVP/i, "");                      // promo prefix: SVP001 -> 001
-      if (/^\d+$/.test(num)) num = String(parseInt(num, 10)); // strip leading zeros: 029 -> 29
-      if (!num) continue;
-      const pr = pmap[p.productId]; if (!pr) continue;
-      prices[`${sid}-${num}`] = { id: p.productId, px: pr };  // id -> tcgplayer.com/product/<id>
-      matched++;
-    }
-  }
-
-  const out = { updated, source: "tcgcsv.com", prices };
-  fs.writeFileSync("prices.json", JSON.stringify(out));
-  console.log(`\nWrote prices.json — ${matched} priced cards across ${SETS.length - unmatchedSets}/${SETS.length} sets (${Math.round(JSON.stringify(out).length / 1024)} KB).`);
-  if (unmatchedSets) console.log(`  ${unmatchedSets} set(s) unmatched — see report above, add to OVERRIDE, re-run.`);
+  const out = { updated, floor: FLOOR, cards: kept };
+  fs.writeFileSync("data.json", JSON.stringify(out));
+  console.log(`\nWrote data.json — ${kept.length} cards >= $${FLOOR} (EN ${en} / JP ${jp}) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
 })();
