@@ -27,6 +27,8 @@ const INCLUDE_JP = true;            // set false to skip Japanese
 const OVERRIDE = {
   "base1": "Base Set",
   "base4": "Base Set 2",
+  "swshp": "SWSH: Sword & Shield Promo Cards",
+  "svp": "SV: Scarlet & Violet Promo Cards",
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -110,9 +112,13 @@ async function englishCards(){
   console.log("\n  EN set -> group  (only low/med-confidence matches shown)");
   for (const sm of sets){
     let g, conf;
-    if (OVERRIDE[sm.id]) { g = groups.find(x => x.name === OVERRIDE[sm.id]); conf = "OVR"; }
-    if (!g){ let best=groups[0], sc=-1; for (const x of groups){ const s=score(sm.name,x); if(s>sc){sc=s;best=x;} }
-      g = sc >= 35 ? best : null; conf = g ? (sc>=80?"high":sc>=50?"med":"low") : "none"; }
+    if (OVERRIDE[sm.id]) {
+      g = groups.find(x => x.name === OVERRIDE[sm.id]); conf = "OVR";
+      if (!g) { console.log(`  ! OVERRIDE for ${sm.id} ("${OVERRIDE[sm.id]}") matched NO group — fix the name`); continue; }
+    } else {
+      let best=groups[0], sc=-1; for (const x of groups){ const s=score(sm.name,x); if(s>sc){sc=s;best=x;} }
+      g = sc >= 35 ? best : null; conf = g ? (sc>=80?"high":sc>=50?"med":"low") : "none";
+    }
     if (!g) continue;
     if (conf==="low"||conf==="med") console.log(`  ${sm.id} (${sm.name}) -> ${g.name} [${conf}]`);
     let products, prices;
@@ -125,7 +131,19 @@ async function englishCards(){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
       if (!("Number" in ext)) continue;
       const card = byId[`${sm.id}-${num0(ext.Number)}`]; const px = pm[p.productId];
-      if (card && px){ card.pid = p.productId; card.px = px; }
+      if (!card || !px) continue;
+      const name = p.name || "";
+      let prefix = "";
+      if (/master ?ball/i.test(name)) prefix = "Master Ball ";
+      else if (/pok[eé] ?ball/i.test(name)) prefix = "Poké Ball ";
+      if (prefix){                                  // special holo pattern -> add as its own printing(s)
+        card.px = card.px || {};
+        for (const k in px) card.px[prefix + k] = px[k];
+        if (!card.pid) card.pid = p.productId;
+      } else {                                       // the base product
+        card.pid = p.productId;
+        card.px = Object.assign(px, card.px || {});  // keep any variant printings already attached
+      }
     }
   }
   return cards;
