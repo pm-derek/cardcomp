@@ -42,7 +42,7 @@ const SETS = [
 const OVERRIDE = {
   "base1": "Base Set",
   "base4": "Base Set 2",
-  "svp": "SV: Scarlet & Violet Promo Cards",   // <- example; fill in after first run
+  "svp": "SV: Scarlet & Violet Promo Cards",
 };
 
 const norm = s => (s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -122,7 +122,10 @@ function resolveGroups(groups){
     for (const p of products){
       const ext = {}; (p.extendedData || []).forEach(d => ext[d.name] = d.value);
       if (!("Number" in ext)) continue;                // sealed product, not a card
-      const num = String(ext.Number).split("/")[0].trim(); if (!num) continue;
+      let num = String(ext.Number).split("/")[0].trim();  // "139/195" -> "139"
+      num = num.replace(/^SVP/i, "");                      // promo prefix: SVP001 -> 001
+      if (/^\d+$/.test(num)) num = String(parseInt(num, 10)); // strip leading zeros: 029 -> 29
+      if (!num) continue;
       const pr = pmap[p.productId]; if (!pr) continue;
       prices[`${sid}-${num}`] = pr; matched++;
     }
