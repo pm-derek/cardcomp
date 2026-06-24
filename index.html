@@ -120,6 +120,9 @@
       </div>
     </div>
   </div>
+  <div id="farow" style="display:flex;gap:8px;margin:0 0 6px">
+    <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
+  </div>
   <div id="read"></div>
   <div id="status"></div>
   <div id="results"></div>
@@ -2149,6 +2152,7 @@
 let CARDS = [];
 const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
+let FA_ONLY = false;
 function setLang(lang, silent){
   LANG = lang;
   try{ localStorage.setItem("cardcomp_lang", LANG); }catch(e){}
@@ -2300,12 +2304,47 @@ const TYPE_COLOR = {Fire:"#ff7043",Water:"#4fc3f7",Grass:"#7cc576",Lightning:"#f
 // set codes from the data; skip codes that are also Pokemon names
 let NAMESET = new Set(), NUMSETS = new Set(), SET_NAMES = [];
 const SET_CODES = {};
+let ABBR = new Map();   // unique 3-4 char prefix -> full Pokemon name  (e.g. "zek" -> "zekrom")
 function buildVocab(){
   NAMESET = new Set(CARDS.map(c=>c.n.toLowerCase()));
   for(const k in SET_CODES) delete SET_CODES[k];
   CARDS.forEach(c=>{ if(c.c) SET_CODES[c.c.toLowerCase()] = c.s; });
   NUMSETS = new Set(CARDS.filter(c=>/^\d+$/.test(c.s)).map(c=>c.s));
   SET_NAMES = [...new Set(CARDS.map(c=>c.s))].filter(s=>s.length>=4 && !/^\d+$/.test(s)).sort((a,b)=>b.length-a.length);
+  // build prefix->name map from real EN catalog names; keep only prefixes that resolve to ONE name
+  ABBR = new Map();
+  const counts = new Map();
+  for(const c of CARDS){
+    if((c.lang||"en")!=="en") continue;
+    const base = (c.n||"").toLowerCase().split(/\s+/)[0].replace(/[^a-z]/g,"");
+    if(base.length<5) continue;                       // only abbreviate names long enough to bother
+    for(const L of [3,4]){ if(base.length<=L) continue; const pre=base.slice(0,L);
+      if(!counts.has(pre)) counts.set(pre,new Set()); counts.get(pre).add(base); }
+  }
+  for(const [pre,set] of counts){ if(set.size===1) ABBR.set(pre,[...set][0]); }
+}
+
+/* ---------- full-art / chase classifier (one toggle, all eras) ---------- */
+// Rarities the Full Art toggle keeps. Edit freely — this is the whole definition.
+const CHASE_EN = new Set([
+  // SV alt/full art + secrets
+  "Illustration Rare","Special Illustration Rare","Ultra Rare","Hyper Rare","Shiny Rare","Shiny Ultra Rare",
+  // SWSH/SM/XY full art + secret/rainbow + premium specials
+  "Rare Ultra","Rare Rainbow","Rare Secret","Rare Shiny","Rare Shiny GX","Amazing Rare","Radiant Rare","Trainer Gallery Rare Holo",
+  // vintage premium
+  "Rare Holo Star","Rare Holo LV.X","Rare Holo GX","Rare Holo EX","LEGEND","Rare Prime","Rare ACE","Rare Shining",
+  // JP-as-EN-labelled odds
+  "Special Art Rare","Art Rare","Character Rare","Character Super Rare"
+]);
+const CHASE_VINTAGE_EXTRA = new Set(["Rare Holo"]);  // vintage holos (e.g. Base Charizard) count as chase
+const JP_CHASE = /\b(SR|SAR|AR|UR|HR|CHR|CSR|SSR|RRR|ACE|K)\b/i;
+function isChase(c){
+  const r=c.r||"", n=c.n||"";
+  if(/\b(full art|alt(?:ernate)? art)\b/i.test(n)) return true;   // name-stamped full arts (promos etc.)
+  if((c.lang||"en")==="jp") return JP_CHASE.test(r);
+  if(CHASE_EN.has(r)) return true;
+  if((c.y||0)<=2010 && CHASE_VINTAGE_EXTRA.has(r)) return true;
+  return false;
 }
 const SET_NICK = {"prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 
@@ -2361,9 +2400,11 @@ function parse(raw){
   const cm = text.match(/\b(near mint|lightly played|moderately played|heavily played|damaged)\b/);
   if(cm){ f.note.push(cm[1]+" → condition (price layer)"); text=text.replace(cm[0]," "); }
 
-  // Japanese rarity codes -> imply a Japanese card
-  const JPR = [[/\bspecial art rare\b|\bsar\b/,"SAR (Special Art Rare)"],[/\bart rare\b|\bar\b/,"AR (Art Rare)"],[/\bsuper rare\b|\bsr\b/,"SR (Super Rare)"],[/\bchr\b/,"CHR"],[/\bcsr\b/,"CSR"]];
-  for(const [re,lab] of JPR){ if(re.test(text)){ f.jp=lab; text=text.replace(re," "); break; } }
+  // Japanese rarity codes -> imply a Japanese card (only auto-route when already in JP mode)
+  if(LANG==="jp"){
+    const JPR = [[/\bspecial art rare\b|\bsar\b/,"SAR (Special Art Rare)"],[/\bart rare\b|\bar\b/,"AR (Art Rare)"],[/\bsuper rare\b|\bsr\b/,"SR (Super Rare)"],[/\bchr\b/,"CHR"],[/\bcsr\b/,"CSR"]];
+    for(const [re,lab] of JPR){ if(re.test(text)){ f.jp=lab; text=text.replace(re," "); break; } }
+  }
 
   // alt art -> Sword & Shield era
   if(/\b(alt art|alternate art|aa)\b/.test(text)){ f.eraMin=2020; f.eraMax=2022; f.note.push("alt art → SWSH era (exact variant at price layer)"); text=text.replace(/\b(alt art|alternate art|aa)\b/g," "); }
@@ -2395,7 +2436,9 @@ function parse(raw){
   m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/);
   if(m){ f.number=m[1]; text=text.replace(m[0]," "); }
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
-  const q = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean).join(" ");
+  const q = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean)
+    .map(tok => (tok.length>=3 && tok.length<=4 && !NAMESET.has(tok) && ABBR.has(tok)) ? ABBR.get(tok) : tok)
+    .join(" ");
   return {q,qFull,f};
 }
 
@@ -2405,7 +2448,7 @@ function buildIndex(){
   ms = new MiniSearch({
     fields:["n","atk","s"],
     storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","px","pid"],
-    searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=4 }
+    searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=3 }
   });
   ms.addAll(CARDS);
 }
@@ -2435,6 +2478,7 @@ function run(raw){
   const slc = f.stage && f.stage.toLowerCase();
   const passFilters = r => {
     if((r.lang||"en")!==LANG) return false;
+    if(FA_ONLY && !isChase(r)) return false;
     if(tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
     if(f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
     if(slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
@@ -2457,11 +2501,17 @@ function run(raw){
   } else {
     res = CARDS.map(c=>({...c, score:1})).filter(passFilters);
   }
-  render(res, literal);
+  // relevance-first when the query has a discriminating signal; newest-first when it's a bare name / empty
+  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number) || FA_ONLY;
+  render(res, literal, !hasFilter);
 }
 
-function render(res, literal){
+function render(res, literal, newestFirst){
   const wrap = $("#results"); wrap.innerHTML = "";
+  // bare name / empty -> newest wins, relevance breaks ties. Qualified query -> relevance wins, newest breaks ties.
+  res = res.slice().sort(newestFirst
+    ? (a,b)=>((b.y||0)-(a.y||0)) || ((b.score||0)-(a.score||0))
+    : (a,b)=>((b.score||0)-(a.score||0)) || ((b.y||0)-(a.y||0)));
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card";
@@ -2499,6 +2549,12 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
+(function(){ const fb=$("#fatoggle"); if(!fb) return; fb.onclick=()=>{ FA_ONLY=!FA_ONLY;
+  fb.style.borderColor=FA_ONLY?"var(--gold)":"var(--line)";
+  fb.style.color=FA_ONLY?"var(--ink)":"var(--dim)";
+  fb.style.background=FA_ONLY?"rgba(245,179,1,.10)":"var(--panel2)";
+  if(window.__ready) run($("#q").value);
+}; })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
 $("#cartclear").onclick = clearCart;

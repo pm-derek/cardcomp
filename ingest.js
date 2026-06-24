@@ -7,8 +7,17 @@
 
   Sources:
     - English identity (name/set/number/attacks/hp/image) : pokemon-tcg-data on GitHub
-    - English prices                                       : TCGCSV  (category: Pokemon)
+    - English prices + promo/unmatched identity            : TCGCSV  (category: Pokemon)
     - Japanese identity + prices                           : TCGCSV  (category: Pokemon Japan)
+
+  COVERAGE MODEL (v3):
+    Every English TCGCSV *card* product becomes an entry. If it joins to a
+    pokemon-tcg-data card (set mapped + number matches), it gets the rich
+    identity (types/HP/attacks). If it does NOT join, it is emitted standalone
+    straight from TCGCSV (name/set/number/rarity/image/price) — exactly like the
+    Japanese path. Coverage no longer depends on the set-name matcher, so promos
+    ("XY Promos", "McDonald's 25th Anniversary Promos") and older ex whose
+    numbering doesn't line up stop getting silently dropped.
 
   Prune: a card is kept only if its best printing's market (or low) >= FLOOR.
   Set-agnostic and self-healing — a bulk card that spikes reappears next run.
@@ -18,12 +27,15 @@
 const fs = require("fs");
 const GH = "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master";
 const TC = "https://tcgcsv.com/tcgplayer";
-const UA = "CardComp-Ingest/2.0 (East Bay Trader)";
+const UA = "CardComp-Ingest/3.0 (East Bay Trader)";
 const SLEEP = 120;
 const FLOOR = 1.50;                 // keep only cards whose best printing >= this (USD)
 const INCLUDE_JP = true;            // set false to skip Japanese
+const EN_CAT = 3;                   // TCGCSV category id for English Pokemon
 
-// Force an English set to a specific TCGCSV group if auto-match is wrong (see report):
+// Force an English set to a specific TCGCSV group if auto-match is wrong (see report).
+// With v3 this only affects identity ENRICHMENT, not coverage — an unmatched set's
+// cards still come through as TCGCSV standalones, just with less metadata.
 const OVERRIDE = {
   "base1": "Base Set",
   "base4": "Base Set 2",
@@ -92,6 +104,7 @@ async function categoryId(want){
 }
 
 async function englishCards(){
+  // 1) pokemon-tcg-data identity ------------------------------------------------
   const sets = await getJSON(`${GH}/sets/en.json`);
   const byId = {}; const cards = [];
   for (const sm of sets){
@@ -107,46 +120,79 @@ async function englishCards(){
   }
   console.log(`EN identity: ${cards.length} cards / ${sets.length} sets`);
 
-  const cat = 3;
-  const groups = (await getJSON(`${TC}/${cat}/groups`)).results;
-  console.log("\n  EN set -> group  (only low/med-confidence matches shown)");
+  // 2) which TCGCSV group does each pokemon-tcg-data set claim? -----------------
+  const groups = (await getJSON(`${TC}/${EN_CAT}/groups`)).results;
+  const claim = {};                 // groupId -> {setId, setName, score}
   for (const sm of sets){
-    let g, conf;
-    if (OVERRIDE[sm.id]) {
-      g = groups.find(x => x.name === OVERRIDE[sm.id]); conf = "OVR";
-      if (!g) { console.log(`  ! OVERRIDE for ${sm.id} ("${OVERRIDE[sm.id]}") matched NO group — fix the name`); continue; }
+    let g = null, sc = -1;
+    if (OVERRIDE[sm.id]){
+      g = groups.find(x => x.name === OVERRIDE[sm.id]); sc = 1000;
+      if (!g){ console.log(`  ! OVERRIDE for ${sm.id} ("${OVERRIDE[sm.id]}") matched NO group — fix the name`); continue; }
     } else {
-      let best=groups[0], sc=-1; for (const x of groups){ const s=score(sm.name,x); if(s>sc){sc=s;best=x;} }
-      g = sc >= 35 ? best : null; conf = g ? (sc>=80?"high":sc>=50?"med":"low") : "none";
+      let best = null, bs = -1; for (const x of groups){ const s = score(sm.name, x); if (s > bs){ bs = s; best = x; } }
+      if (bs >= 35){ g = best; sc = bs; }
     }
     if (!g) continue;
-    if (conf==="low"||conf==="med") console.log(`  ${sm.id} (${sm.name}) -> ${g.name} [${conf}]`);
+    const cur = claim[g.groupId];
+    if (!cur || sc > cur.score) claim[g.groupId] = { setId: sm.id, setName: sm.name, score: sc };
+  }
+
+  // 3) walk EVERY group; enrich on join, emit standalone otherwise --------------
+  const standalones = [];
+  const report = [];                // groups that produced only standalones (likely promos/specials)
+  let totalEnriched = 0, totalStandalone = 0;
+  for (const g of groups){
     let products, prices;
     try {
-      products = (await getJSON(`${TC}/${cat}/${g.groupId}/products`)).results; await sleep(SLEEP);
-      prices   = (await getJSON(`${TC}/${cat}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
+      products = (await getJSON(`${TC}/${EN_CAT}/${g.groupId}/products`)).results; await sleep(SLEEP);
+      prices   = (await getJSON(`${TC}/${EN_CAT}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
     } catch { continue; }
     const pm = priceMap(prices);
+    const setId = claim[g.groupId] ? claim[g.groupId].setId : null;
+    const gyear = parseInt((g.publishedOn||"0").slice(0,4)) || 0;
+    let enr = 0, stand = 0;
+
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      if (!("Number" in ext)) continue;
-      const card = byId[`${sm.id}-${num0(ext.Number)}`]; const px = pm[p.productId];
-      if (!card || !px) continue;
+      if (!("Number" in ext)) continue;        // skips sealed/boxes/no-number products
+      const px = pm[p.productId]; if (!px) continue;
+      const num = num0(ext.Number);
       const name = p.name || "";
       let prefix = "";
       if (/master ?ball/i.test(name)) prefix = "Master Ball ";
       else if (/pok[eé] ?ball/i.test(name)) prefix = "Poké Ball ";
-      if (prefix){                                  // special holo pattern -> add as its own printing(s)
-        card.px = card.px || {};
-        for (const k in px) card.px[prefix + k] = px[k];
-        if (!card.pid) card.pid = p.productId;
-      } else {                                       // the base product
-        card.pid = p.productId;
-        card.px = Object.assign(px, card.px || {});  // keep any variant printings already attached
+
+      const card = setId ? byId[`${setId}-${num}`] : null;
+      if (card){                                // ---- JOINED: enrich pokemon-tcg-data card ----
+        if (prefix){                            // special holo pattern -> add as its own printing(s)
+          card.px = card.px || {};
+          for (const k in px) card.px[prefix + k] = px[k];
+          if (!card.pid) card.pid = p.productId;
+        } else {                                // the base product
+          card.pid = p.productId;
+          card.px = Object.assign(px, card.px || {});   // keep any variant printings already attached
+        }
+        enr++;
+      } else {                                  // ---- UNJOINED: emit straight from TCGCSV ----
+        standalones.push({
+          id: `tc:${p.productId}`, n: (p.cleanName || name), s: g.name, c: g.abbreviation || "",
+          y: gyear, num, r: ext.Rarity || "", hp: ext.HP || "", t: [], st: [], atk: "",
+          img: p.imageUrl || "", lang: "en", pid: p.productId, px
+        });
+        stand++;
       }
     }
+    totalEnriched += enr; totalStandalone += stand;
+    if (stand && !enr) report.push(`${g.name}  (${stand} cards, no pokemon-tcg-data match)`);
   }
-  return cards;
+
+  console.log(`\nEN merge: ${totalEnriched} enriched · ${totalStandalone} TCGCSV-standalone`);
+  if (report.length){
+    console.log(`  groups served entirely from TCGCSV (promos/specials/unmatched):`);
+    for (const line of report.slice(0, 40)) console.log(`   - ${line}`);
+    if (report.length > 40) console.log(`   …and ${report.length - 40} more`);
+  }
+  return cards.concat(standalones);
 }
 
 async function japaneseCards(){
