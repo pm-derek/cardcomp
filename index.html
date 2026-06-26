@@ -122,6 +122,7 @@
   </div>
   <div id="farow" style="display:flex;gap:8px;margin:0 0 6px">
     <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
+    <button id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">📦 Sealed</button>
   </div>
   <div id="read"></div>
   <div id="status"></div>
@@ -2153,6 +2154,7 @@ let CARDS = [];
 const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
 let FA_ONLY = false;
+let SEALED_ONLY = false;
 function setLang(lang, silent){
   LANG = lang;
   try{ localStorage.setItem("cardcomp_lang", LANG); }catch(e){}
@@ -2201,12 +2203,19 @@ function netProceeds(sale){ const f=fees(); return sale*(1-f.pct)-f.flat-(sale>=
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
+function copyAmt(val, el){
+  const s=String(val).replace(/[^0-9.]/g,"");
+  const flash=()=>{ if(!el) return; const t=el.textContent, c=el.style.color; el.textContent="copied \u2713"; el.style.color="var(--green)"; setTimeout(()=>{ el.textContent=t; el.style.color=c; },800); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
+  else copyFallback(s,flash);
+}
+function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 function condGridHTML(prices, key, tgt, mfloor, year){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
   const rows=CONDS.map(cond=>{
     const atc=base*condMult(cond, year, base), bid=atc*tgt, mgn=marginAt(listSale(atc),bid);
     const col=COND_COLORS[cond], mcol=mgn>=mfloor?"var(--green)":"var(--red)";
-    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd" style="color:${col}">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="mg" style="color:${mcol}">${(mgn*100).toFixed(0)}%</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">bid ${Math.round(tgt*100)}%</span><span class="mg h">margin</span><span class="h"></span>${rows}`;
 }
@@ -2245,6 +2254,7 @@ function renderPrices(host, data, prices, src){
   const pid=data.pid||null;
   const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
   const card=data.card||null;
+  if(card && card.sealed){ return renderSealed(host, prices, card, tcgUrl); }
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
     ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
@@ -2253,11 +2263,29 @@ function renderPrices(host, data, prices, src){
     const low=prices[sel].low;
     const yr=card?card.y:0;
     const nm=base, bid=nm*tgt, mgn=marginAt(listSale(nm),bid);
-    mbEl.innerHTML=`max bid <b>$${bid.toFixed(2)}</b> <span class="mbsub">@ NM${low!=null?` · lowest listed $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}</span>`;
+    mbEl.innerHTML=`max bid <b class="cpy" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> <span class="mbsub">@ NM${low!=null?` · lowest listed $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}</span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, tgt, mfloor, yr);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
+    [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
+  chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
+  draw();
+}
+function renderSealed(host, prices, card, tcgUrl){
+  const tgt=getNum("target",75)/100;
+  const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
+  let sel=keys[0];
+  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
+    <div class="muted" style="font-size:12px;margin-top:2px">sealed${card.kind?` · ${card.kind}`:""}</div>
+    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
+  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid");
+  const draw=()=>{
+    const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low, bid=base*tgt;
+    mbEl.innerHTML=`max bid <b class="cpy" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> <span class="mbsub">@ ${Math.round(tgt*100)}% of $${base.toFixed(2)} market${low!=null?` · lowest listed $${low.toFixed(2)}`:""}</span>`;
+    mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
+  };
+  chipsEl.innerHTML = keys.length>1 ? keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("") : "";
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
   draw();
 }
@@ -2315,7 +2343,7 @@ function buildVocab(){
   ABBR = new Map();
   const counts = new Map();
   for(const c of CARDS){
-    if((c.lang||"en")!=="en") continue;
+    if((c.lang||"en")!=="en" || c.sealed) continue;
     const base = (c.n||"").toLowerCase().split(/\s+/)[0].replace(/[^a-z]/g,"");
     if(base.length<5) continue;                       // only abbreviate names long enough to bother
     for(const L of [3,4]){ if(base.length<=L) continue; const pre=base.slice(0,L);
@@ -2336,15 +2364,12 @@ const CHASE_EN = new Set([
   // JP-as-EN-labelled odds
   "Special Art Rare","Art Rare","Character Rare","Character Super Rare"
 ]);
-const CHASE_VINTAGE_EXTRA = new Set(["Rare Holo"]);  // vintage holos (e.g. Base Charizard) count as chase
 const JP_CHASE = /\b(SR|SAR|AR|UR|HR|CHR|CSR|SSR|RRR|ACE|K)\b/i;
 function isChase(c){
   const r=c.r||"", n=c.n||"";
   if(/\b(full art|alt(?:ernate)? art)\b/i.test(n)) return true;   // name-stamped full arts (promos etc.)
   if((c.lang||"en")==="jp") return JP_CHASE.test(r);
-  if(CHASE_EN.has(r)) return true;
-  if((c.y||0)<=2010 && CHASE_VINTAGE_EXTRA.has(r)) return true;
-  return false;
+  return CHASE_EN.has(r);   // explicit list only — plain "Rare Holo" is NOT full art
 }
 const SET_NICK = {"prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 
@@ -2400,10 +2425,21 @@ function parse(raw){
   const cm = text.match(/\b(near mint|lightly played|moderately played|heavily played|damaged)\b/);
   if(cm){ f.note.push(cm[1]+" → condition (price layer)"); text=text.replace(cm[0]," "); }
 
-  // Japanese rarity codes -> imply a Japanese card (only auto-route when already in JP mode)
+  // Japanese rarity codes -> filter JP results by rarity (only when already in JP mode).
+  // Carries the code to match against the card's rarity field, so e.g. "ar" can never mean a Pokémon.
   if(LANG==="jp"){
-    const JPR = [[/\bspecial art rare\b|\bsar\b/,"SAR (Special Art Rare)"],[/\bart rare\b|\bar\b/,"AR (Art Rare)"],[/\bsuper rare\b|\bsr\b/,"SR (Super Rare)"],[/\bchr\b/,"CHR"],[/\bcsr\b/,"CSR"]];
-    for(const [re,lab] of JPR){ if(re.test(text)){ f.jp=lab; text=text.replace(re," "); break; } }
+    const JPR = [
+      [/\bspecial art rare\b|\bsar\b/, "SAR", "Special Art Rare"],
+      [/\bart rare\b|\bar\b/,          "AR",  "Art Rare"],
+      [/\bsuper rare\b|\bsr\b/,        "SR",  "Super Rare"],
+      [/\bultra rare\b|\bur\b/,        "UR",  "Ultra Rare"],
+      [/\bhyper rare\b|\bhr\b/,        "HR",  "Hyper Rare"],
+      [/\bcharacter super rare\b|\bcsr\b/, "CSR", "Character Super Rare"],
+      [/\bcharacter rare\b|\bchr\b/,   "CHR", "Character Rare"],
+      [/\btriple rare\b|\brrr\b/,      "RRR", "Triple Rare"],
+      [/\bdouble rare\b|\brr\b/,       "RR",  "Double Rare"]
+    ];
+    for(const [re,code,label] of JPR){ if(re.test(text)){ f.jp={code,label}; text=text.replace(re," "); break; } }
   }
 
   // alt art -> Sword & Shield era
@@ -2456,7 +2492,7 @@ function buildIndex(){
 /* ---------- search ---------- */
 function run(raw){
   const {q,qFull,f} = parse(raw);
-  if(f.jp){ setLang("jp", true); f.note.push("JP "+f.jp); }
+  if(f.jp){ setLang("jp", true); }
   // read-as line
   const bits = [];
   if(f.exp.length) bits.push("→ "+f.exp.join(", "));
@@ -2468,6 +2504,7 @@ function run(raw){
   if(f.subtype) bits.push(f.subtype);
   if(f.delta) bits.push("δ Delta Species");
   if(f.rarity) bits.push(f.rarity.label);
+  if(f.jp) bits.push(f.jp.label+" ("+f.jp.code+")");
   if(f.number) bits.push("#"+f.number);
   if(f.eraMax) bits.push("≤"+f.eraMax);
   if(f.eraMin) bits.push("≥"+f.eraMin);
@@ -2478,7 +2515,8 @@ function run(raw){
   const slc = f.stage && f.stage.toLowerCase();
   const passFilters = r => {
     if((r.lang||"en")!==LANG) return false;
-    if(FA_ONLY && !isChase(r)) return false;
+    if(SEALED_ONLY){ if(!r.sealed) return false; }
+    else { if(r.sealed) return false; if(FA_ONLY && !isChase(r)) return false; }
     if(tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
     if(f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
     if(slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
@@ -2489,6 +2527,7 @@ function run(raw){
     if(f.setCode && (r.c||"").toLowerCase()!==f.setCode) return false;
     if(f.setName && (r.s||"")!==f.setName) return false;
     if(f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
+    if(f.jp){ const toks=(r.r||"").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!toks.includes(f.jp.code)) return false; }
     if(f.number){ const n=String(r.num).toLowerCase(); const want=String(f.number).toLowerCase(); if(n!==want && !n.startsWith(want)) return false; }
     return true;
   };
@@ -2501,8 +2540,9 @@ function run(raw){
   } else {
     res = CARDS.map(c=>({...c, score:1})).filter(passFilters);
   }
-  // relevance-first when the query has a discriminating signal; newest-first when it's a bare name / empty
-  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number) || FA_ONLY;
+  // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
+  // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
+  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp);
   render(res, literal, !hasFilter);
 }
 
@@ -2510,8 +2550,8 @@ function render(res, literal, newestFirst){
   const wrap = $("#results"); wrap.innerHTML = "";
   // bare name / empty -> newest wins, relevance breaks ties. Qualified query -> relevance wins, newest breaks ties.
   res = res.slice().sort(newestFirst
-    ? (a,b)=>((b.y||0)-(a.y||0)) || ((b.score||0)-(a.score||0))
-    : (a,b)=>((b.score||0)-(a.score||0)) || ((b.y||0)-(a.y||0)));
+    ? (a,b)=>((b.y||0)-(a.y||0)) || ((b.o||0)-(a.o||0)) || ((b.score||0)-(a.score||0))
+    : (a,b)=>((b.score||0)-(a.score||0)) || ((b.y||0)-(a.y||0)) || ((b.o||0)-(a.o||0)));
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card";
@@ -2520,7 +2560,9 @@ function render(res, literal, newestFirst){
         <img src="${r.img}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
         <div class="meta">
           <div class="nm">${r.n}</div>
-          <div class="tags"><b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}</div>
+          <div class="tags">${r.sealed
+            ? `<b>${r.s}</b> · 📦 ${r.kind||"sealed"}`
+            : `<b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}`}</div>
         </div>
       </div>
       <div class="detail"></div>`;
@@ -2549,12 +2591,12 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
-(function(){ const fb=$("#fatoggle"); if(!fb) return; fb.onclick=()=>{ FA_ONLY=!FA_ONLY;
-  fb.style.borderColor=FA_ONLY?"var(--gold)":"var(--line)";
-  fb.style.color=FA_ONLY?"var(--ink)":"var(--dim)";
-  fb.style.background=FA_ONLY?"rgba(245,179,1,.10)":"var(--panel2)";
-  if(window.__ready) run($("#q").value);
-}; })();
+(function(){
+  const fb=$("#fatoggle"), sb=$("#sealedtoggle");
+  const paint=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };
+  if(fb) fb.onclick=()=>{ FA_ONLY=!FA_ONLY; if(FA_ONLY){ SEALED_ONLY=false; paint(sb,false);} paint(fb,FA_ONLY); if(window.__ready) run($("#q").value); };
+  if(sb) sb.onclick=()=>{ SEALED_ONLY=!SEALED_ONLY; if(SEALED_ONLY){ FA_ONLY=false; paint(fb,false);} paint(sb,SEALED_ONLY); if(window.__ready) run($("#q").value); };
+})();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
 $("#cartclear").onclick = clearCart;

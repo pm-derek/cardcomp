@@ -96,6 +96,29 @@ function num0(s){
   if (/^\d+$/.test(n)) n = String(parseInt(n, 10));     // 029 -> 29
   return n;
 }
+
+// Sealed product kinds, matched on TCGCSV product name (first match wins). Add patterns freely.
+const SEALED_KINDS = [
+  ["Pokémon Center ETB", /pok[eé]mon center.*(?:elite trainer box|etb)/i],
+  ["ETB",                /elite trainer box|\betb\b/i],
+  ["UPC",                /ultra premium collection|\bupc\b/i],
+  ["Booster Box",        /booster box/i],
+  ["Booster Display",    /booster display/i],
+  ["Booster Bundle",     /booster bundle/i],
+  ["Sleeved Booster",    /sleeved booster|check\s?lane|blister/i],
+  ["Booster Pack",       /booster pack/i],
+  ["Build & Battle",     /build\s*&?\s*(?:and\s*)?battle/i],
+  ["Premium Collection", /premium collection|premium figure/i],
+  ["Special Collection", /special collection|collection box|figure collection|poster collection/i],
+  ["Tin",                /\bmini tin\b|\btin\b/i],
+  ["Pin Collection",     /pin collection|pin box/i],
+  ["Box Set",            /box set|battle deck|theme deck|starter (?:set|deck)|gift box|holiday calendar|advent|trainer'?s toolkit|battle academy/i],
+];
+function classifySealed(name){
+  for (const [kind, re] of SEALED_KINDS) if (re.test(name)) return kind;
+  return null;
+}
+
 async function categoryId(want){
   const cats = (await getJSON(`${TC}/categories`)).results || [];
   const hit = cats.find(c => (c.name||"").toLowerCase() === want.toLowerCase())
@@ -139,8 +162,9 @@ async function englishCards(){
 
   // 3) walk EVERY group; enrich on join, emit standalone otherwise --------------
   const standalones = [];
+  const sealed = [];                // sealed product (ETBs, boxes, UPCs…), classified by kind
   const report = [];                // groups that produced only standalones (likely promos/specials)
-  let totalEnriched = 0, totalStandalone = 0;
+  let totalEnriched = 0, totalStandalone = 0, totalSealed = 0;
   for (const g of groups){
     let products, prices;
     try {
@@ -150,12 +174,19 @@ async function englishCards(){
     const pm = priceMap(prices);
     const setId = claim[g.groupId] ? claim[g.groupId].setId : null;
     const gyear = parseInt((g.publishedOn||"0").slice(0,4)) || 0;
-    let enr = 0, stand = 0;
+    let enr = 0, stand = 0, seal = 0;
 
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      if (!("Number" in ext)) continue;        // skips sealed/boxes/no-number products
       const px = pm[p.productId]; if (!px) continue;
+      if (!("Number" in ext)){                   // ---- SEALED (no card number) ----
+        const kind = classifySealed(p.cleanName || p.name || "");
+        if (!kind) continue;                     // unrecognized non-card product -> skip junk
+        sealed.push({ id:`sl:${p.productId}`, n:(p.cleanName||p.name), s:g.name, c:g.abbreviation||"",
+          y:gyear, o:g.groupId, kind, sealed:true, r:"", num:"", t:[], st:[], atk:"",
+          img:p.imageUrl||"", lang:"en", pid:p.productId, px });
+        seal++; continue;
+      }
       const num = num0(ext.Number);
       const name = p.name || "";
       let prefix = "";
@@ -164,6 +195,7 @@ async function englishCards(){
 
       const card = setId ? byId[`${setId}-${num}`] : null;
       if (card){                                // ---- JOINED: enrich pokemon-tcg-data card ----
+        card.o = g.groupId;
         if (prefix){                            // special holo pattern -> add as its own printing(s)
           card.px = card.px || {};
           for (const k in px) card.px[prefix + k] = px[k];
@@ -176,23 +208,23 @@ async function englishCards(){
       } else {                                  // ---- UNJOINED: emit straight from TCGCSV ----
         standalones.push({
           id: `tc:${p.productId}`, n: (p.cleanName || name), s: g.name, c: g.abbreviation || "",
-          y: gyear, num, r: ext.Rarity || "", hp: ext.HP || "", t: [], st: [], atk: "",
+          y: gyear, o: g.groupId, num, r: ext.Rarity || "", hp: ext.HP || "", t: [], st: [], atk: "",
           img: p.imageUrl || "", lang: "en", pid: p.productId, px
         });
         stand++;
       }
     }
-    totalEnriched += enr; totalStandalone += stand;
+    totalEnriched += enr; totalStandalone += stand; totalSealed += seal;
     if (stand && !enr) report.push(`${g.name}  (${stand} cards, no pokemon-tcg-data match)`);
   }
 
-  console.log(`\nEN merge: ${totalEnriched} enriched · ${totalStandalone} TCGCSV-standalone`);
+  console.log(`\nEN merge: ${totalEnriched} enriched · ${totalStandalone} TCGCSV-standalone · ${totalSealed} sealed`);
   if (report.length){
     console.log(`  groups served entirely from TCGCSV (promos/specials/unmatched):`);
     for (const line of report.slice(0, 40)) console.log(`   - ${line}`);
     if (report.length > 40) console.log(`   …and ${report.length - 40} more`);
   }
-  return cards.concat(standalones);
+  return cards.concat(standalones, sealed);
 }
 
 async function japaneseCards(){
@@ -208,12 +240,20 @@ async function japaneseCards(){
       prices   = (await getJSON(`${TC}/${cat}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
     } catch { continue; }
     const pm = priceMap(prices);
+    const gyear = parseInt((g.publishedOn||"0").slice(0,4))||0;
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      if (!("Number" in ext)) continue;
       const px = pm[p.productId]; if (!px) continue;
+      if (!("Number" in ext)){
+        const kind = classifySealed(p.cleanName || p.name || "");
+        if (!kind) continue;
+        cards.push({ id:`sl:${p.productId}`, n:(p.cleanName||p.name), s:g.name, c:g.abbreviation||"",
+          y:gyear, o:g.groupId, kind, sealed:true, r:"", num:"", t:[], st:[], atk:"",
+          img:p.imageUrl||"", lang:"jp", pid:p.productId, px });
+        continue;
+      }
       cards.push({ id:`jp:${p.productId}`, n:p.cleanName||p.name, s:g.name, c:g.abbreviation||"",
-        y:parseInt((g.publishedOn||"0").slice(0,4))||0, num:num0(ext.Number), r:ext.Rarity||"",
+        y:gyear, o:g.groupId, num:num0(ext.Number), r:ext.Rarity||"",
         hp:ext.HP||"", t:[], st:[], atk:"", img:p.imageUrl||"", lang:"jp", pid:p.productId, px });
     }
   }
@@ -229,8 +269,9 @@ async function japaneseCards(){
 
   const kept = all.filter(c => c.px && bestPrice(c.px) >= FLOOR);
   const en = kept.filter(c => c.lang === "en").length, jp = kept.length - en;
+  const sealedN = kept.filter(c => c.sealed).length;
 
   const out = { updated, floor: FLOOR, cards: kept };
   fs.writeFileSync("data.json", JSON.stringify(out));
-  console.log(`\nWrote data.json — ${kept.length} cards >= $${FLOOR} (EN ${en} / JP ${jp}) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
+  console.log(`\nWrote data.json — ${kept.length} entries >= $${FLOOR} (EN ${en} / JP ${jp}; ${sealedN} sealed) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
 })();
