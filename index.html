@@ -2569,7 +2569,7 @@ let ms = null;
 function buildIndex(){
   ms = new MiniSearch({
     fields:["n","atk","s","kind"],
-    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","px","pid","sealed","kind","o"],
+    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o"],
     searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=3 }
   });
   ms.addAll(CARDS);
