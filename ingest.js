@@ -31,6 +31,7 @@ const UA = "CardComp-Ingest/3.0 (East Bay Trader)";
 const SLEEP = 120;
 const FLOOR = 1.50;                 // keep only cards whose best printing >= this (USD)
 const INCLUDE_JP = true;            // set false to skip Japanese
+const INCLUDE_LORCANA = true;       // set false to skip Disney Lorcana
 const EN_CAT = 3;                   // TCGCSV category id for English Pokemon
 
 // Force an English set to a specific TCGCSV group if auto-match is wrong (see report).
@@ -260,18 +261,55 @@ async function japaneseCards(){
   return cards;
 }
 
+// Disney Lorcana — same shape as the JP path, stamped game:"lorcana" (identity + price from TCGCSV).
+async function lorcanaCards(){
+  const cat = await categoryId("Lorcana");
+  if (!cat){ console.log("Lorcana: category not found, skipping"); return []; }
+  const groups = (await getJSON(`${TC}/${cat}/groups`)).results;
+  console.log(`\nLorcana: category ${cat}, ${groups.length} sets`);
+  const cards = [];
+  for (const g of groups){
+    let products, prices;
+    try {
+      products = (await getJSON(`${TC}/${cat}/${g.groupId}/products`)).results; await sleep(SLEEP);
+      prices   = (await getJSON(`${TC}/${cat}/${g.groupId}/prices`)).results;   await sleep(SLEEP);
+    } catch { continue; }
+    const pm = priceMap(prices);
+    const gyear = parseInt((g.publishedOn||"0").slice(0,4)) || 0;
+    for (const p of products){
+      const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
+      const px = pm[p.productId]; if (!px) continue;
+      if (!("Number" in ext)){
+        const kind = classifySealed(p.cleanName || p.name || "");
+        if (!kind) continue;
+        cards.push({ id:`lc:${p.productId}`, n:(p.cleanName||p.name), s:g.name, c:g.abbreviation||"",
+          y:gyear, o:g.groupId, kind, sealed:true, game:"lorcana", r:"", num:"", t:[], st:[], atk:"",
+          img:p.imageUrl||"", lang:"en", pid:p.productId, px });
+        continue;
+      }
+      cards.push({ id:`lc:${p.productId}`, n:p.cleanName||p.name, s:g.name, c:g.abbreviation||"",
+        y:gyear, o:g.groupId, game:"lorcana", num:num0(ext.Number), r:ext.Rarity||"",
+        hp:"", t:ext.Color?[ext.Color]:[], st:[], atk:"", img:p.imageUrl||"", lang:"en", pid:p.productId, px });
+    }
+  }
+  return cards;
+}
+
 (async () => {
   let updated; try { updated = await getText("https://tcgcsv.com/last-updated.txt"); } catch { updated = new Date().toISOString(); }
   console.log("TCGCSV last updated:", updated);
 
   let all = await englishCards();
   if (INCLUDE_JP) all = all.concat(await japaneseCards());
+  if (INCLUDE_LORCANA) all = all.concat(await lorcanaCards());
 
   const kept = all.filter(c => c.px && bestPrice(c.px) >= FLOOR);
-  const en = kept.filter(c => c.lang === "en").length, jp = kept.length - en;
+  const en  = kept.filter(c => (c.game||"pkmn")==="pkmn" && c.lang === "en").length;
+  const jp  = kept.filter(c => (c.game||"pkmn")==="pkmn" && c.lang === "jp").length;
+  const lor = kept.filter(c => c.game === "lorcana").length;
   const sealedN = kept.filter(c => c.sealed).length;
 
   const out = { updated, floor: FLOOR, cards: kept };
   fs.writeFileSync("data.json", JSON.stringify(out));
-  console.log(`\nWrote data.json — ${kept.length} entries >= $${FLOOR} (EN ${en} / JP ${jp}; ${sealedN} sealed) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
+  console.log(`\nWrote data.json — ${kept.length} entries >= $${FLOOR} (Pkmn EN ${en} / JP ${jp}; Lorcana ${lor}; ${sealedN} sealed) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
 })();
