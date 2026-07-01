@@ -2202,6 +2202,12 @@ function fees(){ return {pct:getNum("feepct",12.75)/100, flat:getNum("flatfee",0
 function netProceeds(sale){ const f=fees(); return sale*(1-f.pct)-f.flat-(sale>=f.thresh?f.track:0); }
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf){ const np=netProceeds(listSale(market)); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
+function rowBid(r){   // NM max bid at the top printing, for the collapsed card
+  const e=r&&r.px; if(!e) return null;
+  let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
+  if(best<=0) return null;
+  return bidForMargin(best, getNum("tgtmargin",10)/100);
+}
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2303,21 +2309,33 @@ function addToCart(item){
   CART.push(item); saveCart(); renderCart();
 }
 function clearCart(){ CART=[]; saveCart(); renderCart(); }
+function openFromCart(item){
+  const isSealed = String(item.id||"").startsWith("sl:");
+  FA_ONLY=false; SEALED_ONLY=isSealed; paintToggles();
+  const qel=$("#q"); if(qel){ qel.value=item.n||""; const c=$("#qclear"); if(c) c.style.display=item.n?"block":"none"; }
+  const it=$("#cartitems"); if(it) it.style.display="none";
+  run(item.n||"");
+  requestAnimationFrame(()=>{
+    const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===item.id);
+    if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
+  });
+}
 function renderCart(){
   const bar=$("#cart"); if(!bar) return;
   if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
   bar.style.display="block";
-  const tgt=getNum("target",75)/100;
+  const mf=getNum("tgtmargin",10)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
-    const cond=it.cond||"NM"; const atc=it.market*condMult(cond, it.y, it.market); const bid=atc*tgt; totMkt+=atc; totBid+=bid;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
+    const cond=it.cond||"NM"; const atc=it.market*condMult(cond, it.y, it.market); const bid=bidForMargin(atc, mf); totMkt+=atc; totBid+=bid;
+    return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
       <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
   $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b></span></div>`;
   $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
+  $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
 }
 
 /* ---------- domain layer ---------- */
@@ -2367,7 +2385,7 @@ const CHASE_EN = new Set([
   // JP-as-EN-labelled odds
   "Special Art Rare","Art Rare","Character Rare","Character Super Rare"
 ]);
-const JP_CHASE = /\b(SR|SAR|AR|UR|HR|CHR|CSR|SSR|RRR|ACE|K)\b/i;
+const JP_CHASE = /\b(SR|SAR|AR|UR|HR|CHR|CSR|SSR|RRR|ACE|K)\b|art rare|super rare|ultra rare|hyper rare|character (?:super )?rare|amazing rare|shiny/i;
 function isChase(c){
   const r=c.r||"", n=c.n||"";
   if(/\b(full art|alt(?:ernate)? art)\b/i.test(n)) return true;   // name-stamped full arts (promos etc.)
@@ -2442,7 +2460,7 @@ function parse(raw){
       [/\btriple rare\b|\brrr\b/,      "RRR", "Triple Rare"],
       [/\bdouble rare\b|\brr\b/,       "RR",  "Double Rare"]
     ];
-    for(const [re,code,label] of JPR){ if(re.test(text)){ f.jp={code,label}; text=text.replace(re," "); break; } }
+    for(const [re,code,full] of JPR){ if(re.test(text)){ f.jp={code,full,label:full}; text=text.replace(re," "); break; } }
   }
 
   // alt art -> Sword & Shield era
@@ -2530,7 +2548,7 @@ function run(raw){
     if(f.setCode && (r.c||"").toLowerCase()!==f.setCode) return false;
     if(f.setName && (r.s||"")!==f.setName) return false;
     if(f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
-    if(f.jp){ const toks=(r.r||"").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!toks.includes(f.jp.code)) return false; }
+    if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.number){ const n=String(r.num).toLowerCase(); const want=String(f.number).toLowerCase(); if(n!==want && !n.startsWith(want)) return false; }
     return true;
   };
@@ -2557,7 +2575,9 @@ function render(res, literal, newestFirst){
     : (a,b)=>((b.score||0)-(a.score||0)) || ((b.y||0)-(a.y||0)) || ((b.o||0)-(a.o||0)));
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
-    const el = document.createElement("div"); el.className = "card";
+    const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
+    const rb = rowBid(r);
+    const bidHTML = rb!=null ? `<div style="flex-shrink:0;text-align:right;white-space:nowrap;align-self:center"><div style="font-size:10px;color:var(--faint);line-height:1">max bid</div><b class="cpy" data-bid="${rb.toFixed(2)}" title="tap to copy" style="color:var(--gold);font-size:16px;cursor:pointer">$${rb.toFixed(2)}</b></div>` : "";
     el.innerHTML = `
       <div class="row">
         <img src="${r.img}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
@@ -2567,12 +2587,14 @@ function render(res, literal, newestFirst){
             ? `<b>${r.s}</b> · 📦 ${r.kind||"sealed"}`
             : `<b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}`}</div>
         </div>
+        ${bidHTML}
       </div>
       <div class="detail"></div>`;
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
     row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } };
     const im = el.querySelector("img");
     if(im) im.onclick = (e)=>{ e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
+    el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
     wrap.appendChild(el);
   });
 }
@@ -2594,11 +2616,15 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
+function paintToggles(){
+  const fb=$("#fatoggle"), sb=$("#sealedtoggle");
+  const p=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };
+  p(fb,FA_ONLY); p(sb,SEALED_ONLY);
+}
 (function(){
   const fb=$("#fatoggle"), sb=$("#sealedtoggle");
-  const paint=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };
-  if(fb) fb.onclick=()=>{ FA_ONLY=!FA_ONLY; if(FA_ONLY){ SEALED_ONLY=false; paint(sb,false);} paint(fb,FA_ONLY); if(window.__ready) run($("#q").value); };
-  if(sb) sb.onclick=()=>{ SEALED_ONLY=!SEALED_ONLY; if(SEALED_ONLY){ FA_ONLY=false; paint(fb,false);} paint(sb,SEALED_ONLY); if(window.__ready) run($("#q").value); };
+  if(fb) fb.onclick=()=>{ FA_ONLY=!FA_ONLY; if(FA_ONLY) SEALED_ONLY=false; paintToggles(); if(window.__ready) run($("#q").value); };
+  if(sb) sb.onclick=()=>{ SEALED_ONLY=!SEALED_ONLY; if(SEALED_ONLY) FA_ONLY=false; paintToggles(); if(window.__ready) run($("#q").value); };
 })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
