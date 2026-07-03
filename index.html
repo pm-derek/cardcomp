@@ -85,9 +85,10 @@
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
   <div class="sub">scan-to-comp</div>
-  <div id="gametoggle" style="display:flex;gap:6px;margin:10px 0 2px">
+  <div id="gametoggle" style="display:flex;gap:6px;margin:10px 0 2px;flex-wrap:wrap">
     <button data-game="pkmn" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">Pokémon</button>
     <button data-game="lorcana" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">Lorcana</button>
+    <button data-game="onepiece" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">One Piece</button>
   </div>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="settings" id="settings">
@@ -2161,14 +2162,16 @@ let LANG = "en", DATA_UPDATED = "";
 let FA_ONLY = false;
 let SEALED_ONLY = false;
 let GAME = "pkmn";
+let PRINT_HINT = "";
 try{ GAME = localStorage.getItem("cardcomp_game") || "pkmn"; }catch(e){}
+const GAMES = new Set(["pkmn","lorcana","onepiece"]);
 function setGame(game){
-  GAME = game==="lorcana" ? "lorcana" : "pkmn";
+  GAME = GAMES.has(game) ? game : "pkmn";
   try{ localStorage.setItem("cardcomp_game", GAME); }catch(e){}
   document.querySelectorAll("#gametoggle button").forEach(b=>{ const on=b.dataset.game===GAME;
     b.style.borderColor=on?"var(--gold)":"var(--line)"; b.style.background=on?"rgba(245,179,1,.10)":"var(--panel)"; b.style.color=on?"var(--ink)":"var(--dim)"; });
   const lt=$("#langtoggle"); if(lt) lt.style.display = GAME==="pkmn" ? "flex" : "none";
-  const fa=$("#fatoggle"); if(fa) fa.textContent = GAME==="lorcana" ? "\u2726 Enchanted+" : "\u2726 Full Art only";
+  const fa=$("#fatoggle"); if(fa) fa.textContent = GAME==="lorcana" ? "\u2726 Enchanted+" : GAME==="onepiece" ? "\u2726 Chase (SR+)" : "\u2726 Full Art only";
   buildVocab();
   if(window.__ready){ const q=$("#q"); if(q) run(q.value); }
 }
@@ -2201,7 +2204,8 @@ async function boot(){
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
   const jp=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="jp").length;
   const lor=CARDS.filter(c=>(c.game||"pkmn")==="lorcana").length;
-  if(st) st.textContent = CARDS.length ? (`ready \u2014 ${CARDS.length} entries \u00b7 Pkmn EN ${en} / JP ${jp}${lor?` \u00b7 Lorcana ${lor}`:""}`) : "couldn't load data.json \u2014 run ingest.js and deploy it beside this file";
+  const op=CARDS.filter(c=>(c.game||"pkmn")==="onepiece").length;
+  if(st) st.textContent = CARDS.length ? (`ready \u2014 ${CARDS.length} entries \u00b7 Pkmn ${en}/${jp}${lor?` \u00b7 Lorcana ${lor}`:""}${op?` \u00b7 One Piece ${op}`:""}`) : "couldn't load data.json \u2014 run ingest.js and deploy it beside this file";
   if($("#q") && $("#q").value.trim()) run($("#q").value);
 }
 
@@ -2295,6 +2299,7 @@ function renderPrices(host, data, prices, src){
   const mf=getNum("tgtmargin",10)/100;
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
+  if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
   const upd=(data.tcgplayer&&data.tcgplayer.updatedAt)||"";
   const pid=data.pid||null;
   const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
@@ -2322,6 +2327,7 @@ function renderSealed(host, prices, card, tcgUrl){
   const mf=getNum("tgtmargin",10)/100;
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
+  if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
     <div class="muted" style="font-size:12px;margin-top:2px">sealed${card.kind?` · ${card.kind}`:""}</div>
     ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
@@ -2449,9 +2455,11 @@ const CHASE_EN = new Set([
 ]);
 const JP_CHASE = /\b(SR|SAR|AR|UR|HR|CHR|CSR|SSR|RRR|ACE|K)\b|art rare|super rare|ultra rare|hyper rare|character (?:super )?rare|amazing rare|shiny/i;
 const LORCANA_CHASE = new Set(["Enchanted","Legendary","Super Rare"]);
+const ONEPIECE_CHASE = new Set(["Super Rare","Secret Rare","Special Card","Special Rare","Treasure Rare","Manga Rare","Leader","SP Card","SEC"]);
 function isChase(c){
-  const r=c.r||"", n=c.n||"";
-  if((c.game||"pkmn")==="lorcana") return LORCANA_CHASE.has(r) || /enchanted/i.test(r);
+  const r=c.r||"", n=c.n||"", g=c.game||"pkmn";
+  if(g==="lorcana") return LORCANA_CHASE.has(r) || /enchanted/i.test(r);
+  if(g==="onepiece") return ONEPIECE_CHASE.has(r) || /\b(SR|SEC|SP)\b|manga|alternate|parallel/i.test(r);
   if(/\b(full art|alt(?:ernate)? art)\b/i.test(n)) return true;   // name-stamped full arts (promos etc.)
   if((c.lang||"en")==="jp") return JP_CHASE.test(r);
   return CHASE_EN.has(r);   // explicit list only — plain "Rare Holo" is NOT full art
@@ -2488,6 +2496,14 @@ function parse(raw){
 
   if(/\b(vintage|wotc|old|classic)\b/.test(text)){ f.eraMax=2003; text=text.replace(/\b(vintage|wotc|old|classic)\b/g," "); }
   if(/\b(modern|new|recent)\b/.test(text)){ f.eraMin=2020; text=text.replace(/\b(modern|new|recent)\b/g," "); }
+
+  // printing selector: filters to that printing AND auto-selects it in the detail view
+  const PRINTS = [
+    [/\b(1st ?ed(ition)?|first ?ed(ition)?|1st|first)\b/, "1st edition", "1st Edition"],
+    [/\bshadowless\b/, "shadowless", "Shadowless"],
+    [/\bunlimited\b/, "unlimited", "Unlimited"]
+  ];
+  for(const [re,key,lab] of PRINTS){ if(re.test(text)){ f.printing=key; f.printingLabel=lab; if(key==="1st edition"){ f.eraMax=f.eraMax||2002; } text=text.replace(re," "); break; } }
 
   // finishes & printings -> deferred to price layer (recognized, not filtered here)
   const FIN = [
@@ -2591,6 +2607,7 @@ function run(raw){
   if(f.delta) bits.push("δ Delta Species");
   if(f.rarity) bits.push(f.rarity.label);
   if(f.jp) bits.push(f.jp.label+" ("+f.jp.code+")");
+  if(f.printing) bits.push(f.printingLabel||f.printing);
   if(f.number) bits.push("#"+f.number);
   if(f.eraMax) bits.push("≤"+f.eraMax);
   if(f.eraMin) bits.push("≥"+f.eraMin);
@@ -2615,6 +2632,7 @@ function run(raw){
     if(f.setName && (r.s||"")!==f.setName) return false;
     if(f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
+    if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
     if(f.number){ const n=String(r.num).toLowerCase(); const want=String(f.number).toLowerCase(); if(n!==want && !n.startsWith(want)) return false; }
     return true;
   };
@@ -2634,7 +2652,8 @@ function run(raw){
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp);
+  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  PRINT_HINT = f.printing || "";
   render(res, literal, !hasFilter);
 }
 
