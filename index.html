@@ -146,7 +146,7 @@
     </div>
     <div class="flagstrip idle" id="flagstrip">
       <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
-      <button class="fbtn fy" data-fl="y" title="close · keep query and edit">✎ edit</button>
+      <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
       <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
     </div>
   </div>
@@ -2414,13 +2414,12 @@ function renderCart(){
 }
 
 /* ---------- search feedback log ---------- */
-// One record per search, ring-buffered in localStorage. Green/red log and clear the field,
-// yellow logs and keeps the query for editing, starting a new search without flagging logs
-// "unflagged" (moved on, no judgment). Flagging is never required.
+// One record per search, ring-buffered in localStorage. Three grades: green (good),
+// yellow (worked, not great), red (bad). All three log and clear the field. Starting a
+// new search without flagging logs "unflagged" (moved on, no judgment). Never required.
 const SLOG_KEY="cardcomp_slog", SLOG_MAX=2000;
 let SLOG=[]; try{ SLOG=JSON.parse(localStorage.getItem(SLOG_KEY)||"[]")||[]; }catch(e){ SLOG=[]; }
 let CUR=null;            // live search episode: {t, raw, f, n, openedId}
-let SKIP_SELECT=false;   // yellow: next focus must not select-all
 let SUPPRESS_LOG=false;  // cart reopen: its run() is not a user search
 function slogSave(){ try{ localStorage.setItem(SLOG_KEY, JSON.stringify(SLOG)); }catch(e){} }
 function compactFilters(f){
@@ -2451,6 +2450,7 @@ function finalize(fl, cardId){
   if(CUR && qel && qel.value.trim() && qel.value!==CUR.raw) run(qel.value);   // flush pending keystrokes into CUR
   if(!CUR || !(CUR.raw||"").trim()){ CUR=null; paintStrip(); return null; }
   const rec={t:CUR.t, q:CUR.raw, f:CUR.f, n:CUR.n, id:(cardId!==undefined&&cardId!==null)?cardId:(CUR.openedId||null), fl, g:GAME, l:LANG};
+  if(SEALED_ONLY) rec.mode="sealed"; else if(FA_ONLY) rec.mode="fa";   // active result-gating toggle, matters like game/lang
   SLOG.push(rec);
   if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
   slogSave();
@@ -2468,20 +2468,13 @@ function clearSearch(){   // reset for the next search; never logs (callers fina
 }
 function flagGood(id){ finalize("g", id); clearSearch(); }
 function flagBad(){ finalize("r"); clearSearch(); }
-function flagEdit(){
-  const qel=$("#q"); if(!qel) return;
-  const rec=finalize("y");
-  if(rec) CUR={t:Date.now(), openedId:null, raw:rec.q, f:rec.f, n:rec.n};   // stay live so a follow-up flag still logs
-  SKIP_SELECT=true; qel.focus();
-  const L=qel.value.length; try{ qel.setSelectionRange(L,L); }catch(_){}
-  paintStrip();
-}
+function flagOk(){ finalize("y"); clearSearch(); }
 function paintStrip(){ const s=$("#flagstrip"); if(s) s.classList.toggle("idle", !(CUR&&(CUR.raw||"").trim())); }
 function addDetailFlags(host, card){
-  host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">✎ edit</button><button class="fbtn fr" type="button">✗ bad</button></div>');
+  host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">~ ok</button><button class="fbtn fr" type="button">✗ bad</button></div>');
   const d=host.querySelector(".detailflags"); if(!d) return;
   d.querySelector(".fg").onclick=(e)=>{ e.stopPropagation(); flagGood(card?card.id:null); };
-  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagEdit(); };
+  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagOk(); };
   d.querySelector(".fr").onclick=(e)=>{ e.stopPropagation(); flagBad(); };
 }
 
@@ -2489,7 +2482,7 @@ function addDetailFlags(host, card){
 function slogSummaryHTML(){
   if(!SLOG.length) return "no searches logged yet";
   const c={g:0,y:0,r:0,u:0}; SLOG.forEach(r=>{ if(c[r.fl]!=null) c[r.fl]++; });
-  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} edit</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged`;
+  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} ok</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged`;
 }
 const escH=s=>String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 function fmtFilters(f){ return Object.entries(f||{}).map(([k,v])=>k+" "+v).join(" · "); }
@@ -2506,7 +2499,8 @@ function renderSlog(){
     h4("red + yellow · latest "+bad.length)+
     (bad.length?bad.map(r=>{
       const fs=fmtFilters(r.f);
-      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"✎"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
+      const md=r.mode==="fa"?"full art":r.mode==="sealed"?"sealed":"";
+      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${md?" · "+md:""}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
     }).join(""):'<div class="muted">none</div>');
 }
 function updateSlogUI(){
@@ -2827,14 +2821,14 @@ function render(res, literal, newestFirst){
 let t=null;
 $("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
 $("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
-$("#q").addEventListener("focus", e=>{ if(SKIP_SELECT){ SKIP_SELECT=false; return; } try{ e.target.select(); }catch(_){} });
+$("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
 $("#qclear").onclick = ()=>{ finalize("u"); clearSearch(); };
 (function(){
   const s=$("#flagstrip");
   if(s){
     s.querySelector('[data-fl="g"]').onclick=()=>flagGood();
-    s.querySelector('[data-fl="y"]').onclick=()=>flagEdit();
+    s.querySelector('[data-fl="y"]').onclick=()=>flagOk();
     s.querySelector('[data-fl="r"]').onclick=()=>flagBad();
   }
   const v=$("#slogview"); if(v) v.onclick=()=>{ const b=$("#slogbody"); const show=b.style.display==="none"; b.style.display=show?"block":"none"; if(show) renderSlog(); };
