@@ -56,7 +56,7 @@
   .pchip{font-size:11px;padding:5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
   .pchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
   .maxbid{font-size:14px;margin-bottom:11px}
-  .maxbid b{font-family:"Bricolage Grotesque",sans-serif;font-size:24px;color:var(--gold);vertical-align:-2px}
+  .maxbid .bidnum{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;color:var(--gold);vertical-align:-2px}
   .maxbid .mbsub{color:var(--faint);font-size:12px}
   .condgrid{display:grid;grid-template-columns:auto auto auto auto 1fr;gap:8px 10px;font-size:13px;align-items:center}
   .condgrid .h{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
@@ -84,7 +84,15 @@
   .fbtn.fr{color:var(--red)}
   .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
   .undobar{display:none;width:100%;font-family:inherit;font-size:12.5px;font-weight:600;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
-  .rail{flex:none;width:40px;align-self:stretch;margin-left:2px;border-left:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--green);font-size:17px;cursor:pointer}
+  .rails{flex:none;display:flex;align-self:stretch;margin-left:8px;border-left:1px solid var(--line)}
+  .rail{width:30px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
+  .rail.rg{color:var(--green)}
+  .rail.ry{color:var(--gold);border-left:1px solid var(--line)}
+  .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
+  .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
+  .bids .brow b{font-size:15px;cursor:pointer}
+  .bids .bm b{color:var(--gold)}
+  .bids .bp b{color:var(--blue)}
   .detailflags{display:flex;gap:8px;margin-top:12px}
   .sbtn{font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer}
   .sbtn:hover{color:var(--ink);border-color:var(--gold)}
@@ -107,7 +115,8 @@
     <h4>bid &amp; margin</h4>
     <div class="sgrid">
       <label>bid % of market<input id="cfg-target" type="number" value="75"></label>
-      <label>target margin % floor<input id="cfg-tgtmargin" type="number" value="15"></label>
+      <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="15"></label>
+      <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
       <label>TCGplayer fee %<input id="cfg-feepct" type="number" value="12.75"></label>
       <label>flat fee $<input id="cfg-flatfee" type="number" value="0.30"></label>
       <label>tracking fee $<input id="cfg-trackfee" type="number" value="5"></label>
@@ -2262,12 +2271,13 @@ function fees(){ return {pct:getNum("feepct",12.75)/100, flat:getNum("flatfee",0
 function netProceeds(sale){ const f=fees(); return sale*(1-f.pct)-f.flat-(sale>=f.thresh?f.track:0); }
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf){ const np=netProceeds(listSale(market)); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
-function rowBid(r){   // NM max bid at the top printing, for the collapsed card
-  const e=r&&r.px; if(!e) return null;
+function bidForProfit(market, d){ const np=netProceeds(listSale(market)); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
+function bestMarket(r){   // top printing market for the collapsed card
+  const e=r&&r.px; if(!e) return 0;
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
-  if(best<=0) return null;
-  return bidForMargin(best, getNum("tgtmargin",10)/100);
+  return best;
 }
+function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, getNum("tgtmargin",10)/100) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2326,7 +2336,7 @@ async function loadPrices(card, host){
   addDetailFlags(host, card);
 }
 function renderPrices(host, data, prices, src){
-  const mf=getNum("tgtmargin",10)/100;
+  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
@@ -2343,10 +2353,12 @@ function renderPrices(host, data, prices, src){
     const low=prices[sel].low;
     const yr=card?card.y:0;
     const nm=base, bid=bidForMargin(nm, mf), net=netProceeds(listSale(nm))-bid;
+    const pbid=bidForProfit(nm, td), pnet=netProceeds(listSale(nm))-pbid;
+    const ptgt=td===0?"break-even":`+$${td}`;
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`max bid <b class="cpy" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> <span class="mbsub">@ NM · net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% min)${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b> <span class="mbsub">@ NM · margin net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}%) · profit net <b style="color:var(--green)">+$${pnet.toFixed(2)}</b> (${ptgt})${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr);
-    cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
+    cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
@@ -2354,20 +2366,25 @@ function renderPrices(host, data, prices, src){
   draw();
 }
 function renderSealed(host, prices, card, tcgUrl){
-  const mf=getNum("tgtmargin",10)/100;
+  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
     <div class="muted" style="font-size:12px;margin-top:2px">sealed${card.kind?` · ${card.kind}`:""}</div>
+    <div class="sealadd" style="margin-top:9px"></div>
     ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
-  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid");
+  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), addEl=host.querySelector(".sealadd");
   const draw=()=>{
     const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low;
     const bid=bidForMargin(base, mf), net=netProceeds(listSale(base))-bid;
+    const pbid=bidForProfit(base, td), pnet=netProceeds(listSale(base))-pbid;
+    const ptgt=td===0?"break-even":`+$${td}`;
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`max bid <b class="cpy" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> <span class="mbsub">net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% min) · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b> <span class="mbsub">margin net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}%) · profit net <b style="color:var(--green)">+$${pnet.toFixed(2)}</b> (${ptgt}) · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
+    addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
+    addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
   };
   chipsEl.innerHTML = keys.length>1 ? keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("") : "";
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
@@ -2404,9 +2421,14 @@ function renderCart(){
   const mf=getNum("tgtmargin",10)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
-    const cond=it.cond||"NM"; const atc=it.market*condMult(cond, it.y, it.market); const bid=bidForMargin(atc, mf); totMkt+=atc; totBid+=bid;
+    const sealed = it.sealed || String(it.id||"").startsWith("sl:");
+    const cond = sealed ? "sealed" : (it.cond||"NM");
+    const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
+    const bid=bidForMargin(atc, mf); totMkt+=atc; totBid+=bid;
+    const pk = (it.game||"pkmn")==="pkmn";
+    const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
-      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
+      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
   $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b></span></div>`;
@@ -2474,7 +2496,7 @@ function clearSearch(){   // reset for the next search; never logs (callers fina
 function armUndo(){ if(_snap) LAST=_snap; _snap=null; }   // make the last flagged+cleared search restorable
 function flagGood(id){ finalize("g", id); armUndo(); clearSearch(); }
 function flagBad(){ finalize("r"); armUndo(); clearSearch(); }
-function flagOk(){ finalize("y"); armUndo(); clearSearch(); }
+function flagOk(id){ finalize("y", id); armUndo(); clearSearch(); }
 function undoLast(){
   if(!LAST) return;
   const {rec, raw, openedId}=LAST;
@@ -2504,7 +2526,7 @@ function addDetailFlags(host, card){
   host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">~ ok</button><button class="fbtn fr" type="button">✗ bad</button></div>');
   const d=host.querySelector(".detailflags"); if(!d) return;
   d.querySelector(".fg").onclick=(e)=>{ e.stopPropagation(); flagGood(card?card.id:null); };
-  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagOk(); };
+  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagOk(card?card.id:null); };
   d.querySelector(".fr").onclick=(e)=>{ e.stopPropagation(); flagBad(); };
 }
 
@@ -2822,8 +2844,13 @@ function render(res, literal, newestFirst){
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
-    const rb = rowBid(r);
-    const bidHTML = rb!=null ? `<div style="flex-shrink:0;text-align:right;white-space:nowrap;align-self:center"><div style="font-size:10px;color:var(--faint);line-height:1">max bid</div><b class="cpy" data-bid="${rb.toFixed(2)}" title="tap to copy" style="color:var(--gold);font-size:16px;cursor:pointer">$${rb.toFixed(2)}</b></div>` : "";
+    const best=bestMarket(r);
+    const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",10)/100) : null;
+    const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
+    const bidHTML = best>0 ? `<div class="bids">
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b></div>
+        <div class="brow bp"><span class="blab">profit</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b></div>
+      </div>` : "";
     el.innerHTML = `
       <div class="row">
         <img src="${r.img}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
@@ -2834,7 +2861,10 @@ function render(res, literal, newestFirst){
             : `<b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}`}</div>
         </div>
         ${bidHTML}
-        <div class="rail" title="good search · this card">✓</div>
+        <div class="rails">
+          <div class="rail rg" title="good search · this card">✓</div>
+          <div class="rail ry" title="found it, but hard to find · this card">~</div>
+        </div>
       </div>
       <div class="detail"></div>`;
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
@@ -2842,7 +2872,8 @@ function render(res, literal, newestFirst){
     const im = el.querySelector("img");
     if(im) im.onclick = (e)=>{ e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
-    const rl=el.querySelector(".rail"); if(rl) rl.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
+    const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
+    const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
     wrap.appendChild(el);
   });
 }
