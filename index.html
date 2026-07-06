@@ -83,6 +83,7 @@
   .fbtn.fy{color:var(--gold)}
   .fbtn.fr{color:var(--red)}
   .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
+  .undobar{display:none;width:100%;font-family:inherit;font-size:12.5px;font-weight:600;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
   .rail{flex:none;width:40px;align-self:stretch;margin-left:2px;border-left:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--green);font-size:17px;cursor:pointer}
   .detailflags{display:flex;gap:8px;margin-top:12px}
   .sbtn{font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer}
@@ -149,6 +150,7 @@
       <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
       <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
     </div>
+    <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   </div>
   <div id="farow" style="display:flex;gap:8px;margin:0 0 6px">
     <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
@@ -2421,6 +2423,7 @@ const SLOG_KEY="cardcomp_slog", SLOG_MAX=2000;
 let SLOG=[]; try{ SLOG=JSON.parse(localStorage.getItem(SLOG_KEY)||"[]")||[]; }catch(e){ SLOG=[]; }
 let CUR=null;            // live search episode: {t, raw, f, n, openedId}
 let SUPPRESS_LOG=false;  // cart reopen: its run() is not a user search
+let LAST=null, _snap=null;  // undo: LAST={rec,raw,openedId} restorable after a flag clear; _snap staged inside finalize
 function slogSave(){ try{ localStorage.setItem(SLOG_KEY, JSON.stringify(SLOG)); }catch(e){} }
 function compactFilters(f){
   const o={};
@@ -2440,6 +2443,7 @@ function compactFilters(f){
 }
 function seedCUR(raw, f, n){
   if(SUPPRESS_LOG) return;
+  LAST=null; _snap=null;   // starting or continuing a search retires any pending undo
   if(!CUR) CUR={t:Date.now(), openedId:null};
   CUR.raw=raw; CUR.f=compactFilters(f); CUR.n=n;
   paintStrip();
@@ -2454,6 +2458,7 @@ function finalize(fl, cardId){
   SLOG.push(rec);
   if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
   slogSave();
+  _snap={rec, raw:CUR.raw, openedId:CUR.openedId};   // staged; armUndo() promotes it on the clear paths only
   CUR=null; paintStrip();
   return rec;
 }
@@ -2466,10 +2471,35 @@ function clearSearch(){   // reset for the next search; never logs (callers fina
   CUR=null; paintStrip();
   if(qel) qel.focus();
 }
-function flagGood(id){ finalize("g", id); clearSearch(); }
-function flagBad(){ finalize("r"); clearSearch(); }
-function flagOk(){ finalize("y"); clearSearch(); }
-function paintStrip(){ const s=$("#flagstrip"); if(s) s.classList.toggle("idle", !(CUR&&(CUR.raw||"").trim())); }
+function armUndo(){ if(_snap) LAST=_snap; _snap=null; }   // make the last flagged+cleared search restorable
+function flagGood(id){ finalize("g", id); armUndo(); clearSearch(); }
+function flagBad(){ finalize("r"); armUndo(); clearSearch(); }
+function flagOk(){ finalize("y"); armUndo(); clearSearch(); }
+function undoLast(){
+  if(!LAST) return;
+  const {rec, raw, openedId}=LAST;
+  if(SLOG.length && SLOG[SLOG.length-1]===rec){ SLOG.pop(); slogSave(); updateSlogUI(); }   // drop the flag we just logged
+  LAST=null; _snap=null;
+  const m=rec.mode||"";                                   // restore the result-gating toggle it ran under
+  SEALED_ONLY=(m==="sealed"); FA_ONLY=(m==="fa"); paintToggles();
+  const qel=$("#q"); if(qel){ qel.value=raw||""; qel.focus(); }
+  $("#qclear").style.display=(raw&&raw.trim())?"block":"none";
+  run(raw||"");                                           // re-seed CUR + re-render results
+  if(openedId && CUR) CUR.openedId=openedId;
+  if(openedId){
+    requestAnimationFrame(()=>{
+      const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===openedId);
+      if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
+    });
+  }
+}
+function paintStrip(){
+  const live=!!(CUR&&(CUR.raw||"").trim());
+  const showUndo=!live && !!LAST;
+  const s=$("#flagstrip"), u=$("#undobar");
+  if(u) u.style.display=showUndo?"block":"none";
+  if(s){ s.style.display=showUndo?"none":"flex"; s.classList.toggle("idle", !live); }   // undo replaces the (idle) strip in the same slot
+}
 function addDetailFlags(host, card){
   host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">~ ok</button><button class="fbtn fr" type="button">✗ bad</button></div>');
   const d=host.querySelector(".detailflags"); if(!d) return;
@@ -2823,7 +2853,7 @@ $("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.displ
 $("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
-$("#qclear").onclick = ()=>{ finalize("u"); clearSearch(); };
+$("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
 (function(){
   const s=$("#flagstrip");
   if(s){
@@ -2831,6 +2861,7 @@ $("#qclear").onclick = ()=>{ finalize("u"); clearSearch(); };
     s.querySelector('[data-fl="y"]').onclick=()=>flagOk();
     s.querySelector('[data-fl="r"]').onclick=()=>flagBad();
   }
+  const ub=$("#undobar"); if(ub) ub.onclick=undoLast;
   const v=$("#slogview"); if(v) v.onclick=()=>{ const b=$("#slogbody"); const show=b.style.display==="none"; b.style.display=show?"block":"none"; if(show) renderSlog(); };
   const cp=$("#slogcopy"); if(cp) cp.onclick=()=>{ const str=JSON.stringify(SLOG); const flash=()=>{ const t0=cp.textContent; cp.textContent="copied ✓"; setTimeout(()=>{ cp.textContent=t0; },800); }; if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(str).then(flash,()=>copyFallback(str,flash)); else copyFallback(str,flash); };
   const dl=$("#slogdl"); if(dl) dl.onclick=()=>{ const b=new Blob([JSON.stringify(SLOG)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="cardcomp-searchlog.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
