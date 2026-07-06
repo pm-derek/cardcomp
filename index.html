@@ -2450,6 +2450,7 @@ function finalize(fl, cardId){
   if(CUR && qel && qel.value.trim() && qel.value!==CUR.raw) run(qel.value);   // flush pending keystrokes into CUR
   if(!CUR || !(CUR.raw||"").trim()){ CUR=null; paintStrip(); return null; }
   const rec={t:CUR.t, q:CUR.raw, f:CUR.f, n:CUR.n, id:(cardId!==undefined&&cardId!==null)?cardId:(CUR.openedId||null), fl, g:GAME, l:LANG};
+  if(SEALED_ONLY) rec.mode="sealed"; else if(FA_ONLY) rec.mode="fa";   // active result-gating toggle, matters like game/lang
   SLOG.push(rec);
   if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
   slogSave();
@@ -2498,7 +2499,8 @@ function renderSlog(){
     h4("red + yellow · latest "+bad.length)+
     (bad.length?bad.map(r=>{
       const fs=fmtFilters(r.f);
-      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
+      const md=r.mode==="fa"?"full art":r.mode==="sealed"?"sealed":"";
+      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${md?" · "+md:""}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
     }).join(""):'<div class="muted">none</div>');
 }
 function updateSlogUI(){
