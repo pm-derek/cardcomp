@@ -163,6 +163,8 @@
   </div>
   <div id="farow" style="display:flex;gap:8px;margin:0 0 6px">
     <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
+    <button id="bulktoggle" title="hide common / uncommon / rare / plain holo / double rare" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✂ Hide bulk</button>
+    <button id="promotoggle" title="show only promo cards" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">★ Promos</button>
     <button id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">📦 Sealed</button>
   </div>
   <div id="stale" style="display:none"></div>
@@ -2195,8 +2197,7 @@
 let CARDS = [];
 const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
-let FA_ONLY = false;
-let SEALED_ONLY = false;
+let MODE = "";   // "" | "fa" | "bulk" | "promo" | "sealed" — mutually-exclusive result filter
 let GAME = "pkmn";
 let PRINT_HINT = "";
 try{ GAME = localStorage.getItem("cardcomp_game") || "pkmn"; }catch(e){}
@@ -2404,7 +2405,7 @@ function clearCart(){ CART=[]; saveCart(); renderCart(); }
 function openFromCart(item){
   finalize("u"); SUPPRESS_LOG=true;   // cart reopen is not a user search; close any live episode
   const isSealed = String(item.id||"").startsWith("sl:");
-  FA_ONLY=false; SEALED_ONLY=isSealed; paintToggles();
+  MODE=isSealed?"sealed":""; paintToggles();
   const qel=$("#q"); if(qel){ qel.value=item.n||""; const c=$("#qclear"); if(c) c.style.display=item.n?"block":"none"; }
   const it=$("#cartitems"); if(it) it.style.display="none";
   run(item.n||"");
@@ -2476,7 +2477,7 @@ function finalize(fl, cardId){
   if(CUR && qel && qel.value.trim() && qel.value!==CUR.raw) run(qel.value);   // flush pending keystrokes into CUR
   if(!CUR || !(CUR.raw||"").trim()){ CUR=null; paintStrip(); return null; }
   const rec={t:CUR.t, q:CUR.raw, f:CUR.f, n:CUR.n, id:(cardId!==undefined&&cardId!==null)?cardId:(CUR.openedId||null), fl, g:GAME, l:LANG};
-  if(SEALED_ONLY) rec.mode="sealed"; else if(FA_ONLY) rec.mode="fa";   // active result-gating toggle, matters like game/lang
+  if(MODE) rec.mode=MODE;   // active result-gating toggle, matters like game/lang
   SLOG.push(rec);
   if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
   slogSave();
@@ -2503,7 +2504,7 @@ function undoLast(){
   if(SLOG.length && SLOG[SLOG.length-1]===rec){ SLOG.pop(); slogSave(); updateSlogUI(); }   // drop the flag we just logged
   LAST=null; _snap=null;
   const m=rec.mode||"";                                   // restore the result-gating toggle it ran under
-  SEALED_ONLY=(m==="sealed"); FA_ONLY=(m==="fa"); paintToggles();
+  MODE=["fa","bulk","promo","sealed"].includes(m)?m:""; paintToggles();
   const qel=$("#q"); if(qel){ qel.value=raw||""; qel.focus(); }
   $("#qclear").style.display=(raw&&raw.trim())?"block":"none";
   run(raw||"");                                           // re-seed CUR + re-render results
@@ -2551,7 +2552,7 @@ function renderSlog(){
     h4("red + yellow · latest "+bad.length)+
     (bad.length?bad.map(r=>{
       const fs=fmtFilters(r.f);
-      const md=r.mode==="fa"?"full art":r.mode==="sealed"?"sealed":"";
+      const md={fa:"full art",bulk:"hide bulk",promo:"promos",sealed:"sealed"}[r.mode]||"";
       return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${md?" · "+md:""}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
     }).join(""):'<div class="muted">none</div>');
 }
@@ -2640,6 +2641,26 @@ function isChase(c){
   if(/\b(full art|alt(?:ernate)? art)\b/i.test(n)) return true;   // name-stamped full arts (promos etc.)
   if((c.lang||"en")==="jp") return JP_CHASE.test(r);
   return CHASE_EN.has(r);   // explicit list only — plain "Rare Holo" is NOT full art
+}
+/* ---------- hide-bulk + promos (exclusion filters, robust to new rarities) ---------- */
+// Denylist, so UNKNOWN rarity strings fall through as "keep" — new sets never silently vanish.
+const BULK_EN       = new Set(["Common","Uncommon","Rare","Rare Holo","Holo Rare","Double Rare"]);
+const BULK_JP       = new Set(["Common","Uncommon","Rare","C","U","R","RR"]);   // conservative; fails safe
+const BULK_LORCANA  = new Set(["Common","Uncommon","Rare"]);
+const BULK_ONEPIECE = new Set(["C","UC","R"]);
+function isBulk(c){
+  const r=c.r||"", g=c.game||"pkmn";
+  if(g==="lorcana")  return BULK_LORCANA.has(r);
+  if(g==="onepiece") return BULK_ONEPIECE.has(r);
+  if((c.lang||"en")==="jp") return BULK_JP.has(r);
+  return BULK_EN.has(r);
+}
+function isPromo(c){
+  const r=c.r||"", s=c.s||"", g=c.game||"pkmn";
+  if(/jumbo/i.test(s)) return false;              // oversized display cards, not real comps
+  if(g==="onepiece") return r==="PR";
+  if(g==="lorcana")  return r==="Promo";
+  return r==="Promo" || /promo/i.test(s);
 }
 const SET_NICK = {"prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 
@@ -2793,11 +2814,18 @@ function run(raw){
 
   const tlc = f.type && f.type.toLowerCase();
   const slc = f.stage && f.stage.toLowerCase();
+  const passMode = r => {
+    if(MODE==="sealed") return !!r.sealed;
+    if(r.sealed) return false;                 // non-sealed modes never show sealed
+    if(MODE==="fa")    return isChase(r);
+    if(MODE==="bulk")  return !isBulk(r);
+    if(MODE==="promo") return isPromo(r);
+    return true;
+  };
   const passFilters = r => {
     if((r.game||"pkmn")!==GAME) return false;
     if(GAME==="pkmn" && (r.lang||"en")!==LANG) return false;
-    if(SEALED_ONLY){ if(!r.sealed) return false; }
-    else { if(r.sealed) return false; if(FA_ONLY && !isChase(r)) return false; }
+    if(!passMode(r)) return false;
     if(tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
     if(f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
     if(slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
@@ -2818,7 +2846,7 @@ function run(raw){
   if(q){
     res = ms.search(q,{combineWith:"AND"}).filter(passFilters);
     if(!res.length) res = ms.search(q).filter(passFilters);
-    if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(r=>(r.lang||"en")===LANG && (SEALED_ONLY? !!r.sealed : !r.sealed) && (SEALED_ONLY || !FA_ONLY || isChase(r))); literal=true; }   // name/keyword collision safety net
+    if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(r=>(r.lang||"en")===LANG && passMode(r)); literal=true; }   // name/keyword collision safety net
     if(res.length < 4){   // sounds-like fallback for misspellings beyond fuzzy's reach
       const seen=new Set(res.map(r=>r.id)), names=new Set();
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
@@ -2913,15 +2941,13 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
 document.querySelectorAll("#gametoggle button").forEach(b=>b.onclick=()=>setGame(b.dataset.game));
+const MODE_SEL = {fa:"#fatoggle", bulk:"#bulktoggle", promo:"#promotoggle", sealed:"#sealedtoggle"};
 function paintToggles(){
-  const fb=$("#fatoggle"), sb=$("#sealedtoggle");
   const p=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };
-  p(fb,FA_ONLY); p(sb,SEALED_ONLY);
+  for(const m in MODE_SEL) p($(MODE_SEL[m]), MODE===m);
 }
 (function(){
-  const fb=$("#fatoggle"), sb=$("#sealedtoggle");
-  if(fb) fb.onclick=()=>{ FA_ONLY=!FA_ONLY; if(FA_ONLY) SEALED_ONLY=false; paintToggles(); if(window.__ready) run($("#q").value); };
-  if(sb) sb.onclick=()=>{ SEALED_ONLY=!SEALED_ONLY; if(SEALED_ONLY) FA_ONLY=false; paintToggles(); if(window.__ready) run($("#q").value); };
+  for(const m in MODE_SEL){ const el=$(MODE_SEL[m]); if(el) el.onclick=()=>{ MODE=(MODE===m)?"":m; paintToggles(); if(window.__ready) run($("#q").value); }; }
 })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
