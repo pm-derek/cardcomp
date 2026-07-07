@@ -2415,10 +2415,21 @@ function clearCart(){ CART=[]; saveCart(); renderCart(); }
 function openFromCart(item){
   finalize("u"); SUPPRESS_LOG=true;   // cart reopen is not a user search; close any live episode
   const isSealed = String(item.id||"").startsWith("sl:");
+  // Reopen by id, not by re-searching the name. Promo/standalone names embed the collector
+  // number (e.g. "Cyndaquil 047"); the parser turns that into a number filter but the stored
+  // num is de-padded ("47"), so it never matches and the card vanishes. We already hold the id.
+  const card = CARDS.find(c=>c.id===item.id);
+  // Restore the game/lang the card lives in, else a browse from the wrong game/lang shows nothing.
+  const g = (card&&card.game) || item.game || (String(item.id||"").startsWith("lc:")?"lorcana":String(item.id||"").startsWith("op:")?"onepiece":"pkmn");
+  const l = (card&&card.lang) || item.lang || "en";
+  if(g!==GAME) setGame(g);
+  if(g==="pkmn" && l!==LANG) setLang(l, true);
   MODE=isSealed?"sealed":""; ERA=""; paintToggles(); paintEra();
   const qel=$("#q"); if(qel){ qel.value=item.n||""; const c=$("#qclear"); if(c) c.style.display=item.n?"block":"none"; }
   const it=$("#cartitems"); if(it) it.style.display="none";
-  run(item.n||"");
+  PRINT_HINT = (item.printing||"").toLowerCase();   // open the detail on the printing it was carted at
+  if(card){ $("#read").innerHTML=""; render([{...card, score:1}], false, true); }   // deterministic: draw just this card
+  else { run(item.n||""); }   // card gone from catalog: fall back to name search
   requestAnimationFrame(()=>{
     const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===item.id);
     if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
