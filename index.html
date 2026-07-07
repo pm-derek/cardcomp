@@ -2546,19 +2546,27 @@ function addDetailFlags(host, card){
 /* log viewer (settings panel) */
 function slogSummaryHTML(){
   if(!SLOG.length) return "no searches logged yet";
-  const c={g:0,y:0,r:0,u:0}; SLOG.forEach(r=>{ if(c[r.fl]!=null) c[r.fl]++; });
-  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} ok</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged`;
+  const c={g:0,y:0,r:0,u:0}; let uFound=0; SLOG.forEach(r=>{ if(c[r.fl]!=null) c[r.fl]++; if(r.fl==="u"&&r.id) uFound++; });
+  const uMoved=c.u-uFound;
+  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} ok</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged (${uFound} found, ${uMoved} moved on)`;
 }
 const escH=s=>String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 function fmtFilters(f){ return Object.entries(f||{}).map(([k,v])=>k+" "+v).join(" · "); }
 function renderSlog(){
   const body=$("#slogbody"); if(!body) return;
   const freq=new Map();
-  SLOG.forEach(r=>{ const k=(r.q||"").toLowerCase().trim(); if(k) freq.set(k,(freq.get(k)||0)+1); });
+  SLOG.forEach(r=>{ const k=(r.q||"").toLowerCase().trim(); if(k.length>=3) freq.set(k,(freq.get(k)||0)+1); });   // skip 1-2 char interim noise
   const top=[...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
   const bad=SLOG.filter(r=>r.fl==="r"||r.fl==="y").slice(-50).reverse();
+  // corrections: a missed/ok/unflagged search immediately refined into a green hit (same first word, within 90s)
+  const w4=s=>(s||"").trim().toLowerCase().split(/\s+/)[0].slice(0,4);
+  const corr=[];
+  for(let i=1;i<SLOG.length;i++){ const p=SLOG[i-1], cc=SLOG[i]; if(cc.fl==="g" && p.fl!=="g" && p.q!==cc.q && w4(p.q)===w4(cc.q) && (cc.t-p.t)/1000<90 && w4(p.q)) corr.push([p,cc]); }
+  const corrShow=corr.slice(-40).reverse();
   const h4=tt=>`<div style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:1px;margin:10px 0 5px">${tt}</div>`;
   body.innerHTML =
+    h4("corrections · "+corr.length+" (query → fix)")+
+    (corrShow.length?corrShow.map(([p,cc])=>`<div style="padding:3px 0;border-bottom:1px solid var(--line);color:var(--dim)">${escH(p.q)} <span style="color:var(--faint)">[${p.fl==="r"?"✗":p.fl==="y"?"~":"·"} ${p.n}]</span> <b style="color:var(--green)">→</b> ${escH(cc.q)} <span style="color:var(--faint)">[${cc.n}]</span></div>`).join(""):'<div class="muted">none yet</div>')+
     h4("top queries")+
     (top.length?top.map(([q,n])=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;color:var(--dim)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(q)}</span><span style="flex:none">${n}</span></div>`).join(""):'<div class="muted">none</div>')+
     h4("red + yellow · latest "+bad.length)+
@@ -2717,7 +2725,8 @@ function parse(raw){
   if(/\bdelta( species)?\b|δ/.test(text)){ f.delta=true; text=text.replace(/\bdelta( species)?\b|δ/g," "); }
 
   // set: ptcgo code, nickname, full name  (rarity shorthands are reserved so they can't be read as a set code)
-  const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar"]);
+  // reserved 2-char tokens a set code must never hijack: rarity shorthands + card mechanics (ex->Expedition code "EX", gx)
+  const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
   if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
   if(!f.setName){ for(const nm of SET_NAMES){ const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9 ]/g,".")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }
@@ -2875,40 +2884,50 @@ function run(raw){
     if(MODE==="promo") return isPromo(r);
     return true;
   };
-  const passFilters = r => {
+  // relax level: 0 = strict; >=1 drops loose descriptors (rarity, type, hp, delta) that most often over-narrow
+  // to empty; >=2 additionally drops subtype/stage (e.g. "Baby" is often mis-tagged). Identity filters
+  // (set, number, printing, era) are always kept, so a relaxed retry can never cross a set boundary.
+  const passFilters = (r, hard) => {
+    const lv = hard||0;
     if((r.game||"pkmn")!==GAME) return false;
     if(GAME==="pkmn" && (r.lang||"en")!==LANG) return false;
     if(!inEra(r)) return false;
     if(!passMode(r)) return false;
-    if(tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
-    if(f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
-    if(slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
-    if(f.subtype && !(r.st||[]).map(x=>x.toLowerCase()).includes(f.subtype.toLowerCase())) return false;
-    if(f.delta && !(r.n||"").includes("δ")) return false;
+    if(lv<1 && tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
+    if(lv<1 && f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
+    if(lv<2 && slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
+    if(lv<2 && f.subtype && !(r.st||[]).map(x=>x.toLowerCase()).includes(f.subtype.toLowerCase())) return false;
+    if(lv<1 && f.delta && !(r.n||"").includes("δ")) return false;
     if(f.eraMax!=null && r.y>f.eraMax) return false;
     if(f.eraMin!=null && r.y<f.eraMin) return false;
     if(f.setCode && (r.c||"").toLowerCase()!==f.setCode) return false;
     if(f.setName && (r.s||"")!==f.setName) return false;
     if(f.jpCodes && !f.jpCodes.includes((r.c||"").toLowerCase())) return false;
-    if(f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
+    if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
     if(f.number){ const n=String(r.num).toLowerCase(); const want=String(f.number).toLowerCase(); if(n!==want && !n.startsWith(want)) return false; }
     return true;
   };
+  // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
+  const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
+    && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName)
+    && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
+    && (!f.number || (String(r.num).toLowerCase()===String(f.number).toLowerCase() || String(r.num).toLowerCase().startsWith(String(f.number).toLowerCase())));
 
   let res, literal=false;
   if(q){
-    res = ms.search(q,{combineWith:"AND"}).filter(passFilters);
-    if(!res.length) res = ms.search(q).filter(passFilters);
-    if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(r=>(r.lang||"en")===LANG && inEra(r) && passMode(r)); literal=true; }   // name/keyword collision safety net
+    res = ms.search(q,{combineWith:"AND"}).filter(r=>passFilters(r));
+    if(!res.length) res = ms.search(q).filter(r=>passFilters(r));
+    if(!res.length){ let relaxed = ms.search(q).filter(r=>passFilters(r,1)); if(!relaxed.length) relaxed = ms.search(q).filter(r=>passFilters(r,2)); if(relaxed.length){ res=relaxed; literal=true; } }   // over-narrow qualifier zeroed it: retry dropping loose descriptors, then subtype/stage, keeping set/number identity
+    if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(passId); literal=true; }   // name/keyword collision safety net (still anchored to set/number)
     if(res.length < 4){   // sounds-like fallback for misspellings beyond fuzzy's reach
       const seen=new Set(res.map(r=>r.id)), names=new Set();
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
-      for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(passFilters).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
+      for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
     }
   } else {
-    res = CARDS.map(c=>({...c, score:1})).filter(passFilters);
+    res = CARDS.map(c=>({...c, score:1})).filter(r=>passFilters(r));
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
