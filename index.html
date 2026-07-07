@@ -2658,7 +2658,7 @@ function isChase(c){
 /* ---------- bulk / value / era / promos filters ---------- */
 // Denylist, so UNKNOWN rarity strings fall through as "keep" — new sets never silently vanish.
 const BULK_EN       = new Set(["Common","Uncommon","Rare","Rare Holo","Holo Rare","Double Rare"]);
-const BULK_JP       = new Set(["Common","Uncommon","Rare","C","U","R","RR"]);   // conservative; fails safe
+const BULK_JP       = new Set(["None","","Common","Uncommon","Rare","Holo Rare","Double Rare","Triple Rare","Prism Rare","Trainer Rare","C","U","R","RR"]);   // JP junk tiers; SR/AR/UR/HR/shiny kept. vintage-safe keeps the pricey ones
 const BULK_LORCANA  = new Set(["Common","Uncommon","Rare"]);
 const BULK_ONEPIECE = new Set(["C","UC","R"]);
 // best market price across printings — drives vintage-safe bulk + the value floors
@@ -2683,6 +2683,31 @@ function isPromo(c){
   return r==="Promo" || /promo/i.test(s);
 }
 const SET_NICK = {"prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
+// EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
+const EN_TO_JP = {
+ "151":["sv2a"],"scarlet & violet":["sv1s","sv1v"],"paldea evolved":["sv2d","sv2p"],
+ "obsidian flames":["sv3"],"paradox rift":["sv4k","sv4m"],"paldean fates":["sv4a"],
+ "temporal forces":["sv5k","sv5m"],"twilight masquerade":["sv6","sv6a"],"shrouded fable":["sv6a"],
+ "stellar crown":["sv7"],"surging sparks":["sv8","sv7a"],"prismatic evolutions":["sv8a"],
+ "journey together":["sv9"],"destined rivals":["sv10"],"black bolt":["sv11b"],"white flare":["sv11w"],
+ "mega evolution":["m1s","m1l"],"phantasmal flames":["m2"],"ascended heroes":["m2a"],
+ "perfect order":["m3"],"chaos rising":["m4"],
+ "sword & shield":["s1h","s1w"],"rebel clash":["s2"],"darkness ablaze":["s3"],
+ "vivid voltage":["s4","s3a"],"battle styles":["s5r","s5i"],"chilling reign":["s6h","s6k"],
+ "evolving skies":["s7r","s7d"],"fusion strike":["s8"],"brilliant stars":["s9"],
+ "astral radiance":["s9a"],"pokemon go":["s10b"],"lost origin":["s11","s10a"],
+ "silver tempest":["s12","s11a"],"crown zenith":["s12a"],"shining fates":["s4a"],
+ "ultra prism":["sm5m","sm5s"],"forbidden light":["sm6"],"celestial storm":["sm7"],
+ "lost thunder":["sm8"],"team up":["sm9"],"unbroken bonds":["sm10"],"cosmic eclipse":["sm12"],
+ "shining legends":["sm3+"],
+ "flashfire":["xy2"],"furious fists":["xy3"],"phantom forces":["xy4"],"primal clash":["xy5-bt"],
+ "roaring skies":["xy6"],"ancient origins":["xy7"],"breakthrough":["xy8-bb"],"breakpoint":["xy9"],
+ "fates collide":["xy10"],"steam siege":["xy11-br"],"double crisis":["cp1"],"evolutions":["cp6"],
+ "black & white":["bw1"],"next destinies":["bw3"],"dark explorers":["bw4"],"plasma storm":["bw7"],
+ "plasma blast":["bw9"],"legendary treasures":["ebb"],"dragon vault":["ds"],
+ "platinum":["pt1"],"rising rivals":["pt2"],"supreme victors":["pt3"],"arceus":["pt4"],
+ "heartgold & soulsilver":["l1: hg","l1: ss"],"undaunted":["l2"],"triumphant":["l3"]
+};
 
 function parse(raw){
   let text = " " + raw.toLowerCase().trim() + " ";
@@ -2694,7 +2719,7 @@ function parse(raw){
   // set: ptcgo code, nickname, full name  (rarity shorthands are reserved so they can't be read as a set code)
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
-  if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); break; } } }
+  if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
   if(!f.setName){ for(const nm of SET_NAMES){ const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9 ]/g,".")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }
 
   let m = text.match(/\b(\d{2,3})\s*hp\b/) || text.match(/\bhp\s*(\d{2,3})\b/);
@@ -2792,6 +2817,11 @@ function parse(raw){
   m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/);
   if(m){ f.number=m[1]; text=text.replace(m[0]," "); }
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
+  if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
+    const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
+    const jc = en && EN_TO_JP[String(en).toLowerCase()];
+    if(jc){ f.jpCodes=jc; f.setName=null; f.setCode=null; }
+  }
   const q = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean)
     .map(tok => (tok.length>=3 && tok.length<=4 && !NAMESET.has(tok) && ABBR.has(tok)) ? ABBR.get(tok) : tok)
     .join(" ");
@@ -2818,6 +2848,7 @@ function run(raw){
   if(f.exp.length) bits.push("→ "+f.exp.join(", "));
   if(f.setCode) bits.push(SET_CODES[f.setCode]);
   if(f.setName) bits.push(f.setName);
+  if(f.jpCodes) bits.push("JP "+f.jpCodes.join("/").toUpperCase());
   if(f.type) bits.push(f.type);
   if(f.hp!=null) bits.push(f.hp+" HP (±20)");
   if(f.stage) bits.push(f.stage);
@@ -2858,6 +2889,7 @@ function run(raw){
     if(f.eraMin!=null && r.y<f.eraMin) return false;
     if(f.setCode && (r.c||"").toLowerCase()!==f.setCode) return false;
     if(f.setName && (r.s||"")!==f.setName) return false;
+    if(f.jpCodes && !f.jpCodes.includes((r.c||"").toLowerCase())) return false;
     if(f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
@@ -2880,7 +2912,7 @@ function run(raw){
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.setCode||f.setName||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  const hasFilter = !!(f.setCode||f.setName||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
   PRINT_HINT = f.printing || "";
   if(raw.trim()) seedCUR(raw, f, res.length);   // live search episode for the feedback log
   render(res, literal, !hasFilter);
