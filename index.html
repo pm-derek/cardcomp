@@ -2917,11 +2917,12 @@ function run(raw){
 
   let res, literal=false;
   if(q){
+    const nameHits = ms.search(q);   // raw name matches, before any filter
     res = ms.search(q,{combineWith:"AND"}).filter(r=>passFilters(r));
-    if(!res.length) res = ms.search(q).filter(r=>passFilters(r));
-    if(!res.length){ let relaxed = ms.search(q).filter(r=>passFilters(r,1)); if(!relaxed.length) relaxed = ms.search(q).filter(r=>passFilters(r,2)); if(relaxed.length){ res=relaxed; literal=true; } }   // over-narrow qualifier zeroed it: retry dropping loose descriptors, then subtype/stage, keeping set/number identity
+    if(!res.length) res = nameHits.filter(r=>passFilters(r));
+    if(!res.length){ let relaxed = nameHits.filter(r=>passFilters(r,1)); if(!relaxed.length) relaxed = nameHits.filter(r=>passFilters(r,2)); if(relaxed.length){ res=relaxed; literal=true; } }   // over-narrow qualifier zeroed it: retry dropping loose descriptors, then subtype/stage, keeping set/number identity
     if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(passId); literal=true; }   // name/keyword collision safety net (still anchored to set/number)
-    if(res.length < 4){   // sounds-like fallback for misspellings beyond fuzzy's reach
+    if(res.length < 4 && nameHits.length < 4){   // sounds-like fallback ONLY when the name itself barely matched (misspelling), never to pad results a filter legitimately narrowed
       const seen=new Set(res.map(r=>r.id)), names=new Set();
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
       for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
