@@ -175,6 +175,10 @@ async function englishCards(){
     } catch { continue; }
     const pm = priceMap(prices);
     const setId = claim[g.groupId] ? claim[g.groupId].setId : null;
+    // sealed rows must share the joined set name so a set-scoped search (e.g. "chaos rising")
+    // matches both singles and sealed; TCGCSV group names carry prefixes ("ME04: Chaos Rising")
+    // that the enriched singles don't. Fall back to the group name when no set is claimed.
+    const setName = claim[g.groupId] ? claim[g.groupId].setName : g.name;
     const gyear = parseInt((g.publishedOn||"0").slice(0,4)) || 0;
     // "(Shadowless)" groups fold into the matching base card as "Shadowless …" printings (Base Set etc.)
     const isShadowless = /\(shadowless\)/i.test(g.name);
@@ -192,7 +196,7 @@ async function englishCards(){
       if (!("Number" in ext)){                   // ---- SEALED (no card number) ----
         const kind = classifySealed(p.cleanName || p.name || "");
         if (!kind) continue;                     // unrecognized non-card product -> skip junk
-        sealed.push({ id:`sl:${p.productId}`, n:(p.cleanName||p.name), s:g.name, c:g.abbreviation||"",
+        sealed.push({ id:`sl:${p.productId}`, n:(p.cleanName||p.name), s:setName, c:g.abbreviation||"",
           y:gyear, o:g.groupId, kind, sealed:true, r:"", num:"", t:[], st:[], atk:"",
           img:p.imageUrl||"", lang:"en", pid:p.productId, px });
         seal++; continue;
