@@ -2932,9 +2932,13 @@ function run(raw){
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
   const hasFilter = !!(f.setCode||f.setName||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  // a 2+ word name query (e.g. "misty poliwhirl", "brock zubat") is itself discriminating: rank by
+  // relevance so a precise multi-token match wins, not by year — otherwise the OR/phonetic fallback
+  // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
+  const multiWord = q.split(/\s+/).filter(Boolean).length >= 2;
   PRINT_HINT = f.printing || "";
   if(raw.trim()) seedCUR(raw, f, res.length);   // live search episode for the feedback log
-  render(res, literal, !hasFilter);
+  render(res, literal, !hasFilter && !multiWord);
 }
 
 function render(res, literal, newestFirst){
