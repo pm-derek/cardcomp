@@ -14,10 +14,10 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"JetBrains Mono",ui-monospace,monospace}
-  .wrap{max-width:680px;margin:0 auto;padding:18px 16px 80px;position:relative}
-  h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:30px;margin:0;letter-spacing:-.5px}
+  .wrap{max-width:680px;margin:0 auto;padding:9px 16px 80px;position:relative}
+  h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:21px;margin:0;letter-spacing:-.5px}
   h1 .dot{color:var(--gold)}
-  .sub{color:var(--faint);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:2px 0 14px}
+  .sub{color:var(--faint);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:1px 0 7px}
   .banner{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:10px 13px;font-size:12px;color:var(--dim);line-height:1.55;margin-bottom:14px}
   .banner b{color:var(--ink)}
   .searchrow{display:flex;gap:10px}
@@ -65,7 +65,7 @@
   .condgrid .bd{font-weight:700;text-align:right}
   .condgrid .mg{font-weight:600;text-align:right}
   .finep{color:var(--faint);font-size:10.5px;margin-top:11px;line-height:1.5}
-  .gear{position:absolute;top:18px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
   .settings{display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
   .settings.open{display:block}
@@ -103,9 +103,8 @@
 <div class="zoom" id="zoom"><img src="" alt=""></div>
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
-  <div class="sub">scan-to-comp</div>
-  <div class="sub" style="margin:-12px 0 14px;font-size:9.5px;letter-spacing:1px">cloud-connected ✓</div>
-  <div id="gametoggle" style="display:flex;gap:6px;margin:10px 0 2px;flex-wrap:wrap">
+  <div class="sub" style="margin:1px 0 6px">scan-to-comp <span style="font-size:9px;letter-spacing:1px;color:var(--faint)">· cloud-connected ✓</span></div>
+  <div id="gametoggle" style="display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap">
     <button data-game="pkmn" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">Pokémon</button>
     <button data-game="lorcana" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">Lorcana</button>
     <button data-game="onepiece" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">One Piece</button>
@@ -173,6 +172,7 @@
     <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
     <button id="promotoggle" title="show only promo cards" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">★ Promos</button>
     <button id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">📦 Sealed</button>
+    <button id="resetbtn" title="clear all filters (mode + era), keep the search text" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;margin-left:auto">⟳ Reset</button>
   </div>
   <div id="stale" style="display:none"></div>
   <div id="read"></div>
@@ -2741,7 +2741,7 @@ function parse(raw){
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
   if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
-  if(!f.setName){ for(const nm of SET_NAMES){ const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9 ]/g,".")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }
+  if(!f.setName){ for(const nm of SET_NAMES){ if(NAMESET.has(nm.toLowerCase())) continue; const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9 ]/g,".")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }   // skip set names that are also a Pokémon (e.g. "Arceus"): treat the word as the card, not the set, so "arceus vstar" searches the Pokémon
 
   let m = text.match(/\b(\d{2,3})\s*hp\b/) || text.match(/\bhp\s*(\d{2,3})\b/);
   if(m){ f.hp=+m[1]; text=text.replace(m[0]," "); }
@@ -3039,6 +3039,7 @@ function paintEra(){ for(const e in ERA_SEL) paintPill($(ERA_SEL[e]), ERA===e); 
 (function(){
   for(const m in MODE_SEL){ const el=$(MODE_SEL[m]); if(el) el.onclick=()=>{ MODE=(MODE===m)?"":m; paintToggles(); if(window.__ready) run($("#q").value); }; }
   for(const e in ERA_SEL){ const el=$(ERA_SEL[e]); if(el) el.onclick=()=>{ ERA=(ERA===e)?"":e; paintEra(); if(window.__ready) run($("#q").value); }; }
+  const rb=$("#resetbtn"); if(rb) rb.onclick=()=>{ MODE=""; ERA=""; paintToggles(); paintEra(); if(window.__ready) run($("#q").value); };   // clear every result filter; leaves the typed query so a live comp isn't lost
 })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
