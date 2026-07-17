@@ -2717,6 +2717,18 @@ const EN_TO_JP = {
  "heartgold & soulsilver":["l1: hg","l1: ss"],"undaunted":["l2"],"triumphant":["l3"]
 };
 
+// Mechanic tiers that print in the card NAME (Charizard GX, Pikachu VMAX, Trevenant BREAK). Parsing
+// them into a stage/subtype filter strips the word from the query, but ~60% of GX and ~half of VMAX
+// cards are TCGCSV standalones/promos with an empty subtype array — so a subtype-only match drops
+// every promo GX and, with the Promo toggle on, relaxes to non-GX junk. Match the name as a fallback.
+const NAME_STAMPED = { gx:/\bgx\b/i, break:/\bbreak\b/i, vmax:/\bvmax\b/i, vstar:/\bvstar\b/i };
+// true if the card carries this stage/subtype tier either in its subtypes OR (for name-stamped tiers) its name
+function stampOK(tier, r){
+  if((r.st||[]).map(x=>x.toLowerCase()).includes(tier)) return true;
+  const ns = NAME_STAMPED[tier];
+  return !!(ns && ns.test(r.n||""));
+}
+
 function parse(raw){
   let text = " " + raw.toLowerCase().trim() + " ";
   const f = {hp:null,type:null,stage:null,subtype:null,delta:null,eraMin:null,eraMax:null,number:null,setCode:null,setName:null,rarity:null,jp:null,note:[],exp:[]};
@@ -2895,8 +2907,8 @@ function run(raw){
     if(!passMode(r)) return false;
     if(lv<1 && tlc && !(r.t||[]).map(x=>x.toLowerCase()).includes(tlc)) return false;
     if(lv<1 && f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
-    if(lv<2 && slc && !(r.st||[]).map(x=>x.toLowerCase()).includes(slc)) return false;
-    if(lv<2 && f.subtype && !(r.st||[]).map(x=>x.toLowerCase()).includes(f.subtype.toLowerCase())) return false;
+    if(lv<2 && slc && !stampOK(slc, r)) return false;
+    if(lv<2 && f.subtype && !stampOK(f.subtype.toLowerCase(), r)) return false;
     if(lv<1 && f.delta && !(r.n||"").includes("δ")) return false;
     if(f.eraMax!=null && r.y>f.eraMax) return false;
     if(f.eraMin!=null && r.y<f.eraMin) return false;
