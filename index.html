@@ -78,12 +78,16 @@
   .multrow label{flex:1;text-align:center;font-size:10px;color:var(--faint)}
   .multrow input{text-align:center;padding:6px 2px}
   .flagstrip{display:flex;gap:8px}
-  .fbtn{flex:1;font-family:inherit;font-size:12.5px;font-weight:600;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;line-height:1}
+  .fbtn{flex:1;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;line-height:1}
   .fbtn.fg{color:var(--green)}
   .fbtn.fy{color:var(--gold)}
   .fbtn.fr{color:var(--red)}
   .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
-  .undobar{display:none;width:100%;font-family:inherit;font-size:12.5px;font-weight:600;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
+  .undobar{display:none;width:100%;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
+  /* one size system for header controls: .tgl = segmented selectors (game/lang), .fpill = filter pills (era/mode/reset) */
+  .tgl{font-family:inherit;font-size:12px;font-weight:600;padding:8px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
+  .fpill{font-family:inherit;font-size:12px;font-weight:500;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
+  #resetbtn{flex:none;padding:8px 12px}
   .rails{flex:none;display:flex;align-self:stretch;margin-left:8px;border-left:1px solid var(--line)}
   .rail{width:30px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
   .rail.rg{color:var(--green)}
@@ -105,9 +109,9 @@
   <h1>CardComp<span class="dot">.</span></h1>
   <div class="sub" style="margin:1px 0 6px">scan-to-comp <span style="font-size:9px;letter-spacing:1px;color:var(--faint)">· cloud-connected ✓</span></div>
   <div id="gametoggle" style="display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap">
-    <button data-game="pkmn" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">Pokémon</button>
-    <button data-game="lorcana" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">Lorcana</button>
-    <button data-game="onepiece" style="font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">One Piece</button>
+    <button class="tgl" data-game="pkmn">Pokémon</button>
+    <button class="tgl" data-game="lorcana">Lorcana</button>
+    <button class="tgl" data-game="onepiece">One Piece</button>
   </div>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="settings" id="settings">
@@ -149,9 +153,10 @@
         <button id="qclear" title="clear" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--faint);font-size:18px;cursor:pointer;line-height:1;display:none">✕</button>
       </div>
       <div id="langtoggle" style="display:flex;gap:4px;flex:none">
-        <button data-lang="en" style="font-family:inherit;font-size:12px;padding:8px 11px;border-radius:8px;border:1px solid var(--gold);background:rgba(245,179,1,.10);color:var(--ink);cursor:pointer">EN</button>
-        <button data-lang="jp" style="font-family:inherit;font-size:12px;padding:8px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer">JP</button>
+        <button class="tgl" data-lang="en">EN</button>
+        <button class="tgl" data-lang="jp">JP</button>
       </div>
+      <button id="resetbtn" class="tgl" title="clear all filters (mode + era), keep the search text">⟳</button>
     </div>
     <div class="flagstrip idle" id="flagstrip">
       <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
@@ -161,18 +166,17 @@
     <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   </div>
   <div id="erarow" style="display:flex;gap:8px;margin:0 0 6px;flex-wrap:wrap">
-    <button id="eravintage" title="vintage: 2010 and earlier (WOTC through Platinum/HGSS)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">🕰 Vintage</button>
-    <button id="eramid" title="mid-era: 2011-2019 (Black &amp; White through Sun &amp; Moon)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">Mid-era</button>
-    <button id="eramodern" title="modern: 2020 onward (Sword &amp; Shield, Scarlet &amp; Violet, Mega)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">Modern</button>
+    <button class="fpill" id="eravintage" title="vintage: 2010 and earlier (WOTC through Platinum/HGSS)">🕰 Vintage</button>
+    <button class="fpill" id="eramid" title="mid-era: 2011-2019 (Black &amp; White through Sun &amp; Moon)">Mid-era</button>
+    <button class="fpill" id="eramodern" title="modern: 2020 onward (Sword &amp; Shield, Scarlet &amp; Violet, Mega)">Modern</button>
   </div>
   <div id="farow" style="display:flex;gap:8px;margin:0 0 6px;flex-wrap:wrap">
-    <button id="bulktoggle" title="hide cheap common / uncommon / rare / plain holo (vintage-safe: keeps anything worth $10+)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✂ Hide bulk</button>
-    <button id="val25toggle" title="show only cards whose best printing is $25 or more" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">$25+</button>
-    <button id="val50toggle" title="show only cards whose best printing is $50 or more" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">$50+</button>
-    <button id="fatoggle" title="show only full-art / chase rarities, all eras" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">✦ Full Art only</button>
-    <button id="promotoggle" title="show only promo cards" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">★ Promos</button>
-    <button id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer">📦 Sealed</button>
-    <button id="resetbtn" title="clear all filters (mode + era), keep the search text" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;margin-left:auto">⟳ Reset</button>
+    <button class="fpill" id="bulktoggle" title="hide cheap common / uncommon / rare / plain holo (vintage-safe: keeps anything worth $10+)">✂ Hide bulk</button>
+    <button class="fpill" id="val25toggle" title="show only cards whose best printing is $25 or more">$25+</button>
+    <button class="fpill" id="val50toggle" title="show only cards whose best printing is $50 or more">$50+</button>
+    <button class="fpill" id="fatoggle" title="show only full-art / chase rarities, all eras">✦ Full Art only</button>
+    <button class="fpill" id="promotoggle" title="show only promo cards">★ Promos</button>
+    <button class="fpill" id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)">📦 Sealed</button>
   </div>
   <div id="stale" style="display:none"></div>
   <div id="read"></div>
