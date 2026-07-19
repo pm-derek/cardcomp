@@ -83,6 +83,7 @@
   .fbtn.fy{color:var(--gold)}
   .fbtn.fr{color:var(--red)}
   .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
+  body.nofeedback .flagstrip,body.nofeedback .undobar,body.nofeedback .rails,body.nofeedback .detailflags{display:none!important}
   .undobar{display:none;width:100%;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
   /* one size system for header controls: .tgl = segmented selectors (game/lang), .fpill = filter pills (era/mode/reset) */
   .tgl{font-family:inherit;font-size:12px;font-weight:600;padding:8px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
@@ -136,6 +137,7 @@
       <label>DMG<input data-c="DMG" type="number" value="0.40"></label>
     </div>
     <h4 style="margin-top:13px">search log</h4>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin-bottom:8px"><input type="checkbox" id="cfg-feedback" checked style="width:auto"> Feedback buttons (good / ok / bad) — uncheck to hide them and stop logging</label>
     <div id="slogsum" style="font-size:12px;color:var(--dim);margin-bottom:8px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button id="slogview" class="sbtn" type="button">view log</button>
@@ -2275,6 +2277,8 @@ function tierFor(year, price){
   return {era, band, m:TIERS[era][band]};
 }
 function autoTiers(){ const el=$("#cfg-autotier"); return el ? !!el.checked : true; }
+function feedbackOn(){ const el=$("#cfg-feedback"); return el ? !!el.checked : true; }
+function applyFeedback(){ const on=feedbackOn(); document.body.classList.toggle("nofeedback", !on); if(!on){ CUR=null; if(typeof paintStrip==="function") paintStrip(); } }   // hide the good/ok/bad UI and drop any live episode when feedback is off
 function condMult(cond, year, price){
   if(cond==="NM") return 1;
   if(autoTiers()) return tierFor(year, price).m[cond];
@@ -2478,7 +2482,7 @@ function compactFilters(f){
   return o;
 }
 function seedCUR(raw, f, n){
-  if(SUPPRESS_LOG) return;
+  if(SUPPRESS_LOG || !feedbackOn()) return;   // feedback off: no live episode, nothing logs
   LAST=null; _snap=null;   // starting or continuing a search retires any pending undo
   if(!CUR) CUR={t:Date.now(), openedId:null};
   CUR.raw=raw; CUR.f=compactFilters(f); CUR.n=n;
@@ -3027,7 +3031,8 @@ $("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem("cardcomp_cfg")||"{}"); document.querySelectorAll("#settings input").forEach(i=>{ const k=i.id||("m_"+i.dataset.c); if(o[k]!=null){ if(i.type==="checkbox") i.checked=!!o[k]; else if(o[k]!=="") i.value=o[k]; } }); }catch(e){} }
 loadCfg();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); }));
+applyFeedback();
+document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); applyFeedback(); }));
 $("#gear").onclick = ()=>{ const open=$("#settings").classList.toggle("open"); if(open) updateSlogUI(); };
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
