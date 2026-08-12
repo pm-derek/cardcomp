@@ -114,16 +114,12 @@
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
     <div class="sgrid">
-      <label>bid % of market<input id="cfg-target" type="number" value="75"></label>
       <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="15"></label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
-      <label>TCGplayer fee %<input id="cfg-feepct" type="number" value="12.75"></label>
-      <label>flat fee $<input id="cfg-flatfee" type="number" value="0.30"></label>
-      <label>tracking fee $<input id="cfg-trackfee" type="number" value="5"></label>
-      <label>tracking threshold $<input id="cfg-trackthresh" type="number" value="50"></label>
       <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
       <label>pokemontcg.io API key<input id="cfg-apikey" type="text" placeholder="optional · faster"></label>
     </div>
+    <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">Fees &amp; shipping are modeled from verified TCGplayer rates (commission, txn, PWE/tracked postage, thresholds) — no longer manual.</div>
     <h4 style="margin-top:13px">condition multipliers</h4>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin-bottom:8px"><input type="checkbox" id="cfg-autotier" checked style="width:auto"> Auto by era + price (recommended) — overrides the manual values below</label>
     <div class="multrow">
@@ -2278,17 +2274,48 @@ function condMult(cond, year, price){
   return mult(cond);
 }
 function tierLabel(year, price){ const t=tierFor(year,price); return t.era+" · "+(t.band==="hi"?"$100+":t.band==="mid"?"$20\u2013100":"<$20"); }
-function fees(){ return {pct:getNum("feepct",12.75)/100, flat:getNum("flatfee",0.30), track:getNum("trackfee",5), thresh:getNum("trackthresh",50)||1e9}; }
-function netProceeds(sale){ const f=fees(); return sale*(1-f.pct)-f.flat-(sale>=f.thresh?f.track:0); }
+/* ---- Bid Math v2: piecewise-affine net proceeds. net(p)=A*p-B over fee/shipping
+   thresholds. Constants are verified real TCGplayer fees + measured postage; only the
+   margin floor is operator-tuned. See CARDCOMP_BID_MATH_SPEC.md. ---- */
+const FEES = { commissionRate:0.1075, commissionCap:75.00, txnRate:0.025, txnFlat:0.30, effTaxRate:0.07 };
+const SHIPPING = { freeThreshold:5.00, buyerShipCharge:1.49, trackingRequired:49.99, signatureRequired:250.00, signatureAdd:4.00, pwe:0.929, tracked:5.697 };
+const SEALED_POSTAGE = { S:6.10, M:10.25, L:14.50, XL:25.00 };   // ESTIMATES — badge sealed panel
+const A_STD = 1 - FEES.commissionRate - FEES.txnRate*(1+FEES.effTaxRate);   // 0.865750 proportional retention
+const A_CAP = 1                        - FEES.txnRate*(1+FEES.effTaxRate);   // 0.973250 above commission cap
+const CAP_BINDS_ABOVE = FEES.commissionCap / FEES.commissionRate;           // ~697.674
+function closeTiers(t){ for(let i=0;i<t.length;i++) t[i].hi = t[i+1]?t[i+1].lo:Infinity; return t; }
+function buildFeeTiers(){   // singles ladder, min(soloTake,A_STD) walked across thresholds
+  const F=SHIPPING, fixed=post=>FEES.txnFlat+post;
+  const capB = FEES.commissionCap + fixed(F.tracked + F.signatureAdd);
+  return closeTiers([
+    { lo:0,                          A:A_STD, B:0 },                         // buyer pays shipping; clamps to A_STD
+    { lo:F.freeThreshold,            A:A_STD, B:fixed(F.pwe) },              // free ship: seller eats PWE
+    { lo:F.trackingRequired,         A:A_STD, B:fixed(F.tracked) },          // tracked label required
+    { lo:F.signatureRequired,        A:A_STD, B:fixed(F.tracked + F.signatureAdd) },
+    { lo:CAP_BINDS_ABOVE,            A:A_CAP, B:capB },                      // commission cap binds
+    { lo:capB/FEES.commissionRate,   A:A_STD, B:0 }                         // capped line re-crosses A_STD
+  ]);
+}
+function buildSealedFeeTiers(key){   // sealed never ships PWE; postage from picked weight tier
+  const base = FEES.txnFlat + (SEALED_POSTAGE[key]||SEALED_POSTAGE.M);
+  return closeTiers([
+    { lo:0,                          A:A_STD, B:base },
+    { lo:SHIPPING.signatureRequired, A:A_STD, B:base + SHIPPING.signatureAdd },
+    { lo:CAP_BINDS_ABOVE,            A:A_CAP, B:FEES.commissionCap + base + SHIPPING.signatureAdd }
+  ]);
+}
+const FEE_TIERS = buildFeeTiers();
+function feeTierFor(p, tiers){ tiers=tiers||FEE_TIERS; return tiers.find(x=>p>=x.lo && p<x.hi) || tiers[tiers.length-1]; }
+function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
-function bidForMargin(market, mf){ const np=netProceeds(listSale(market)); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
-function bidForProfit(market, d){ const np=netProceeds(listSale(market)); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
+function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
+function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 function bestMarket(r){   // top printing market for the collapsed card
   const e=r&&r.px; if(!e) return 0;
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
   return best;
 }
-function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, getNum("tgtmargin",10)/100) : null; }   // NM margin bid at the top printing
+function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, getNum("tgtmargin",15)/100) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2347,7 +2374,7 @@ async function loadPrices(card, host){
   addDetailFlags(host, card);
 }
 function renderPrices(host, data, prices, src){
-  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
+  const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
@@ -2376,27 +2403,35 @@ function renderPrices(host, data, prices, src){
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
   draw();
 }
+const SEALED_WLABEL = { S:"S · ≤1lb", M:"M · ETB/box", L:"L · 2ETB/3box", XL:"XL · case" };
 function renderSealed(host, prices, card, tcgUrl){
-  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
+  const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
-  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
+  let wsel = card.wtier && SEALED_POSTAGE[card.wtier] ? card.wtier : "M";   // postage weight tier (operator-picked)
+  host.innerHTML=`<div class="pchips"></div>
+    <div class="wchips" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px"></div>
+    <div class="muted" style="font-size:11px;color:var(--faint);margin-bottom:6px">postage est · verify weight</div>
+    <div class="maxbid"></div>
     <div class="muted" style="font-size:12px;margin-top:2px">sealed${card.kind?` · ${card.kind}`:""}</div>
     <div class="sealadd" style="margin-top:9px"></div>
     ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
-  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), addEl=host.querySelector(".sealadd");
+  const chipsEl=host.querySelector(".pchips"), wEl=host.querySelector(".wchips"), mbEl=host.querySelector(".maxbid"), addEl=host.querySelector(".sealadd");
   const draw=()=>{
+    const st=buildSealedFeeTiers(wsel);
     const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low;
-    const bid=bidForMargin(base, mf), net=netProceeds(listSale(base))-bid;
-    const pbid=bidForProfit(base, td), pnet=netProceeds(listSale(base))-pbid;
+    const bid=bidForMargin(base, mf, st), net=netProceeds(listSale(base), st)-bid;
+    const pbid=bidForProfit(base, td, st), pnet=netProceeds(listSale(base), st)-pbid;
     const ptgt=td===0?"break-even":`+$${td}`;
     const tf=thinFlag(prices[sel]);
     mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b> <span class="mbsub">margin net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}%) · profit net <b style="color:var(--green)">+$${pnet.toFixed(2)}</b> (${ptgt}) · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
-    addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
+    addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
   };
+  wEl.innerHTML = Object.keys(SEALED_POSTAGE).map(k=>`<span class="pchip${k===wsel?' on':''}" data-w="${k}" title="$${SEALED_POSTAGE[k].toFixed(2)} postage">${SEALED_WLABEL[k]}</span>`).join("");
+  wEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); wsel=ch.dataset.w; wEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
   chipsEl.innerHTML = keys.length>1 ? keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("") : "";
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
   draw();
@@ -2440,13 +2475,14 @@ function renderCart(){
   const bar=$("#cart"); if(!bar) return;
   if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
   bar.style.display="block";
-  const mf=getNum("tgtmargin",10)/100;
+  const mf=getNum("tgtmargin",15)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
     const sealed = it.sealed || String(it.id||"").startsWith("sl:");
     const cond = sealed ? "sealed" : (it.cond||"NM");
     const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
-    const bid=bidForMargin(atc, mf); totMkt+=atc; totBid+=bid;
+    const tiers = sealed ? buildSealedFeeTiers(it.wtier||"M") : undefined;   // sealed uses its picked weight postage
+    const bid=bidForMargin(atc, mf, tiers); totMkt+=atc; totBid+=bid;
     const pk = (it.game||"pkmn")==="pkmn";
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
@@ -2958,7 +2994,7 @@ function render(res, literal, newestFirst){
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
     const best=bestMarket(r);
-    const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",10)/100) : null;
+    const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",15)/100) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
         <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b></div>
