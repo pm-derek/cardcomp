@@ -104,6 +104,30 @@
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
   .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
+  /* tile view: art-first grid for split-screen, where a 44px thumbnail is too small to identify a card */
+  /* minmax(0,1fr) not 1fr: auto min-width lets the nowrap bid row force tiles wider than the container */
+  #results.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;align-items:start}
+  #results.grid .card{flex-direction:column;padding:6px;margin-top:0;min-width:0}
+  #results.grid .row{min-width:0}
+  #results.grid .card.open{grid-column:1/-1}
+  #results.grid .row{flex-direction:column;gap:5px}
+  #results.grid .card img{width:100%;height:auto;aspect-ratio:5/7;object-fit:contain}
+  #results.grid .nm{font-size:13px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  #results.grid .tags{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #results.grid .xtra,#results.grid .rails,#results.grid .bids .bpc{display:none}
+  #results.grid .bids{width:100%;min-width:0;display:flex;gap:4px 11px;flex-wrap:wrap;white-space:normal;text-align:left;align-self:auto}
+  #results.grid .bids .brow{display:flex;gap:3px;align-items:baseline}
+  #results.grid .bids .brow .blab{font-size:8px;margin-right:0}
+  #results.grid .bids .brow b{font-size:13px}
+  /* an opened tile spans the row and falls back to the list layout so the detail reads normally */
+  #results.grid .card.open .row{flex-direction:row;gap:9px}
+  #results.grid .card.open img{width:44px;height:62px;aspect-ratio:auto}
+  #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
+  #results.grid .card.open .tags{font-size:11px;white-space:normal}
+  #results.grid .card.open .xtra{display:inline}
+  #results.grid .card.open .rails{display:flex}
+  #results.grid .card.open .bids{width:auto;display:block;text-align:right;margin-left:auto;align-self:center}
+  #results.grid .card.open .bids .bpc{display:inline}
   .bids .brow b{font-size:15px;cursor:pointer}
   .bids .bm b{color:var(--gold)}
   .bids .bp b{color:var(--blue)}
@@ -184,6 +208,7 @@
     <button class="fpill" id="fatoggle" title="show only full-art / chase rarities, all eras">✦ Full Art only</button>
     <button class="fpill" id="promotoggle" title="show only promo cards">★ Promos</button>
     <button class="fpill" id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)">📦 Sealed</button>
+    <button class="fpill" id="viewtoggle" style="margin-left:auto" title="switch between list and big-art tiles">▦ Tiles</button>
   </div>
   <div id="stale" style="display:none"></div>
   <div id="read"></div>
@@ -2219,6 +2244,15 @@ let MODE = "";   // "" | "fa" | "bulk" | "val25" | "val50" | "promo" | "sealed" 
 let ERA = "";    // "" | "vintage" | "mid" | "modern" — orthogonal era axis, combines with MODE
 let GAME = "pkmn";
 let PRINT_HINT = "";
+// "list" = dense rows, "grid" = big-art tiles (easier to identify a card in split-screen). Sticky.
+let VIEW = "list";
+try{ VIEW = localStorage.getItem("cardcomp_view")==="grid" ? "grid" : "list"; }catch(e){}
+function setView(v){
+  VIEW = v==="grid" ? "grid" : "list";
+  try{ localStorage.setItem("cardcomp_view", VIEW); }catch(e){}
+  const rs=$("#results"); if(rs) rs.classList.toggle("grid", VIEW==="grid");
+  const b=$("#viewtoggle"); if(b){ b.textContent = VIEW==="grid" ? "☰ List" : "▦ Tiles"; paintPill(b, VIEW==="grid"); }
+}
 try{ GAME = localStorage.getItem("cardcomp_game") || "pkmn"; }catch(e){}
 const GAMES = new Set(["pkmn","lorcana","onepiece"]);
 function setGame(game){
@@ -3068,7 +3102,7 @@ function render(res, literal, newestFirst){
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
         <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><span class="bpc">${pctMkt(mb,best)}</span></div>
-        <div class="brow bp"><span class="blab">profit</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
+        <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
       <div class="row">
@@ -3076,8 +3110,8 @@ function render(res, literal, newestFirst){
         <div class="meta">
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
-            ? `<b>${r.s}</b> · 📦 ${r.kind||"sealed"}`
-            : `<b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}`}</div>
+            ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}</span>`}</div>
         </div>
         ${bidHTML}
         <div class="rails">
@@ -3089,7 +3123,9 @@ function render(res, literal, newestFirst){
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
     row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } };
     const im = el.querySelector("img");
-    if(im) im.onclick = (e)=>{ e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
+    // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
+    // once open the tile is list-shaped again and the thumbnail goes back to zooming.
+    if(im) im.onclick = (e)=>{ if(VIEW==="grid" && !el.classList.contains("open")) return; e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
     const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
     const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
@@ -3142,6 +3178,8 @@ function paintEra(){ for(const e in ERA_SEL) paintPill($(ERA_SEL[e]), ERA===e); 
   for(const m in MODE_SEL){ const el=$(MODE_SEL[m]); if(el) el.onclick=()=>{ MODE=(MODE===m)?"":m; paintToggles(); if(window.__ready) run($("#q").value); }; }
   for(const e in ERA_SEL){ const el=$(ERA_SEL[e]); if(el) el.onclick=()=>{ ERA=(ERA===e)?"":e; paintEra(); if(window.__ready) run($("#q").value); }; }
   const rb=$("#resetbtn"); if(rb) rb.onclick=()=>{ MODE=""; ERA=""; paintToggles(); paintEra(); if(window.__ready) run($("#q").value); };   // clear every result filter; leaves the typed query so a live comp isn't lost
+  const vb=$("#viewtoggle"); if(vb) vb.onclick=()=>setView(VIEW==="grid"?"list":"grid");
+  setView(VIEW);
 })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
