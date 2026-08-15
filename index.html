@@ -58,7 +58,9 @@
   .maxbid{font-size:14px;margin-bottom:11px}
   .maxbid .bidnum{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;color:var(--gold);vertical-align:-2px}
   .maxbid .mbsub{color:var(--faint);font-size:12px}
-  .condgrid{display:grid;grid-template-columns:auto auto auto auto 1fr;gap:8px 10px;font-size:13px;align-items:center}
+  .maxbid .mbpc{color:var(--dim);font-size:12px;margin-left:3px}
+  .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:8px 10px;font-size:13px;align-items:center}
+  .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
   .condgrid .mk{color:var(--dim)}
@@ -90,6 +92,7 @@
   .rail.ry{color:var(--gold);border-left:1px solid var(--line)}
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
+  .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
   .bids .brow b{font-size:15px;cursor:pointer}
   .bids .bm b{color:var(--gold)}
   .bids .bp b{color:var(--blue)}
@@ -2310,6 +2313,7 @@ function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*s
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
+function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
 function bestMarket(r){   // top printing market for the collapsed card
   const e=r&&r.px; if(!e) return 0;
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
@@ -2339,9 +2343,9 @@ function condGridHTML(prices, key, mf, year){
     const atc=base*condMult(cond, year, base);
     const bid=bidForMargin(atc, mf), net=netProceeds(listSale(atc))-bid;
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
-    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
-  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="mg h">net</span><span class="h"></span>${rows}`;
+  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
 }
 let PRICE_INDEX=null, PRICE_UPDATED="", _indexLoad=null;
 function loadIndex(){
@@ -2391,10 +2395,9 @@ function renderPrices(host, data, prices, src){
     const low=prices[sel].low;
     const yr=card?card.y:0;
     const nm=base, bid=bidForMargin(nm, mf), net=netProceeds(listSale(nm))-bid;
-    const pbid=bidForProfit(nm, td), pnet=netProceeds(listSale(nm))-pbid;
-    const ptgt=td===0?"break-even":`+$${td}`;
+    const pbid=bidForProfit(nm, td);
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b> <span class="mbsub">@ NM · margin net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}%) · profit net <b style="color:var(--green)">+$${pnet.toFixed(2)}</b> (${ptgt})${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b><span class="mbpc">${pctMkt(bid,nm," mkt")}</span> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b><span class="mbpc">${pctMkt(pbid,nm," mkt")}</span> <span class="mbsub">@ NM · net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% target)${td!==0?` · profit target +$${td}`:""}${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
@@ -2422,10 +2425,9 @@ function renderSealed(host, prices, card, tcgUrl){
     const st=buildSealedFeeTiers(wsel);
     const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low;
     const bid=bidForMargin(base, mf, st), net=netProceeds(listSale(base), st)-bid;
-    const pbid=bidForProfit(base, td, st), pnet=netProceeds(listSale(base), st)-pbid;
-    const ptgt=td===0?"break-even":`+$${td}`;
+    const pbid=bidForProfit(base, td, st);
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b> <span class="mbsub">margin net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}%) · profit net <b style="color:var(--green)">+$${pnet.toFixed(2)}</b> (${ptgt}) · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b><span class="mbpc">${pctMkt(bid,base," mkt")}</span> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b><span class="mbpc">${pctMkt(pbid,base," mkt")}</span> <span class="mbsub">net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% target)${td!==0?` · profit target +$${td}`:""} · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
     addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
@@ -2487,9 +2489,9 @@ function renderCart(){
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
       <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
-      <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
+      <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <span style="color:var(--dim);font-size:10px">${pctMkt(bid,atc)}</span> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
-  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b></span></div>`;
+  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
   $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
@@ -2997,8 +2999,8 @@ function render(res, literal, newestFirst){
     const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",15)/100) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b></div>
-        <div class="brow bp"><span class="blab">profit</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b></div>
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><span class="bpc">${pctMkt(mb,best)}</span></div>
+        <div class="brow bp"><span class="blab">profit</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
       <div class="row">
