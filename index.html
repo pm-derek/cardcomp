@@ -2328,6 +2328,14 @@ function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cos
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
+// Collector numbers are printed zero-padded ("095", "095/095") but ingest de-pads them to "95",
+// so a typed "Cynthia 095" never matched. Compare with padding stripped from both sides.
+function numMatch(cardNum, want){
+  const dp=s=>String(s==null?"":s).toLowerCase().trim().replace(/^0+(?=\d)/,"");
+  const n=dp(cardNum), w=dp(want);
+  if(!w) return true;
+  return n===w || n.startsWith(w);
+}
 // Three values per recommendation: the exact margin bid, the whole-dollar round-DOWN you would
 // actually type into Whatnot (with its own % so you can see what rounding costs you), and the
 // break-even ceiling. No round-up: past the margin bid it eats the margin, past break-even it loses.
@@ -3011,14 +3019,14 @@ function run(raw){
     if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
-    if(f.number){ const n=String(r.num).toLowerCase(); const want=String(f.number).toLowerCase(); if(n!==want && !n.startsWith(want)) return false; }
+    if(f.number && !numMatch(r.num, f.number)) return false;
     return true;
   };
   // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
   const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
     && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName)
     && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
-    && (!f.number || (String(r.num).toLowerCase()===String(f.number).toLowerCase() || String(r.num).toLowerCase().startsWith(String(f.number).toLowerCase())));
+    && (!f.number || numMatch(r.num, f.number));
 
   let res, literal=false;
   if(q){
