@@ -29,11 +29,11 @@
   #read{color:var(--blue);font-size:13px;margin:14px 2px 4px;min-height:16px}
   #read .f{color:var(--gold)}
   #status{color:var(--dim);font-size:12px;margin:6px 2px 10px}
-  .card{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:9px;margin-top:7px}
-  .card img{width:50px;height:70px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
+  .card{display:flex;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:7px;margin-top:5px}
+  .card img{width:44px;height:62px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
   .meta{min-width:0;flex:1}
-  .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:16px;line-height:1.15}
-  .tags{color:var(--dim);font-size:11.5px;margin-top:3px}
+  .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:15px;line-height:1.15}
+  .tags{color:var(--dim);font-size:11px;margin-top:2px}
   .tags b{color:var(--blue);font-weight:500}
   .attrs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
   .pill{font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
@@ -49,19 +49,25 @@
   .card img.noimg{visibility:hidden}
   .tap{color:var(--faint);font-size:11px;margin-top:8px}
   .card.open .tap{display:none}
-  .detail{display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+  .detail{display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:9px}
   .card.open .detail{display:block}
   .muted{color:var(--dim);font-size:12px;line-height:1.5}
-  .pchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-  .pchip{font-size:11px;padding:5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
+  .pchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .pchip{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
   .pchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
-  .maxbid{font-size:14px;margin-bottom:11px}
-  .maxbid .bidnum{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;color:var(--gold);vertical-align:-2px}
-  .maxbid .mbsub{color:var(--faint);font-size:12px}
-  .maxbid .mbpc{color:var(--dim);font-size:12px;margin-left:3px}
-  .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:8px 10px;font-size:13px;align-items:center}
+  .maxbid{font-size:13px;margin-bottom:9px}
+  /* three values per recommendation: exact margin bid, whole-dollar round-down, break-even ceiling */
+  .bidrow{display:flex;gap:13px;align-items:baseline;flex-wrap:wrap;margin-bottom:2px}
+  .bidrow .bcell{white-space:nowrap}
+  .bidrow .bl{color:var(--faint);font-size:9px;text-transform:uppercase;letter-spacing:.4px;margin-right:3px}
+  .bidrow .bidnum{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;color:var(--gold);vertical-align:-1px}
+  .bidrow .rnd .bidnum{color:var(--green)}
+  .bidrow .be .bidnum{color:var(--blue)}
+  .bidrow .bpct{color:var(--dim);font-size:11px;margin-left:3px}
+  .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
+  .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:6px 9px;font-size:12.5px;align-items:center}
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
-  .condgrid .h{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
+  .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
   .condgrid .mk{color:var(--dim)}
   .condgrid .bd{font-weight:700;text-align:right}
@@ -2321,6 +2327,21 @@ function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cos
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
+// Three values per recommendation: the exact margin bid, the whole-dollar round-DOWN you would
+// actually type into Whatnot (with its own % so you can see what rounding costs you), and the
+// break-even ceiling. No round-up: past the margin bid it eats the margin, past break-even it loses.
+function bidRowHTML(bid, pbid, mkt, td){
+  const fl=Math.floor(bid);
+  const cell=(lab,cls,val,dat,pct,tip)=>`<span class="bcell ${cls}" title="${tip}"><span class="bl">${lab}</span><b class="${dat!=null?"cpy ":""}bidnum"${dat!=null?` data-bid="${dat}"`:""}>${val}</b><span class="bpct">${pct}</span></span>`;
+  return `<div class="bidrow">${
+    cell("margin","",`$${bid.toFixed(2)}`,bid.toFixed(2),pctMkt(bid,mkt),"exact bid that hits your target margin")
+  }${
+    fl>=1 ? cell("round","rnd",`$${fl}`,String(fl),pctMkt(fl,mkt),"whole dollars, rounded down - what you actually type")
+          : cell("round","rnd","—",null,"under $1","no whole-dollar bid clears your margin here")
+  }${
+    cell(td===0?"b/e":"profit","be",`$${pbid.toFixed(2)}`,pbid.toFixed(2),pctMkt(pbid,mkt),td===0?"break-even: the most you can pay before losing money":`bid that nets $${td} profit`)
+  }</div>`;
+}
 function bestMarket(r){   // top printing market for the collapsed card
   const e=r&&r.px; if(!e) return 0;
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
@@ -2404,7 +2425,7 @@ function renderPrices(host, data, prices, src){
     const nm=base, bid=bidForMargin(nm, mf), net=netProceeds(listSale(nm))-bid;
     const pbid=bidForProfit(nm, td);
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b><span class="mbpc">${pctMkt(bid,nm," mkt")}</span> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b><span class="mbpc">${pctMkt(pbid,nm," mkt")}</span> <span class="mbsub">@ NM · net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% target)${td!==0?` · profit target +$${td}`:""}${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidRowHTML(bid, pbid, nm, td)+`<span class="mbsub">@ NM · net <b style="color:var(--green)">+$${net.toFixed(2)}</b> @ ${Math.round(mf*100)}%${low!=null?` · low $${low.toFixed(2)}`:""}${autoTiers()?` · ${tierLabel(yr, base)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
@@ -2434,7 +2455,7 @@ function renderSealed(host, prices, card, tcgUrl){
     const bid=bidForMargin(base, mf, st), net=netProceeds(listSale(base), st)-bid;
     const pbid=bidForProfit(base, td, st);
     const tf=thinFlag(prices[sel]);
-    mbEl.innerHTML=`margin <b class="cpy bidnum" data-bid="${bid.toFixed(2)}" title="tap to copy" style="cursor:pointer">$${bid.toFixed(2)}</b><span class="mbpc">${pctMkt(bid,base," mkt")}</span> · profit <b class="cpy bidnum" data-bid="${pbid.toFixed(2)}" title="tap to copy" style="color:var(--blue);cursor:pointer">$${pbid.toFixed(2)}</b><span class="mbpc">${pctMkt(pbid,base," mkt")}</span> <span class="mbsub">net <b style="color:var(--green)">+$${net.toFixed(2)}</b> (${Math.round(mf*100)}% target)${td!==0?` · profit target +$${td}`:""} · $${base.toFixed(2)} market${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidRowHTML(bid, pbid, base, td)+`<span class="mbsub">net <b style="color:var(--green)">+$${net.toFixed(2)}</b> @ ${Math.round(mf*100)}% · $${base.toFixed(2)} mkt${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
     addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
@@ -2801,7 +2822,10 @@ function parse(raw){
 
   let m = text.match(/\b(\d{2,3})\s*hp\b/) || text.match(/\bhp\s*(\d{2,3})\b/);
   if(m){ f.hp=+m[1]; text=text.replace(m[0]," "); }
-  m = text.match(/\b(fire|water|grass|lightning|electric|psychic|fighting|darkness|dark|metal|steel|dragon|fairy|colorless|normal)\b/);
+  // "dark" is a card-name prefix (Dark Charizard, Dark Electrode - Team Rocket), not a type shorthand.
+  // Only 30 of 168 "Dark X" cards are actually Darkness-type, so treating it as a type filter hid the rest.
+  // "darkness" still selects the type.
+  m = text.match(/\b(fire|water|grass|lightning|electric|psychic|fighting|darkness|metal|steel|dragon|fairy|colorless|normal)\b/);
   if(m){ f.type=TYPES[m[1]]; text=text.replace(m[0]," "); }
 
   if(/\bstage\s*2\b/.test(text)){ f.stage="Stage 2"; text=text.replace(/\bstage\s*2\b/g," "); }
