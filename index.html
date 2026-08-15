@@ -104,6 +104,36 @@
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
   .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
+  .bids .rounded{display:none}   /* tiles show the whole-dollar bid you actually type; list shows the exact */
+  /* tile view: art-first grid for split-screen, where a 44px thumbnail is too small to identify a card */
+  /* minmax(0,1fr) not 1fr: auto min-width lets the nowrap bid row force tiles wider than the container */
+  #results.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;align-items:start}
+  #results.grid .card{flex-direction:column;padding:6px;margin-top:0;min-width:0}
+  #results.grid .row{min-width:0}
+  #results.grid .card.open{grid-column:1/-1}
+  #results.grid .row{flex-direction:column;gap:5px}
+  /* crop to the top ~71% of the card: name + full art, which is what you recognise on stream.
+     Drops ~66px per tile versus showing the whole card, so more fit on screen. */
+  #results.grid .card img{width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;object-position:50% 0%}
+  #results.grid .nm{font-size:13px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  #results.grid .tags{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #results.grid .xtra,#results.grid .rails,#results.grid .bids .bpc,#results.grid .bids .exact{display:none}
+  #results.grid .bids .rounded{display:inline}
+  #results.grid .bids{width:100%;min-width:0;display:flex;gap:4px 11px;flex-wrap:wrap;white-space:normal;text-align:left;align-self:auto}
+  #results.grid .bids .brow{display:flex;gap:3px;align-items:baseline}
+  #results.grid .bids .brow .blab{font-size:8px;margin-right:0}
+  #results.grid .bids .brow b{font-size:13px}
+  /* an opened tile spans the row and falls back to the list layout so the detail reads normally */
+  #results.grid .card.open .row{flex-direction:row;gap:9px}
+  #results.grid .card.open img{width:44px;height:62px;aspect-ratio:auto}
+  #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
+  #results.grid .card.open .tags{font-size:11px;white-space:normal}
+  #results.grid .card.open .xtra{display:inline}
+  #results.grid .card.open .rails{display:flex}
+  #results.grid .card.open .bids{width:auto;display:block;text-align:right;margin-left:auto;align-self:center}
+  #results.grid .card.open .bids .bpc,#results.grid .card.open .bids .exact{display:inline}
+  #results.grid .card.open .bids .rounded{display:none}
+  #results.grid .card.open img{object-fit:contain;object-position:center}
   .bids .brow b{font-size:15px;cursor:pointer}
   .bids .bm b{color:var(--gold)}
   .bids .bp b{color:var(--blue)}
@@ -172,6 +202,12 @@
     </div>
     <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   </div>
+  <div id="filterbar" style="display:flex;gap:8px;margin:0 0 6px;align-items:center">
+    <button class="fpill" id="filtertoggle" title="show or hide the era and result filters">⚙ Filters</button>
+    <span id="filtersum" style="font-size:11px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="fpill" id="viewtoggle" style="margin-left:auto;flex:none" title="switch between list and big-art tiles">▦ Tiles</button>
+  </div>
+  <div id="filterwrap" style="display:none">
   <div id="erarow" style="display:flex;gap:8px;margin:0 0 6px;flex-wrap:wrap">
     <button class="fpill" id="eravintage" title="vintage: 2010 and earlier (WOTC through Platinum/HGSS)">🕰 Vintage</button>
     <button class="fpill" id="eramid" title="mid-era: 2011-2019 (Black &amp; White through Sun &amp; Moon)">Mid-era</button>
@@ -184,6 +220,7 @@
     <button class="fpill" id="fatoggle" title="show only full-art / chase rarities, all eras">✦ Full Art only</button>
     <button class="fpill" id="promotoggle" title="show only promo cards">★ Promos</button>
     <button class="fpill" id="sealedtoggle" title="show only sealed product (ETBs, boxes, UPCs…)">📦 Sealed</button>
+  </div>
   </div>
   <div id="stale" style="display:none"></div>
   <div id="read"></div>
@@ -2219,6 +2256,15 @@ let MODE = "";   // "" | "fa" | "bulk" | "val25" | "val50" | "promo" | "sealed" 
 let ERA = "";    // "" | "vintage" | "mid" | "modern" — orthogonal era axis, combines with MODE
 let GAME = "pkmn";
 let PRINT_HINT = "";
+// "list" = dense rows, "grid" = big-art tiles (easier to identify a card in split-screen). Sticky.
+let VIEW = "list";
+try{ VIEW = localStorage.getItem("cardcomp_view")==="grid" ? "grid" : "list"; }catch(e){}
+function setView(v){
+  VIEW = v==="grid" ? "grid" : "list";
+  try{ localStorage.setItem("cardcomp_view", VIEW); }catch(e){}
+  const rs=$("#results"); if(rs) rs.classList.toggle("grid", VIEW==="grid");
+  const b=$("#viewtoggle"); if(b){ b.textContent = VIEW==="grid" ? "☰ List" : "▦ Tiles"; paintPill(b, VIEW==="grid"); }
+}
 try{ GAME = localStorage.getItem("cardcomp_game") || "pkmn"; }catch(e){}
 const GAMES = new Set(["pkmn","lorcana","onepiece"]);
 function setGame(game){
@@ -3067,8 +3113,8 @@ function render(res, literal, newestFirst){
     const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",15)/100) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><span class="bpc">${pctMkt(mb,best)}</span></div>
-        <div class="brow bp"><span class="blab">profit</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>
+        <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
       <div class="row">
@@ -3076,8 +3122,8 @@ function render(res, literal, newestFirst){
         <div class="meta">
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
-            ? `<b>${r.s}</b> · 📦 ${r.kind||"sealed"}`
-            : `<b>${r.s}</b> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}`}</div>
+            ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}</span>`}</div>
         </div>
         ${bidHTML}
         <div class="rails">
@@ -3089,7 +3135,9 @@ function render(res, literal, newestFirst){
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
     row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } };
     const im = el.querySelector("img");
-    if(im) im.onclick = (e)=>{ e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
+    // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
+    // once open the tile is list-shaped again and the thumbnail goes back to zooming.
+    if(im) im.onclick = (e)=>{ if(VIEW==="grid" && !el.classList.contains("open")) return; e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
     const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
     const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
@@ -3136,12 +3184,33 @@ document.querySelectorAll("#gametoggle button").forEach(b=>b.onclick=()=>setGame
 const MODE_SEL = {bulk:"#bulktoggle", val25:"#val25toggle", val50:"#val50toggle", fa:"#fatoggle", promo:"#promotoggle", sealed:"#sealedtoggle"};
 const ERA_SEL  = {vintage:"#eravintage", mid:"#eramid", modern:"#eramodern"};
 const paintPill=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };
-function paintToggles(){ for(const m in MODE_SEL) paintPill($(MODE_SEL[m]), MODE===m); }
-function paintEra(){ for(const e in ERA_SEL) paintPill($(ERA_SEL[e]), ERA===e); }
+function paintToggles(){ for(const m in MODE_SEL) paintPill($(MODE_SEL[m]), MODE===m); paintFilterSum(); }
+function paintEra(){ for(const e in ERA_SEL) paintPill($(ERA_SEL[e]), ERA===e); paintFilterSum(); }
+// The filter rows are ~2/5 of the header and never change mid-auction, so they collapse. Whatever is
+// active is echoed on the bar, otherwise a filter could silently hide a card during a live comp.
+const MODE_LABEL={bulk:"Hide bulk",val25:"$25+",val50:"$50+",fa:"Full Art",promo:"Promos",sealed:"Sealed"};
+const ERA_LABEL={vintage:"Vintage",mid:"Mid-era",modern:"Modern"};
+function paintFilterSum(){
+  const on=[ERA?ERA_LABEL[ERA]:null, MODE?MODE_LABEL[MODE]:null].filter(Boolean);
+  const s=$("#filtersum"); if(s) s.textContent=on.join(" · ");
+  paintPill($("#filtertoggle"), on.length>0);
+}
+function setFilters(open){
+  const w=$("#filterwrap"); if(w) w.style.display=open?"block":"none";
+  try{ localStorage.setItem("cardcomp_filtersopen", open?"1":"0"); }catch(e){}
+  const b=$("#filtertoggle"); if(b) b.textContent=open?"⚙ Hide":"⚙ Filters";
+  paintFilterSum();
+}
 (function(){
   for(const m in MODE_SEL){ const el=$(MODE_SEL[m]); if(el) el.onclick=()=>{ MODE=(MODE===m)?"":m; paintToggles(); if(window.__ready) run($("#q").value); }; }
   for(const e in ERA_SEL){ const el=$(ERA_SEL[e]); if(el) el.onclick=()=>{ ERA=(ERA===e)?"":e; paintEra(); if(window.__ready) run($("#q").value); }; }
   const rb=$("#resetbtn"); if(rb) rb.onclick=()=>{ MODE=""; ERA=""; paintToggles(); paintEra(); if(window.__ready) run($("#q").value); };   // clear every result filter; leaves the typed query so a live comp isn't lost
+  const vb=$("#viewtoggle"); if(vb) vb.onclick=()=>setView(VIEW==="grid"?"list":"grid");
+  setView(VIEW);
+  const ft=$("#filtertoggle");
+  let fopen=false; try{ fopen=localStorage.getItem("cardcomp_filtersopen")==="1"; }catch(e){}
+  if(ft) ft.onclick=()=>setFilters($("#filterwrap").style.display==="none");
+  setFilters(fopen);
 })();
 setLang((()=>{ try{ return localStorage.getItem("cardcomp_lang"); }catch(e){ return null; } })()||"en", true);
 loadCart(); renderCart();
