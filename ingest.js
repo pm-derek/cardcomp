@@ -93,6 +93,11 @@ function bestPrice(px){
   for (const k in px){ const v = px[k]; const p = (v.m != null ? v.m : v.l) || 0; if (p > best) best = p; }
   return best;
 }
+// normalised product/card name for matching: no accents, no punctuation, collapsed spaces
+function pname(x){
+  return String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+}
 function num0(s){
   let n = String(s).split("/")[0].trim().replace(/^SVP/i, "");
   if (/^\d+$/.test(n)) n = String(parseInt(n, 10));     // 029 -> 29
@@ -220,7 +225,12 @@ async function englishCards(){
           for (const k in px) card.px[prefix + k] = px[k];
           if (!card.pid) card.pid = p.productId;
         } else {                                // the base product
-          card.pid = p.productId;
+          // Several products in a group can share a collector number (a later re-release, a
+          // prerelease variant...). Last-writer-wins sent Base Set Charizard's link to product
+          // 657516 while every other Base card sits at 42xxx. Prefer the product whose name IS
+          // the card name; otherwise keep the first one seen instead of letting a stray win.
+          const exact = pname(p.cleanName || name) === pname(card.n);
+          if (card.pid == null || (exact && !card._pidExact)) { card.pid = p.productId; card._pidExact = exact; }
           card.px = Object.assign(px, card.px || {});   // keep any variant printings already attached
         }
         enr++;
@@ -324,6 +334,15 @@ const lorcanaCards = () => gameCards("Lorcana", "lorcana", "lc");
   if (INCLUDE_ONEPIECE) all = all.concat(await gameCards("One Piece", "onepiece", "op"));
 
   const kept = all.filter(c => c.px && bestPrice(c.px) >= FLOOR);
+  // The TCGplayer link is only as good as the product id, so say out loud how many joined cards
+  // ended up on a product whose name is not the card name. Those are the ones that can open a
+  // weird variant. Then drop the bookkeeping flag so it never reaches data.json.
+  const joined = kept.filter(c => c.pid && !/^(tc|jp|lc|op|sl):/.test(c.id));
+  const loose = joined.filter(c => !c._pidExact);
+  console.log(`\nlink audit: ${joined.length} joined cards with a product id · ${loose.length} whose product name is not an exact match`);
+  for (const c of loose.slice(0, 25)) console.log(`   ? ${c.s} #${c.num} ${c.n} -> product ${c.pid}`);
+  if (loose.length > 25) console.log(`   …and ${loose.length - 25} more`);
+  for (const c of all) delete c._pidExact;
   const en  = kept.filter(c => (c.game||"pkmn")==="pkmn" && c.lang === "en").length;
   const jp  = kept.filter(c => (c.game||"pkmn")==="pkmn" && c.lang === "jp").length;
   const lor = kept.filter(c => c.game === "lorcana").length;

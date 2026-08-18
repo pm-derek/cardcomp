@@ -2530,6 +2530,22 @@ function renderPrices(host, data, prices, src){
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(nm));
     mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    // the collapsed row above shows this card's bids; keep it on the printing actually selected,
+    // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
+    const cardEl=host.closest?host.closest(".card"):null;
+    if(cardEl){
+      const put=(selr,val,mkt)=>{
+        const rowEl=cardEl.querySelector(selr); if(!rowEl) return;
+        const ex=rowEl.querySelector(".exact"), rd=rowEl.querySelector(".rounded"), pc=rowEl.querySelector(".bpc"), b=rowEl.querySelector("b");
+        const fl=Math.floor(val);
+        if(ex){ ex.textContent="$"+val.toFixed(2); ex.dataset.bid=val.toFixed(2); }
+        else if(b){ b.textContent="$"+val.toFixed(2); b.dataset.bid=val.toFixed(2); }
+        if(rd){ rd.textContent=fl>=1?"$"+fl:"$"+val.toFixed(2); rd.dataset.bid=fl>=1?String(fl):val.toFixed(2); }
+        if(pc) pc.textContent=pctMkt(val,mkt);
+      };
+      put(".bids .bm", bid, nm);
+      put(".bids .bp", pbid, nm);
+    }
     const u=tcgProductUrl(pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid);
