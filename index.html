@@ -2397,6 +2397,15 @@ function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*s
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
+// TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
+// would open showing Unlimited and look like the wrong card. Carry the printing in the URL.
+const TCG_PRINTINGS=new Set(["Normal","Holofoil","Reverse Holofoil","1st Edition","Unlimited","1st Edition Holofoil","Unlimited Holofoil","Foil","Cold Foil"]);
+function tcgProductUrl(pid, printing){
+  if(!pid) return "";
+  let u="https://www.tcgplayer.com/product/"+pid;
+  if(printing && TCG_PRINTINGS.has(printing)) u+="?Language=English&Printing="+encodeURIComponent(printing);
+  return u;
+}
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
 // Collector numbers are printed zero-padded ("095", "095/095") but ingest de-pads them to "95",
 // so a typed "Cynthia 095" never matched. Compare with padding stripped from both sides.
@@ -2501,12 +2510,11 @@ function renderPrices(host, data, prices, src){
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
   const upd=(data.tcgplayer&&data.tcgplayer.updatedAt)||"";
   const pid=data.pid||null;
-  const tcgUrl=pid?("https://www.tcgplayer.com/product/"+pid):((data.tcgplayer&&data.tcgplayer.url)||"");
+  const fallbackUrl=(data.tcgplayer&&data.tcgplayer.url)||"";
   const card=data.card||null;
-  if(card && card.sealed){ return renderSealed(host, prices, card, tcgUrl); }
-  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
-  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid");
+  if(card && card.sealed){ return renderSealed(host, prices, card, pid); }
+  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div><div class="tcglink" style="margin:9px 0 2px"></div>`;
+  const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
   const draw=()=>{
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
@@ -2516,6 +2524,8 @@ function renderPrices(host, data, prices, src){
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(nm));
     mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    const u=tcgProductUrl(pid, sel)||fallbackUrl;
+    lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
@@ -2525,7 +2535,7 @@ function renderPrices(host, data, prices, src){
   draw();
 }
 const SEALED_WLABEL = { S:"S · ≤1lb", M:"M · ETB/box", L:"L · 2ETB/3box", XL:"XL · case" };
-function renderSealed(host, prices, card, tcgUrl){
+function renderSealed(host, prices, card, pid){
   const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
@@ -2537,8 +2547,8 @@ function renderSealed(host, prices, card, tcgUrl){
     <div class="maxbid"></div>
     <div class="muted" style="font-size:12px;margin-top:2px">sealed${card.kind?` · ${card.kind}`:""}</div>
     <div class="sealadd" style="margin-top:9px"></div>
-    ${tcgUrl?`<div style="margin:9px 0 2px"><a href="${tcgUrl}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a></div>`:""}`;
-  const chipsEl=host.querySelector(".pchips"), wEl=host.querySelector(".wchips"), mbEl=host.querySelector(".maxbid"), addEl=host.querySelector(".sealadd");
+    <div class="tcglink" style="margin:9px 0 2px"></div>`;
+  const chipsEl=host.querySelector(".pchips"), wEl=host.querySelector(".wchips"), mbEl=host.querySelector(".maxbid"), addEl=host.querySelector(".sealadd"), lnkEl=host.querySelector(".tcglink");
   const draw=()=>{
     const st=buildSealedFeeTiers(wsel);
     const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low;
@@ -2548,6 +2558,8 @@ function renderSealed(host, prices, card, tcgUrl){
     const np=netProceeds(listSale(base), st);
     mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
+    const u=tcgProductUrl(pid, sel);
+    lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:"";
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
     addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
   };
