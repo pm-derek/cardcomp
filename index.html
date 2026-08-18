@@ -70,6 +70,8 @@
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
+  .condgrid .clink{text-decoration:underline dotted;text-underline-offset:2px}
+  .condgrid .carr{font-size:8px;opacity:.6;vertical-align:1px}
   .condgrid .mk{color:var(--dim)}
   .condgrid .bd{font-weight:700;text-align:right}
   .condgrid .mg{font-weight:600;text-align:right}
@@ -2400,11 +2402,13 @@ function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), 
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
 // would open showing Unlimited and look like the wrong card. Carry the printing in the URL.
 const TCG_PRINTINGS=new Set(["Normal","Holofoil","Reverse Holofoil","1st Edition","Unlimited","1st Edition Holofoil","Unlimited Holofoil","Foil","Cold Foil"]);
-function tcgProductUrl(pid, printing){
+const TCG_COND={NM:"Near Mint",LP:"Lightly Played",MP:"Moderately Played",HP:"Heavily Played",DMG:"Damaged"};
+function tcgProductUrl(pid, printing, cond){
   if(!pid) return "";
-  let u="https://www.tcgplayer.com/product/"+pid;
-  if(printing && TCG_PRINTINGS.has(printing)) u+="?Language=English&Printing="+encodeURIComponent(printing);
-  return u;
+  const q=["Language=English"];
+  if(printing && TCG_PRINTINGS.has(printing)) q.push("Printing="+encodeURIComponent(printing));
+  if(cond && TCG_COND[cond]) q.push("Condition="+encodeURIComponent(TCG_COND[cond]));
+  return "https://www.tcgplayer.com/product/"+pid+"?"+q.join("&");
 }
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
 // Collector numbers are printed zero-padded ("095", "095/095") but ingest de-pads them to "95",
@@ -2463,13 +2467,15 @@ function thinFlag(pr){   // flag a bid built on shaky price data
   if(l!=null && l < m*0.5) return "wide spread";                    // volatile / thin liquidity
   return "";
 }
-function condGridHTML(prices, key, mf, year){
+function condGridHTML(prices, key, mf, year, pid){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
   const rows=CONDS.map(cond=>{
     const atc=base*condMult(cond, year, base);
     const bid=bidForMargin(atc, mf), net=netProceeds(listSale(atc))-bid;
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
-    return `<span class="c" style="color:${col}">${cond}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    const cu=tcgProductUrl(pid, key, cond);
+    const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
 }
@@ -2526,7 +2532,7 @@ function renderPrices(host, data, prices, src){
     mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     const u=tcgProductUrl(pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
-    cgEl.innerHTML=condGridHTML(prices, sel, mf, yr);
+    cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
   };
