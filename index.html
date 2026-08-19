@@ -210,13 +210,15 @@
         <button class="tgl" data-lang="jp">JP</button>
       </div>
     </div>
-    <div class="flagstrip idle" id="flagstrip">
-      <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
-      <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
-      <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
-    </div>
-    <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   </div>
+  <!-- outside the sticky row on purpose: pinning these cost ~44px of a ~315px split-screen viewport,
+       and an opened card carries its own good/ok/bad strip, so flagging is still one tap away -->
+  <div class="flagstrip idle" id="flagstrip">
+    <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
+    <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
+    <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
+  </div>
+  <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   <div id="filterbar" style="display:flex;gap:8px;margin:0 0 6px;align-items:center">
     <button class="fpill" id="filtertoggle" title="show or hide the era and result filters">⚙ Filters</button>
     <span id="filtersum" style="font-size:11px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -3191,7 +3193,10 @@ function render(res, literal, newestFirst){
       </div>
       <div class="detail"></div>`;
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } };
+    // Opening a tile expanded it in place, so a card in the second row put the bid table below the
+    // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
+    // Anchoring on the card's top is height-independent, so it works before the detail has painted.
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.
