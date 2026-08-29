@@ -70,6 +70,21 @@
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
+  /* slab panel */
+  .modesw{display:flex;gap:5px;margin-bottom:7px}
+  .msw{font-family:inherit;font-size:11px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer}
+  .msw.on{border-color:var(--blue);color:var(--ink);background:rgba(90,160,255,.12)}
+  .gchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:7px}
+  .gchip{font-size:11px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
+  .gchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
+  .gsep{width:1px;height:15px;background:var(--line);margin:0 2px}
+  .comprow{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .comprow .clab{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px}
+  .comprow .compin{width:96px;background:var(--bg);border:1px solid var(--gold);color:var(--ink);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:15px;outline:none}
+  .comprow .soldlink{color:var(--gold);font-size:11px;text-decoration:none;margin-left:auto;white-space:nowrap}
+  .slabsub{color:var(--faint);font-size:10.5px;line-height:1.45;margin-top:2px}
+  .sladdwrap{margin-top:9px}
+  .sladd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px;font-family:inherit}
   .condgrid .clink{text-decoration:underline dotted;text-underline-offset:2px}
   .condgrid .carr{font-size:8px;opacity:.6;vertical-align:1px}
   .condgrid .mk{color:var(--dim)}
@@ -175,6 +190,10 @@
       <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="15"></label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
       <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
+      <label>eBay fee % (slabs)<input id="cfg-ebayfee" type="number" value="13.25"></label>
+      <label>eBay per-order $<input id="cfg-ebayflat" type="number" value="0.40"></label>
+      <label>slab shipping $<input id="cfg-ebayship" type="number" value="6.00"></label>
+      <label>promoted ad %<input id="cfg-ebayad" type="number" value="0"></label>
       <label>pokemontcg.io API key<input id="cfg-apikey" type="text" placeholder="optional · faster"></label>
     </div>
     <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">Fees &amp; shipping are modeled from verified TCGplayer rates (commission, txn, PWE/tracked postage, thresholds) — no longer manual.</div>
@@ -2451,6 +2470,27 @@ function bestMarket(r){   // top printing market for the collapsed card
 }
 function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, getNum("tgtmargin",15)/100) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
+
+/* ---------- slabs: a separate exit (eBay), so a separate fee model ----------
+   Deliberately parallel to the raw math rather than layered on it. Raw sells on TCGplayer with a
+   piecewise shipping ladder; a slab sells on eBay at a flat rate, always ships in a mailer, and the
+   comp is an achieved sold price, so listSale()'s "you list above market" markup must NOT apply.
+   Nothing here touches netProceeds / bidForMargin / bidForProfit / FEE_TIERS. */
+function slabFees(){ return { r:getNum("ebayfee",13.25)/100, flat:getNum("ebayflat",0.40), ship:getNum("ebayship",6), ad:getNum("ebayad",0)/100 }; }
+function slabNet(sale){                       // what a slab sale actually puts in your pocket
+  if(!(sale>0)) return 0;
+  const f=slabFees();
+  const fvf = sale*(1+FEES.effTaxRate)*f.r;   // eBay charges the final value fee on item + tax
+  const order = sale>=10 ? f.flat : 0.30;     // per-order fee, lower under $10
+  return sale - fvf - order - sale*f.ad - f.ship;
+}
+function slabBidForMargin(comp, mf){ const np=slabNet(comp); return np>0 ? np/(1+mf) : 0; }
+function slabBidForProfit(comp, d){ const np=slabNet(comp); return Math.max(0, np - d); }
+const SLAB_GRADES={ PSA:["10","9","8","7"], CGC:["10","9.5","9","8"], BGS:["10","9.5","9","8.5"] };
+function ebaySoldUrl(card, company, grade){   // real sold comps, no API and no estimate to trust
+  const q=[card.n, card.s, company, grade].filter(Boolean).join(" ");
+  return "https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(q)+"&LH_Sold=1&LH_Complete=1";
+}
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
@@ -2509,6 +2549,69 @@ async function loadPrices(card, host){
   }
   addDetailFlags(host, card);
 }
+// Slab panel: sticky Raw|Slab switch, company x grade chips, a comp you can read off eBay solds,
+// and the same bid table fed eBay fee math. Self-contained; touches no raw state.
+let SLABMODE=false, SLAB_CO="PSA", SLAB_GR="10";
+try{ SLABMODE=localStorage.getItem("cardcomp_slabmode")==="1";
+     SLAB_CO=localStorage.getItem("cardcomp_slabco")||"PSA";
+     SLAB_GR=localStorage.getItem("cardcomp_slabgr")||"10"; }catch(e){}
+function slabSave(){ try{ localStorage.setItem("cardcomp_slabmode",SLABMODE?"1":"0");
+  localStorage.setItem("cardcomp_slabco",SLAB_CO); localStorage.setItem("cardcomp_slabgr",SLAB_GR); }catch(e){} }
+function buildSlabPanel(host, card, mf, td){
+  const wrap=host.querySelector(".slabwrap"), raw=host.querySelector(".rawwrap");
+  if(!wrap||!raw) return;
+  if(!SLAB_GRADES[SLAB_CO]) SLAB_CO="PSA";
+  if(!SLAB_GRADES[SLAB_CO].includes(SLAB_GR)) SLAB_GR=SLAB_GRADES[SLAB_CO][0];
+  wrap.innerHTML=`<div class="gchips"></div>
+    <div class="comprow"><span class="clab">comp $</span><input class="compin" type="number" inputmode="decimal" step="0.01" placeholder="0.00"><a class="soldlink" target="_blank" rel="noopener">eBay solds ↗</a></div>
+    <div class="slabbid"></div>
+    <div class="slabsub"></div>
+    <div class="sladdwrap"><button class="sladd">+ add to cart</button></div>`;
+  const gEl=wrap.querySelector(".gchips"), inEl=wrap.querySelector(".compin"),
+        lkEl=wrap.querySelector(".soldlink"), bidEl=wrap.querySelector(".slabbid"),
+        subEl=wrap.querySelector(".slabsub"), addEl=wrap.querySelector(".sladd");
+  const paintChips=()=>{
+    gEl.innerHTML=Object.keys(SLAB_GRADES).map(c=>`<span class="gchip co${c===SLAB_CO?" on":""}" data-co="${c}">${c}</span>`).join("")+
+      `<span class="gsep"></span>`+
+      SLAB_GRADES[SLAB_CO].map(g=>`<span class="gchip gr${g===SLAB_GR?" on":""}" data-gr="${g}">${g}</span>`).join("");
+    gEl.querySelectorAll("[data-co]").forEach(x=>x.onclick=e=>{ e.stopPropagation(); SLAB_CO=x.dataset.co;
+      if(!SLAB_GRADES[SLAB_CO].includes(SLAB_GR)) SLAB_GR=SLAB_GRADES[SLAB_CO][0]; slabSave(); paintChips(); drawSlab(); });
+    gEl.querySelectorAll("[data-gr]").forEach(x=>x.onclick=e=>{ e.stopPropagation(); SLAB_GR=x.dataset.gr; slabSave(); paintChips(); drawSlab(); });
+  };
+  const drawSlab=()=>{
+    lkEl.href=ebaySoldUrl(card, SLAB_CO, SLAB_GR);
+    const comp=parseFloat(inEl.value)||0;
+    const f=slabFees();
+    if(comp>0){
+      const np=slabNet(comp), bid=slabBidForMargin(comp, mf), pbid=slabBidForProfit(comp, td);
+      bidEl.innerHTML=bidTableHTML(np, bid, pbid, comp, td);
+      bidEl.querySelectorAll(".cpy").forEach(el=>el.onclick=e=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
+      addEl.style.display="";
+    } else {
+      bidEl.innerHTML=`<div class="muted" style="font-size:12px">tap eBay solds, read the median for ${SLAB_CO} ${SLAB_GR}, type it above</div>`;
+      addEl.style.display="none";
+    }
+    subEl.textContent=`${SLAB_CO} ${SLAB_GR} · eBay ${(f.r*100).toFixed(2)}% + $${f.flat.toFixed(2)} · ship $${f.ship.toFixed(2)}`+(f.ad>0?` · ad ${(f.ad*100).toFixed(1)}%`:"");
+  };
+  inEl.oninput=drawSlab;
+  inEl.onclick=e=>e.stopPropagation();
+  addEl.onclick=e=>{ e.stopPropagation();
+    const comp=parseFloat(inEl.value)||0; if(!(comp>0)) return;
+    addToCart({id:card.id+"|"+SLAB_CO+SLAB_GR, n:card.n, s:card.s, printing:`${SLAB_CO} ${SLAB_GR}`, market:comp,
+      cond:null, y:card.y, slab:true, comp:comp, company:SLAB_CO, grade:SLAB_GR,
+      lang:card.lang||"en", game:card.game||"pkmn"});
+    addEl.textContent="✓ added"; setTimeout(()=>{ addEl.textContent="+ add to cart"; },900); };
+  // the switch: raw and slab are shown/hidden, never merged
+  const applyMode=()=>{
+    raw.style.display=SLABMODE?"none":"";
+    wrap.style.display=SLABMODE?"block":"none";
+    host.querySelectorAll(".msw").forEach(b=>b.classList.toggle("on", (b.dataset.m==="slab")===SLABMODE));
+    if(SLABMODE) drawSlab();
+  };
+  host.querySelectorAll(".msw").forEach(b=>b.onclick=e=>{ e.stopPropagation(); SLABMODE=(b.dataset.m==="slab"); slabSave(); applyMode(); });
+  paintChips(); applyMode();
+}
+
 function renderPrices(host, data, prices, src){
   const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
@@ -2519,8 +2622,13 @@ function renderPrices(host, data, prices, src){
   const fallbackUrl=(data.tcgplayer&&data.tcgplayer.url)||"";
   const card=data.card||null;
   if(card && card.sealed){ return renderSealed(host, prices, card, pid); }
-  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div><div class="tcglink" style="margin:9px 0 2px"></div>`;
+  // Raw markup is unchanged and simply wrapped, so every existing selector and handler below still
+  // resolves. The slab panel is a hidden sibling: raw never reads it and it never feeds raw.
+  host.innerHTML=`<div class="modesw"><button class="msw" data-m="raw">Raw</button><button class="msw" data-m="slab">Slab</button></div>`+
+    `<div class="rawwrap"><div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div><div class="tcglink" style="margin:9px 0 2px"></div></div>`+
+    `<div class="slabwrap" style="display:none"></div>`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
+  if(card) buildSlabPanel(host, card, mf, td);
   const draw=()=>{
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
@@ -2608,7 +2716,8 @@ function openFromCart(item){
   // Reopen by id, not by re-searching the name. Promo/standalone names embed the collector
   // number (e.g. "Cyndaquil 047"); the parser turns that into a number filter but the stored
   // num is de-padded ("47"), so it never matches and the card vanishes. We already hold the id.
-  const card = CARDS.find(c=>c.id===item.id);
+  const baseId = String(item.id||"").split("|")[0];   // slab rows are "<cardId>|PSA10"
+  const card = CARDS.find(c=>c.id===baseId);
   // Restore the game/lang the card lives in, else a browse from the wrong game/lang shows nothing.
   const g = (card&&card.game) || item.game || (String(item.id||"").startsWith("lc:")?"lorcana":String(item.id||"").startsWith("op:")?"onepiece":"pkmn");
   const l = (card&&card.lang) || item.lang || "en";
@@ -2621,7 +2730,7 @@ function openFromCart(item){
   if(card){ $("#read").innerHTML=""; render([{...card, score:1}], false, true); }   // deterministic: draw just this card
   else { run(item.n||""); }   // card gone from catalog: fall back to name search
   requestAnimationFrame(()=>{
-    const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===item.id);
+    const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===baseId);
     if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
     SUPPRESS_LOG=false;
   });
@@ -2633,15 +2742,19 @@ function renderCart(){
   const mf=getNum("tgtmargin",15)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
-    const sealed = it.sealed || String(it.id||"").startsWith("sl:");
-    const cond = sealed ? "sealed" : (it.cond||"NM");
-    const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
+    // a slab exits on eBay, so it must not be priced with the TCGplayer ladder or the cart total
+    // silently mixes two fee models. Raw and sealed rows are untouched.
+    const slab = !!it.slab;
+    const sealed = !slab && (it.sealed || String(it.id||"").startsWith("sl:"));
+    const cond = slab ? "" : sealed ? "sealed" : (it.cond||"NM");   // slab grade already rides in `printing`
+    const atc = slab ? (it.comp||it.market) : sealed ? it.market : it.market*condMult(cond, it.y, it.market);
     const tiers = sealed ? buildSealedFeeTiers(it.wtier||"M") : undefined;   // sealed uses its picked weight postage
-    const bid=bidForMargin(atc, mf, tiers); totMkt+=atc; totBid+=bid;
+    const bid = slab ? slabBidForMargin(atc, mf) : bidForMargin(atc, mf, tiers);
+    totMkt+=atc; totBid+=bid;
     const pk = (it.game||"pkmn")==="pkmn";
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
-      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
+      <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)}${cond?" · "+cond:""} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <span style="color:var(--dim);font-size:10px">${pctMkt(bid,atc)}</span> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
   $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
