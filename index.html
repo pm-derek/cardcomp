@@ -82,6 +82,7 @@
   .comprow .clab{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px}
   .comprow .compin{width:96px;background:var(--bg);border:1px solid var(--gold);color:var(--ink);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:15px;outline:none}
   .comprow .soldlink{color:var(--gold);font-size:11px;text-decoration:none;margin-left:auto;white-space:nowrap}
+  .comprow .pclink{color:var(--blue);font-size:11px;text-decoration:none;white-space:nowrap}
   .slabsub{color:var(--faint);font-size:10.5px;line-height:1.45;margin-top:2px}
   .sladdwrap{margin-top:9px}
   .sladd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px;font-family:inherit}
@@ -2487,9 +2488,24 @@ function slabNet(sale){                       // what a slab sale actually puts 
 function slabBidForMargin(comp, mf){ const np=slabNet(comp); return np>0 ? np/(1+mf) : 0; }
 function slabBidForProfit(comp, d){ const np=slabNet(comp); return Math.max(0, np - d); }
 const SLAB_GRADES={ PSA:["10","9","8","7"], CGC:["10","9.5","9","8"], BGS:["10","9.5","9","8.5"] };
+// Name + set alone was too loose: "Umbreon ex Prismatic Evolutions PSA 10" pulls every Umbreon in
+// the set. The collector number is the token that pins it. Punctuation is stripped because eBay
+// titles never carry a set's colon ("SM7: Sky-Splitting Charisma"), and a colon zeroed the search.
+function slabQuery(card, company, grade){
+  const clean=s=>String(s||"").replace(/[^\w\s&.-]+/g," ").replace(/\s+/g," ").trim();
+  const num=String(card.num||"");
+  const name=clean(card.n);
+  const parts=[name, clean(card.s)];
+  if(num && !new RegExp("\\b"+num+"\\b").test(name)) parts.push(num);   // JP names often embed it already
+  if((card.lang||"en")==="jp") parts.push("Japanese");
+  parts.push(company, grade);
+  return parts.filter(Boolean).join(" ");
+}
 function ebaySoldUrl(card, company, grade){   // real sold comps, no API and no estimate to trust
-  const q=[card.n, card.s, company, grade].filter(Boolean).join(" ");
-  return "https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(q)+"&LH_Sold=1&LH_Complete=1";
+  return "https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(slabQuery(card,company,grade))+"&LH_Sold=1&LH_Complete=1";
+}
+function priceChartingUrl(card, company, grade){   // you cross-reference this, so it is one tap too
+  return "https://www.pricecharting.com/search-products?type=prices&q="+encodeURIComponent(slabQuery(card,company,grade));
 }
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2563,12 +2579,12 @@ function buildSlabPanel(host, card, mf, td){
   if(!SLAB_GRADES[SLAB_CO]) SLAB_CO="PSA";
   if(!SLAB_GRADES[SLAB_CO].includes(SLAB_GR)) SLAB_GR=SLAB_GRADES[SLAB_CO][0];
   wrap.innerHTML=`<div class="gchips"></div>
-    <div class="comprow"><span class="clab">comp $</span><input class="compin" type="number" inputmode="decimal" step="0.01" placeholder="0.00"><a class="soldlink" target="_blank" rel="noopener">eBay solds ↗</a></div>
+    <div class="comprow"><span class="clab">comp $</span><input class="compin" type="number" inputmode="decimal" step="0.01" placeholder="0.00"><a class="soldlink" target="_blank" rel="noopener">eBay ↗</a><a class="pclink" target="_blank" rel="noopener">PriceCharting ↗</a></div>
     <div class="slabbid"></div>
     <div class="slabsub"></div>
     <div class="sladdwrap"><button class="sladd">+ add to cart</button></div>`;
   const gEl=wrap.querySelector(".gchips"), inEl=wrap.querySelector(".compin"),
-        lkEl=wrap.querySelector(".soldlink"), bidEl=wrap.querySelector(".slabbid"),
+        lkEl=wrap.querySelector(".soldlink"), pcEl=wrap.querySelector(".pclink"), bidEl=wrap.querySelector(".slabbid"),
         subEl=wrap.querySelector(".slabsub"), addEl=wrap.querySelector(".sladd");
   const paintChips=()=>{
     gEl.innerHTML=Object.keys(SLAB_GRADES).map(c=>`<span class="gchip co${c===SLAB_CO?" on":""}" data-co="${c}">${c}</span>`).join("")+
@@ -2580,6 +2596,7 @@ function buildSlabPanel(host, card, mf, td){
   };
   const drawSlab=()=>{
     lkEl.href=ebaySoldUrl(card, SLAB_CO, SLAB_GR);
+    if(pcEl) pcEl.href=priceChartingUrl(card, SLAB_CO, SLAB_GR);
     const comp=parseFloat(inEl.value)||0;
     const f=slabFees();
     if(comp>0){
