@@ -80,6 +80,43 @@ Bids **copy to clipboard as whole dollars, floored** (`Math.floor`) — Whatnot 
 
 Each condition row and the collapsed card also show the **net $ profit** at that bid. `thinFlag()` marks bids built on shaky price data (no market, low-listing-only, or wide spread).
 
+## Slabs (Raw | Slab switch in the opened card)
+
+Slabs exit on **eBay**, raw exits on TCGplayer. Two fee models, kept deliberately separate:
+
+```
+slabNet(sale) = sale - sale*(1+tax)*fvf - orderFee - sale*ad - shipping
+```
+
+`slabNet` / `slabBidForMargin` / `slabBidForProfit` are parallel to the raw functions and must stay
+that way. They intentionally do **not** call `listSale()`: an eBay comp is an achieved sold price,
+and marking it up the way we mark up a TCGplayer listing overstates every slab bid. Defaults are
+settings-driven (`cfg-ebayfee` 13.25, `cfg-ebayflat` 0.40, `cfg-ebayship` 6.00, `cfg-ebayad` 0).
+
+Cart rows carry `slab:true` plus company/grade/comp and price with eBay math. A mixed cart must
+never blend the two models.
+
+### Grading company is not a detail (measured, 2026-08)
+
+Base Set Charizard, same card, same grade, read off eBay solds:
+
+| | PSA 9 | CGC 9 |
+|---|---|---|
+| sold range | $3,000-3,200 | $1,500-1,600 |
+
+**CGC trades near 50% of PSA**, not the 10-20% the market commentary claims. Any price source that
+reports a company-agnostic "grade 9" is therefore off by ~2x for half of what Derek buys.
+PriceCharting says as much in its own disclaimer: its graded values assume PSA or BGS and "grades
+from other companies could be worth much less." So PriceCharting is usable for PSA/BGS and **not**
+for CGC. Do not pre-bake a blended grade field.
+
+### Slab comp queries
+
+`slabQuery()` builds name + set + collector number + (Japanese) + company + grade. All three of
+those extra tokens were added after live testing: name + set alone pulled every Umbreon in
+Prismatic Evolutions, and a set colon ("SM7: Sky-Splitting Charisma") zeroed the search. eBay solds
+and PriceCharting both get a link because Derek cross-references them.
+
 ## Full-art / chase toggle: isChase()
 
 Per-game classification:
