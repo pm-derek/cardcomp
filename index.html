@@ -2894,7 +2894,7 @@ function isPromo(c){
   if(g==="lorcana")  return r==="Promo";
   return r==="Promo" || /promo/i.test(s);
 }
-const SET_NICK = {"prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
+const SET_NICK = {"30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 // EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
 const EN_TO_JP = {
  "151":["sv2a"],"scarlet & violet":["sv1s","sv1v"],"paldea evolved":["sv2d","sv2p"],
@@ -2944,8 +2944,8 @@ function parse(raw){
   // reserved 2-char tokens a set code must never hijack: rarity shorthands + card mechanics (ex->Expedition code "EX", gx)
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
-  if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
-  if(!f.setName){ for(const nm of SET_NAMES){ if(NAMESET.has(nm.toLowerCase())) continue; const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9 ]/g,".")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }   // skip set names that are also a Pokémon (e.g. "Arceus"): treat the word as the card, not the set, so "arceus vstar" searches the Pokémon
+  if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().replace(/[^a-z0-9]+/g," ").split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
+  if(!f.setName){ for(const nm of SET_NAMES){ if(NAMESET.has(nm.toLowerCase())) continue; const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/ /g,"[^a-z0-9]+")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }   // skip set names that are also a Pokémon (e.g. "Arceus"): treat the word as the card, not the set, so "arceus vstar" searches the Pokémon
 
   let m = text.match(/\b(\d{2,3})\s*hp\b/) || text.match(/\bhp\s*(\d{2,3})\b/);
   if(m){ f.hp=+m[1]; text=text.replace(m[0]," "); }
@@ -2965,7 +2965,7 @@ function parse(raw){
   const SUB = [[/\bbaby\b/,"Baby"],[/\bgold star\b|\bstar\b/,"Star"],[/\bbreak\b/,"BREAK"],[/\bancient\b/,"Ancient"],[/\bfuture\b/,"Future"],[/\bmega\b/,"MEGA"],[/\bgx\b/,"GX"],[/\bprism star\b|\bprism\b/,"Prism Star"],[/\btag team\b/,"TAG TEAM"],[/\bultra beast\b|\bub\b/,"Ultra Beast"],[/\bsingle strike\b/,"Single Strike"],[/\brapid strike\b/,"Rapid Strike"],[/\bfusion( strike)?\b/,"Fusion"]];
   for(const [re,st] of SUB){ if(re.test(text)){ f.subtype=st; text=text.replace(re," "); break; } }
 
-  if(/\b(vintage|wotc|old|classic)\b/.test(text)){ f.eraMax=2003; text=text.replace(/\b(vintage|wotc|old|classic)\b/g," "); }
+  if(/\b(vintage|wotc|old|classic(?!\s+collection))\b/.test(text)){ f.eraMax=2003; text=text.replace(/\b(vintage|wotc|old|classic(?!\s+collection))\b/g," "); }   // "classic collection" is a set (Celebrations / 30th Celebration), not an era
   if(/\b(modern|new|recent)\b/.test(text)){ f.eraMin=2020; text=text.replace(/\b(modern|new|recent)\b/g," "); }
 
   // printing selector: filters to that printing AND auto-selects it in the detail view
