@@ -53,6 +53,11 @@
   .card.open .detail{display:block}
   .muted{color:var(--dim);font-size:12px;line-height:1.5}
   .pchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .sug{display:none;gap:6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .sug::-webkit-scrollbar{display:none}
+  .sug.on{display:flex}
+  .sug button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 13px;font-size:15px;font-family:inherit;cursor:pointer;line-height:1.1}
+  .sug button i{font-style:normal;color:var(--faint);font-size:11px;margin-left:5px}
   .pchip{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
   .pchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
   .maxbid{font-size:13px;margin-bottom:9px}
@@ -210,6 +215,7 @@
         <button class="tgl" data-lang="jp">JP</button>
       </div>
     </div>
+    <div id="sug" class="sug"></div>
   </div>
   <!-- outside the sticky row on purpose: pinning these cost ~44px of a ~315px split-screen viewport,
        and an opened card carries its own good/ok/bad strip, so flagging is still one tap away -->
@@ -3208,6 +3214,96 @@ function render(res, literal, newestFirst){
   });
 }
 
+/* ---------- type-ahead chips ---------- */
+// Two steps. A name fragment ("zard", "chari") offers full names. Once a name is complete
+// ("charizard "), the next fragment offers only suffixes that exist for that name in the catalog
+// (V, VMAX, VSTAR, ex...). Chips are a shortcut only: results keep updating as you type.
+// Catalog names carry finish words, collector numbers, years, winner names and promo codes
+// ("Umbreon 10 90 Cracked Ice Holo", "Mew ex 2006 Jimmy Ballard", "Pikachu DP16"). Chips want the bare name.
+function sugName(n){
+  return (n||"")
+    .replace(/\s+(Mirror Foil|Mirror Holo(foil)?|Master Ball Pattern|Pok[eé] Ball Pattern|Cracked Ice Holo|Cosmos Holo|Reverse Holo(foil)?|Non Holo|Holo|Winner|Staff|Prerelease|Stamped|Epic|Enchanted|Iconic)\b.*$/i,"")
+    .replace(/\s+\d.*$/,"")
+    .replace(/(\s+[A-Z]{1,5}\d+[a-z]?)+$/,"")
+    .replace(/\s+and\s+/i," & ")
+    .trim();
+}
+// mechanic suffix, with the old hyphen style too ("Charizard-EX", "Charizard & Braixen-GX")
+const SUG_SUFFIX = /[\s-]+(ex|v|vmax|vstar|v-union|gx|break|lv\.?x|prime|legend|star|◇|★|δ)(\s.*)?$/i;
+let SUG = null;
+function sugIndex(){
+  const key = GAME+"|"+LANG+"|"+CARDS.length;
+  if(SUG && SUG.key===key) return SUG;
+  const cnt=new Map(), disp=new Map(), byBase=new Map();
+  for(const c of CARDS){
+    if(c.sealed || (c.game||"pkmn")!==GAME) continue;
+    if(GAME==="pkmn" && (c.lang||"en")!==LANG) continue;
+    const n=sugName(c.n);
+    if(!n) continue;
+    const base = GAME==="pkmn" ? (n.replace(SUG_SUFFIX,"").trim() || n) : n;
+    const lc=base.toLowerCase();
+    cnt.set(lc,(cnt.get(lc)||0)+1); if(!disp.has(lc)) disp.set(lc,base);
+    const rest=n.slice(base.length).replace(/^[\s-]+/,"").split(/\s+/)[0];   // "GX SM60" -> "GX", "Star Delta Species" -> "Star"
+    if(rest){
+      if(!byBase.has(lc)) byBase.set(lc,new Map());
+      const m=byBase.get(lc), rk=rest.toLowerCase(), cur=m.get(rk);
+      m.set(rk, cur ? {t:cur.t,k:cur.k+1} : {t:rest,k:1});
+    }
+  }
+  const bases=[...cnt].map(([lc,k])=>({b:disp.get(lc),lc,k})).sort((a,b)=>b.k-a.k);
+  return (SUG={key,cnt,bases,byBase});
+}
+function sugExpand(tok){
+  for(const [re,v] of NICK){ if(re.source.replace(/\\b/g,"")===tok) return v; }
+  if(tok.length>=3 && tok.length<=4 && ABBR.has(tok)) return ABBR.get(tok);
+  return tok;
+}
+// pure: raw input -> {frag, items:[{label, k}]}. Exposed for the test harness.
+function suggest(raw){
+  const idx=sugIndex();
+  const v=(raw||"").toLowerCase();
+  if(!v.trim()) return {frag:"",items:[]};
+  const toks=v.trim().split(/\s+/);
+  const frag=/\s$/.test(v) ? "" : toks.pop();
+  // step 2: the words before the fragment end in a complete name -> its real suffixes
+  for(let i=0;i<toks.length;i++){
+    const base=toks.slice(i).map(sugExpand).join(" ");
+    const m=idx.byBase.get(base);
+    if(!m) continue;
+    const items=[...m.values()].filter(x=>x.t.toLowerCase().startsWith(frag)).sort((a,b)=>b.k-a.k).slice(0,8).map(x=>({label:x.t,k:x.k}));
+    return {frag,items};   // name recognized: offer its suffixes or nothing, never an unrelated name
+  }
+  // step 1: name completion
+  if(frag.length<2 || /^\d+$/.test(frag)) return {frag,items:[]};
+  const seen=new Set(), out=[];
+  const add=lc=>{ if(!lc || seen.has(lc) || !idx.cnt.has(lc)) return; seen.add(lc); out.push({label:idx.bases.find(b=>b.lc===lc).b,k:idx.cnt.get(lc)}); };
+  for(const [re,val] of NICK){ if(re.source.replace(/\\b/g,"").startsWith(frag)) add(val); }
+  if(frag.length>=3 && frag.length<=4 && ABBR.has(frag)) add(ABBR.get(frag));
+  for(const b of idx.bases){ if(out.length>=6) break; if(b.lc.startsWith(frag)) add(b.lc); }
+  // inner-word matches ("gren" -> Radiant Greninja) only on the first word; later on, the word is usually a set name
+  if(!toks.length) for(const b of idx.bases){ if(out.length>=6) break; if(b.lc.split(/\s+/).some(w=>w.startsWith(frag))) add(b.lc); }
+  const solid=out.filter(x=>x.k>1);   // hide one-off oddities ("Pikachu SM04 Target") when real choices exist
+  return {frag,items:(solid.length>=3?solid:out).slice(0,6)};
+}
+function renderSug(){
+  const box=$("#sug"), qel=$("#q");
+  if(!box || !qel) return;
+  const {frag,items}=suggest(qel.value);
+  if(!items.length || document.activeElement!==qel){ box.classList.remove("on"); box.innerHTML=""; return; }
+  box.innerHTML=items.map((x,i)=>`<button type="button" data-i="${i}">${escH(x.label)}<i>${x.k}</i></button>`).join("");
+  box.classList.add("on");
+  box.querySelectorAll("button").forEach(b=>{
+    b.onclick=()=>{
+      const lab=items[+b.dataset.i].label, pick = lab==="★" ? "star" : lab;   // parse() reads "star" as the Gold Star subtype; the glyph is ignored
+      const val=qel.value, cut=val.length-frag.length;
+      qel.value=val.slice(0,cut).replace(/\s*$/, cut>0?" ":"")+pick+" ";
+      qel.focus(); try{ qel.setSelectionRange(qel.value.length,qel.value.length); }catch(_){}
+      $("#qclear").style.display="block";
+      clearTimeout(t); run(qel.value); renderSug();
+    };
+  });
+}
+
 /* ---------- wiring ---------- */
 let t=null;
 $("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
@@ -3215,6 +3311,10 @@ $("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.lengt
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
 $("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
+$("#q").addEventListener("input", renderSug);
+$("#q").addEventListener("focus", renderSug);
+$("#q").addEventListener("blur", ()=>setTimeout(renderSug,120));
+$("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a chip must not blur the input (keyboard stays up)
 (function(){
   const s=$("#flagstrip");
   if(s){
