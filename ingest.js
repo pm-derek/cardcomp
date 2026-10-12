@@ -273,7 +273,10 @@ async function japaneseCards(){
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
       const px = pm[p.productId]; if (!px) continue;
-      if (!("Number" in ext)){
+      // Vintage JP cards (Base through Neo, Gym, VS...) print no collector number, so no Number
+      // does not mean sealed. Anything with card fields (Rarity/HP/Card Type) is still a single.
+      const isCard = ext.Rarity || ext.HP || ext["Card Type"];
+      if (!("Number" in ext) && !isCard){
         const kind = classifySealed(p.cleanName || p.name || "");
         if (!kind) continue;
         cards.push({ id:`sl:${p.productId}`, n:(p.cleanName||p.name), s:g.name, c:g.abbreviation||"",
@@ -282,7 +285,7 @@ async function japaneseCards(){
         continue;
       }
       cards.push({ id:`jp:${p.productId}`, n:p.cleanName||p.name, s:g.name, c:g.abbreviation||"",
-        y:gyear, o:g.groupId, num:num0(ext.Number), r:ext.Rarity||"",
+        y:gyear, o:g.groupId, num:ext.Number?num0(ext.Number):"", r:ext.Rarity||"",
         hp:ext.HP||"", t:[], st:[], atk:"", img:p.imageUrl||"", lang:"jp", pid:p.productId, px });
     }
   }

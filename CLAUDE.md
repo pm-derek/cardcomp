@@ -29,6 +29,8 @@ Two files do everything:
 ### Coverage model (do not regress this)
 Every English TCGCSV *card product* becomes an entry: if it joins to a pokemon-tcg-data card (set mapped + number matches) it gets rich identity; if not, it's emitted **standalone** straight from TCGCSV. Coverage does **not** depend on the fuzzy set-name matcher — that only decides whether a card gets enriched, not whether it appears. Promos, old WOTC subsets, and anything with mismatched numbering still show up. `gameCards()` is the generic path for single-category games (Lorcana, One Piece); JP and EN have their own functions.
 
+Vintage JP (Expansion Pack through Neo, Gym, VS) prints no collector number, so TCGplayer has no `Number` field. A product with no Number is only treated as sealed if it also lacks card fields (Rarity/HP/Card Type); otherwise it is a single with `num:""`. Regressing this silently drops ~1,700 vintage JP cards. In JP mode, an EN set name with no JP twin (Neo Genesis, Base Set) filters JP cards to <= that EN set's year instead of an exact set name.
+
 Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings.
 
 ## The card object
