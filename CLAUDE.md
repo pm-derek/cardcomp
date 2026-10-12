@@ -132,7 +132,7 @@ JP                10%   16%    20%     24%     25%     25%
 
 - fast = vintage (pre-2014), played (LP or worse), promos. normal = everything else. Price band uses the condition row's own price (spec §12). Rare/Holo Rare was dropped as a fast trait: split by era, modern NM rares sell only x0.85 vs their price band (the fast reading was vintage holos); modern NM promos hold up at x0.58.
 - Snapshot caveat: the inventory export has no listing dates, so months-to-sell (stock / sales rate) can only be biased toward slow. "Fast" readings are trustworthy; "slow" ones may be recent buy-ins. That is why SIR/SWSH/XY-SM/ME (1.1-1.3x) are treated as normal and JP is damped from 2.7x to 1.8x. Re-run quarterly with fresh exports before trusting the $50+ steps.
-- UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". Tap reveals one line: "slow: JP, ~5 mo to sell, 20% margin". No icons or ratings. Keep it lean.
+- UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". Tap shows one line in a bottom toast: "slow: JP, ~5 mo to sell, 20% margin". Never swap text into the pill or bid column: any width change there squeezes the card name to nothing (shipped once, broke live). Pill tap target is padded via `::after` so it takes no layout space. No icons or ratings. Keep it lean.
 - New card fields used by this go in `storeFields` (see the storeFields bug above).
 
 ## Deliberately not doing (don't rebuild these)
