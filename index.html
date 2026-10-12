@@ -2969,6 +2969,13 @@ function isPromo(c){
   if(g==="lorcana")  return r==="Promo";
   return r==="Promo" || /promo/i.test(s);
 }
+// JP mode, EN set name with no JP analog: map to that set's year (JP printed the same era first, so <= EN year)
+let JP_SETS=null, EN_SET_Y=null;
+function jpHasSet(s){ if(!JP_SETS) JP_SETS=new Set(CARDS.filter(c=>c.lang==="jp").map(c=>c.s)); return JP_SETS.has(s); }
+function enSetYear(s){
+  if(!EN_SET_Y){ EN_SET_Y=new Map(); for(const c of CARDS) if((c.lang||"en")==="en" && (c.game||"pkmn")==="pkmn" && c.y){ const v=EN_SET_Y.get(c.s); if(!v||c.y<v) EN_SET_Y.set(c.s,c.y); } }
+  return EN_SET_Y.get(s)||0;
+}
 const SET_NICK = {"30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 // EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
 const EN_TO_JP = {
@@ -3124,6 +3131,10 @@ function parse(raw){
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
     const jc = en && EN_TO_JP[String(en).toLowerCase()];
     if(jc){ f.jpCodes=jc; f.setName=null; f.setCode=null; }
+    else if(en && !jpHasSet(en)){   // EN set with no JP twin (vintage JP sets have no codes and different names): match by era instead
+      const y=enSetYear(en);
+      if(y){ f.eraMax=Math.min(f.eraMax||9999, y); f.setName=null; f.setCode=null; f.note.push(en+" → JP by year"); }
+    }
   }
   const q = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean)
     .map(tok => (tok.length>=3 && tok.length<=4 && !NAMESET.has(tok) && ABBR.has(tok)) ? ABBR.get(tok) : tok)
@@ -3259,7 +3270,7 @@ function render(res, literal, newestFirst){
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
             ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
-            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} · #${r.num} · ${r.r||"—"}</span>`}</div>
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}</div>
         </div>
         ${bidHTML}
         <div class="rails">
