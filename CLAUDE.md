@@ -117,6 +117,24 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - Ship several small features per deploy; bugs surface from live-stream use and come back with specifics.
 - When adding a card field, adding a rarity, or adding a game: update `storeFields`, the relevant `*_CHASE` set, `passFilters`, and `buildVocab` together.
 
+## Velocity-tiered margin (speedOf in index.html)
+
+Goal is cash flow: fast cards keep a thin margin (competitive bid), slow cards get a fat one (low bid, so Derek mostly passes). Derived 2026-10 from 12 months of TCGplayer sales (pull sheets + order list) and one inventory snapshot.
+
+Margin = clamp(0.50 x monthsToSell / 12, floor, 0.25). 50%/yr target on capital. The settings margin is the floor (the grid assumes 10%). Toggle: settings "speed-based margin". Pokemon singles only; Lorcana, One Piece and sealed stay flat at the floor.
+
+```
+                 $2-5  $5-10  $10-25  $25-50  $50-100  $100+
+fast              10%   10%    10%     10%     10%     15%
+normal            10%   10%    11%     13%     20%     25%
+JP                10%   16%    20%     24%     25%     25%
+```
+
+- fast = vintage (pre-2014), played (LP or worse), promos. normal = everything else. Price band uses the condition row's own price (spec §12). Rare/Holo Rare was dropped as a fast trait: split by era, modern NM rares sell only x0.85 vs their price band (the fast reading was vintage holos); modern NM promos hold up at x0.58.
+- Snapshot caveat: the inventory export has no listing dates, so months-to-sell (stock / sales rate) can only be biased toward slow. "Fast" readings are trustworthy; "slow" ones may be recent buy-ins. That is why SIR/SWSH/XY-SM/ME (1.1-1.3x) are treated as normal and JP is damped from 2.7x to 1.8x. Re-run quarterly with fresh exports before trusting the $50+ steps.
+- UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". Tap reveals one line: "slow: JP, ~5 mo to sell, 20% margin". No icons or ratings. Keep it lean.
+- New card fields used by this go in `storeFields` (see the storeFields bug above).
+
 ## Deliberately not doing (don't rebuild these)
 
 - Voice input for comping — fights live stream audio; fast typed search + abbreviations won.

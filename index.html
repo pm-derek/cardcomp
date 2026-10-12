@@ -111,6 +111,11 @@
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
   .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
+  .spd{font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:1px 6px;border-radius:999px;margin-left:5px;cursor:pointer;white-space:nowrap;border:1px solid currentColor}
+  .spd.fast{color:var(--green)} .spd.slow{color:var(--gold)}
+  .bids .bs{gap:0}
+  .bids .bs .spd{margin-left:0;margin-right:6px}
+  .bids .bs .flat{color:var(--faint);font-size:11px;font-weight:600;cursor:pointer;text-decoration:underline dotted}
   .bids .rounded{display:none}   /* tiles show the whole-dollar bid you actually type; list shows the exact */
   /* tile view: art-first grid for split-screen, where a 44px thumbnail is too small to identify a card */
   /* minmax(0,1fr) not 1fr: auto min-width lets the nowrap bid row force tiles wider than the container */
@@ -177,7 +182,8 @@
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
     <div class="sgrid">
-      <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="15"></label>
+      <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="10"></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-speed" checked style="width:auto"> speed-based margin (fast cards keep the target above, slow cards up to 25%)</label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
       <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
       <label>pokemontcg.io API key<input id="cfg-apikey" type="text" placeholder="optional · faster"></label>
@@ -2406,6 +2412,56 @@ function feeTierFor(p, tiers){ tiers=tiers||FEE_TIERS; return tiers.find(x=>p>=x
 function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B
 function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
+/* ---- Velocity-tiered margin (see CLAUDE.md "Planned: velocity-tiered margin").
+   From 12 months of Derek's TCGplayer sales + one inventory snapshot. Pokemon singles only.
+   Snapshot can only bias toward "slow", so fast traits are trusted and slow ones damped. ---- */
+const SPEED_RATE = 0.50, SPEED_CAP = 0.25;   // 50%/yr on capital; never ask more than 25%
+function speedOn(){ const el=$("#cfg-speed"); return el ? !!el.checked : true; }
+function bandMonths(p){            // $ months to sell by price band (stock / sales rate)
+  return p<2 ? 11.2 : p<5 ? 0.6 : p<10 ? 2.1 : p<25 ? 2.7 : p<50 ? 3.2 : p<100 ? 4.8 : 7.3;
+}
+const FAST_RARITY = new Set(["Promo"]);   // modern NM promos sell ~1.7x faster than price predicts; Rare/Holo Rare was only fast because of vintage
+// card: {y, lang, game, r, sealed}; price: this row's market; cond: NM/LP/MP/HP/DMG
+function speedOf(card, price, cond){
+  const floor = getNum("tgtmargin",10)/100;
+  const flat = {tier:"", margin:floor, months:null, why:""};
+  if(!speedOn() || !card || card.sealed || (card.game||"pkmn")!=="pkmn" || !(price>0)) return flat;
+  const why=[];
+  if(card.y && card.y<2014) why.push("vintage");
+  if(cond && cond!=="NM") why.push("played");
+  if(FAST_RARITY.has(card.r)) why.push("promo");
+  let mult=1;
+  if(why.length) mult=0.5;                                    // fast traits: trusted (snapshot can't fake fast)
+  else if((card.lang||"en")==="jp"){ mult=1.8; why.push("JP"); }   // damped from the measured 2.7x
+  const months=bandMonths(price)*mult;
+  const margin=Math.max(floor, Math.min(SPEED_CAP, SPEED_RATE*months/12));
+  const tier = months<=1.5 ? "fast" : months>=4.5 ? "slow" : "";
+  if(!why.length) why.push(price<2?"bulk":"$"+(price<5?"2-5":price<10?"5-10":price<25?"10-25":price<50?"25-50":price<100?"50-100":"100+"));
+  return {tier, margin, months, why:why.join(", ")};
+}
+function speedReason(sp){ return `${sp.tier||"normal"}: ${sp.why}, ~${sp.months<1?"<1":Math.round(sp.months)} mo to sell, ${Math.round(sp.margin*100)}% margin`; }
+function wirePills(scope){
+  scope.querySelectorAll(".spd[data-why]").forEach(el=>{
+    if(el.dataset.wired) return; el.dataset.wired="1";
+    el.addEventListener("click", e=>{
+      e.stopPropagation();
+      const lab=el.textContent;
+      if(el.dataset.open){ clearTimeout(+el.dataset.open); el.textContent=el.className.includes("fast")?"fast":"slow"; delete el.dataset.open; return; }
+      el.textContent=el.dataset.why;
+      el.dataset.open=String(setTimeout(()=>{ el.textContent=lab; delete el.dataset.open; },3000));
+    });
+  });
+}
+function flatBidTag(sp, mkt, tiers){   // the bid at your flat settings margin, shown only when speed lowered the bid
+  const floor=getNum("tgtmargin",10)/100;
+  if(!sp || !(sp.margin>floor+1e-9) || !(mkt>0)) return "";
+  const fb=bidForMargin(mkt, floor, tiers), w=Math.floor(fb)>=1?String(Math.floor(fb)):fb.toFixed(2);
+  if(fb-bidForMargin(mkt, sp.margin, tiers) < 1) return "";   // under a dollar apart: not worth the space
+  return `<span class="blab">flat</span><b class="cpy flat" data-bid="${w}" title="flat ${Math.round(floor*100)}% bid, ignores speed · tap to copy">$${w}</b>`;
+}
+// one short line under the margin bid: pill + flat bid. Kept off the margin row so the bid column never widens
+function speedRow(sp, mkt){ const h=speedPill(sp)+flatBidTag(sp, mkt); return h ? `<div class="brow bs">${h}</div>` : ""; }
+function speedPill(sp){ return sp.tier ? `<span class="spd ${sp.tier}" data-why="${escH(speedReason(sp))}" title="${escH(speedReason(sp))}">${sp.tier}</span>` : ""; }
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
 // would open showing Unlimited and look like the wrong card. Carry the printing in the URL.
@@ -2457,7 +2513,7 @@ function bestMarket(r){   // top printing market for the collapsed card
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
   return best;
 }
-function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, getNum("tgtmargin",15)/100) : null; }   // NM margin bid at the top printing
+function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, speedOf(r,b,"NM").margin) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2475,11 +2531,11 @@ function thinFlag(pr){   // flag a bid built on shaky price data
   if(l!=null && l < m*0.5) return "wide spread";                    // volatile / thin liquidity
   return "";
 }
-function condGridHTML(prices, key, mf, year, pid){
+function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
   const rows=CONDS.map(cond=>{
     const atc=base*condMult(cond, year, base);
-    const bid=bidForMargin(atc, mf), net=netProceeds(listSale(atc))-bid;
+    const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
@@ -2518,7 +2574,7 @@ async function loadPrices(card, host){
   addDetailFlags(host, card);
 }
 function renderPrices(host, data, prices, src){
-  const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
+  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
@@ -2533,11 +2589,11 @@ function renderPrices(host, data, prices, src){
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
     const yr=card?card.y:0;
-    const nm=base, bid=bidForMargin(nm, mf);
+    const nm=base, sp=speedOf(card, nm, "NM"), bid=bidForMargin(nm, sp.margin);
     const pbid=bidForProfit(nm, td);
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(nm));
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(sp.margin*100)}% target${sp.tier||sp.months!=null?` · ${speedReason(sp).replace(/, \d+% margin$/,"")}`:""}${(()=>{ const fl=getNum("tgtmargin",10)/100; if(!(sp.margin>fl+1e-9)) return ""; const fb=bidForMargin(nm, fl); return ` · <span style="color:var(--gold)">speed -$${(fb-bid).toFixed(2)}</span> vs flat ${Math.round(fl*100)}% <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>`; })()}${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
@@ -2552,12 +2608,16 @@ function renderPrices(host, data, prices, src){
         if(pc) pc.textContent=pctMkt(val,mkt);
       };
       put(".bids .bm", bid, nm);
+      const oldRow=cardEl.querySelector(".bids .bs"); if(oldRow) oldRow.remove();
+      const srow=speedRow(sp, nm), bmRow=cardEl.querySelector(".bids .bm");
+      if(srow && bmRow){ bmRow.insertAdjacentHTML("afterend", srow); const f=cardEl.querySelector(".bids .bs .flat"); if(f) f.onclick=(e)=>{ e.stopPropagation(); copyAmt(f.dataset.bid, f); }; }
+      wirePills(cardEl);
       put(".bids .bp", pbid, nm);
     }
     const u=tcgProductUrl(pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
-    cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid);
-    cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
+    cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
+    cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
@@ -2566,7 +2626,7 @@ function renderPrices(host, data, prices, src){
 }
 const SEALED_WLABEL = { S:"S · ≤1lb", M:"M · ETB/box", L:"L · 2ETB/3box", XL:"XL · case" };
 function renderSealed(host, prices, card, pid){
-  const mf=getNum("tgtmargin",15)/100, td=getNum("tgtprofit",0);
+  const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
   const keys=Object.keys(prices).sort((a,b)=>((prices[b].market??prices[b].mid??0)-(prices[a].market??prices[a].mid??0)));
   let sel=keys[0];
   if(PRINT_HINT){ const pk=keys.find(k=>k.toLowerCase().includes(PRINT_HINT)); if(pk) sel=pk; }
@@ -2638,14 +2698,14 @@ function renderCart(){
   const bar=$("#cart"); if(!bar) return;
   if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
   bar.style.display="block";
-  const mf=getNum("tgtmargin",15)/100;
+  const mf=getNum("tgtmargin",10)/100;
   let totMkt=0, totBid=0;
   const rows=CART.map((it,i)=>{
     const sealed = it.sealed || String(it.id||"").startsWith("sl:");
     const cond = sealed ? "sealed" : (it.cond||"NM");
     const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
     const tiers = sealed ? buildSealedFeeTiers(it.wtier||"M") : undefined;   // sealed uses its picked weight postage
-    const bid=bidForMargin(atc, mf, tiers); totMkt+=atc; totBid+=bid;
+    const bid=bidForMargin(atc, sealed ? mf : speedOf(it, atc, cond).margin, tiers); totMkt+=atc; totBid+=bid;
     const pk = (it.game||"pkmn")==="pkmn";
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
@@ -3176,10 +3236,11 @@ function render(res, literal, newestFirst){
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
     const best=bestMarket(r);
-    const mb = best>0 ? bidForMargin(best, getNum("tgtmargin",15)/100) : null;
+    const sp = best>0 ? speedOf(r, best, "NM") : null;
+    const mb = best>0 ? bidForMargin(best, sp.margin) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
         <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
@@ -3210,6 +3271,7 @@ function render(res, literal, newestFirst){
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
     const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
     const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
+    wirePills(el);
     wrap.appendChild(el);
   });
 }
@@ -3335,9 +3397,17 @@ $("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a
 /* settings: persist (safe if storage blocked), toggle, zoom close */
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem("cardcomp_cfg")||"{}"); document.querySelectorAll("#settings input").forEach(i=>{ const k=i.id||("m_"+i.dataset.c); if(o[k]!=null){ if(i.type==="checkbox") i.checked=!!o[k]; else if(o[k]!=="") i.value=o[k]; } }); }catch(e){} }
-loadCfg();
+function migrateCfg(){   // 2026-10: speed-based margin treats this setting as its floor and assumes 10%
+  try{
+    if(localStorage.getItem("cardcomp_m10")) return;
+    const el=$("#cfg-tgtmargin");
+    if(el && String(el.value).trim()==="15"){ el.value="10"; saveCfg(); }
+    localStorage.setItem("cardcomp_m10","1");
+  }catch(e){}
+}
+loadCfg(); migrateCfg();
 applyFeedback();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); applyFeedback(); }));
+document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); applyFeedback(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
 $("#gear").onclick = ()=>{ const open=$("#settings").classList.toggle("open"); if(open) updateSlogUI(); };
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
