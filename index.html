@@ -2593,7 +2593,11 @@ function renderPrices(host, data, prices, src){
     const pbid=bidForProfit(nm, td);
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(nm));
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">@ NM · ${Math.round(sp.margin*100)}% target${sp.tier||sp.months!=null?` · ${speedReason(sp).replace(/, \d+% margin$/,"")}`:""}${(()=>{ const fl=getNum("tgtmargin",10)/100; if(!(sp.margin>fl+1e-9)) return ""; const fb=bidForMargin(nm, fl); return ` · <span style="color:var(--gold)">speed -$${(fb-bid).toFixed(2)}</span> vs flat ${Math.round(fl*100)}% <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>`; })()}${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    // one short line: margin + speed reason, flat bid only when it's $1+ higher, low listing, data warning
+    const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl);
+    const spdTxt = sp.tier ? ` · <span style="color:${sp.tier==="fast"?"var(--green)":"var(--gold)"}">${sp.tier} ${escH(sp.why)}</span>` : "";
+    const flatTxt = (sp.margin>fl+1e-9 && fb-bid>=1) ? ` · flat <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>` : "";
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
