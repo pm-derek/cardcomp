@@ -2976,6 +2976,9 @@ function enSetYear(s){
   if(!EN_SET_Y){ EN_SET_Y=new Map(); for(const c of CARDS) if((c.lang||"en")==="en" && (c.game||"pkmn")==="pkmn" && c.y){ const v=EN_SET_Y.get(c.s); if(!v||c.y<v) EN_SET_Y.set(c.s,c.y); } }
   return EN_SET_Y.get(s)||0;
 }
+const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
+  "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
+  "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
 const SET_NICK = {"30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 // EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
 const EN_TO_JP = {
@@ -3020,6 +3023,8 @@ function parse(raw){
   const f = {hp:null,type:null,stage:null,subtype:null,delta:null,eraMin:null,eraMax:null,number:null,setCode:null,setName:null,rarity:null,jp:null,note:[],exp:[]};
   NICK.forEach(([re,v])=>{ if(re.test(text)){ f.exp.push(v); text = text.replace(re," "+v+" "); } });
   const qFull = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean).join(" ");
+  // e-Reader: the e-card era sets with dot-code strips. Filters to the whole group, either language
+  if(/\be[\s-]?reader\b|\be[\s-]?card\b/.test(text)){ f.setIn=EREADER_SETS; text=text.replace(/\be[\s-]?reader\b|\be[\s-]?card\b/g," "); }
   if(/\bdelta( species)?\b|δ/.test(text)){ f.delta=true; text=text.replace(/\bdelta( species)?\b|δ/g," "); }
 
   // set: ptcgo code, nickname, full name  (rarity shorthands are reserved so they can't be read as a set code)
@@ -3162,6 +3167,7 @@ function run(raw){
   if(f.exp.length) bits.push("→ "+f.exp.join(", "));
   if(f.setCode) bits.push(SET_CODES[f.setCode]);
   if(f.setName) bits.push(f.setName);
+  if(f.setIn) bits.push("e-Reader");
   if(f.jpCodes) bits.push("JP "+f.jpCodes.join("/").toUpperCase());
   if(f.type) bits.push(f.type);
   if(f.hp!=null) bits.push(f.hp+" HP (±20)");
@@ -3207,6 +3213,7 @@ function run(raw){
     if(f.eraMin!=null && r.y<f.eraMin) return false;
     if(f.setCode && (r.c||"").toLowerCase()!==f.setCode) return false;
     if(f.setName && (r.s||"")!==f.setName) return false;
+    if(f.setIn && !f.setIn.has(r.s||"")) return false;
     if(f.jpCodes && !f.jpCodes.includes((r.c||"").toLowerCase())) return false;
     if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
@@ -3216,7 +3223,7 @@ function run(raw){
   };
   // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
   const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
-    && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName)
+    && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName) && (!f.setIn || f.setIn.has(r.s||""))
     && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
     && (!f.number || numMatch(r.num, f.number));
 
@@ -3236,7 +3243,7 @@ function run(raw){
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.setCode||f.setName||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  const hasFilter = !!(f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
   // a 2+ word name query (e.g. "misty poliwhirl", "brock zubat") is itself discriminating: rank by
   // relevance so a precise multi-token match wins, not by year — otherwise the OR/phonetic fallback
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
