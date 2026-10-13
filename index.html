@@ -2958,6 +2958,11 @@ function enSetYear(s){
   if(!EN_SET_Y){ EN_SET_Y=new Map(); for(const c of CARDS) if((c.lang||"en")==="en" && (c.game||"pkmn")==="pkmn" && c.y){ const v=EN_SET_Y.get(c.s); if(!v||c.y<v) EN_SET_Y.set(c.s,c.y); } }
   return EN_SET_Y.get(s)||0;
 }
+// The same promo line lives under two set names: pokemon-tcg-data's (joined cards) and TCGplayer's (standalones).
+// Searching either name or code covers both.
+const SET_TWINS = {"SV: Scarlet & Violet Promo Cards":"Scarlet & Violet Black Star Promos",
+  "SWSH: Sword & Shield Promo Cards":"SWSH Black Star Promos"};
+for(const [a,b] of Object.entries(SET_TWINS)) SET_TWINS[b]=a;
 const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
@@ -2992,7 +2997,8 @@ const EN_TO_JP = {
 // them into a stage/subtype filter strips the word from the query, but ~60% of GX and ~half of VMAX
 // cards are TCGCSV standalones/promos with an empty subtype array — so a subtype-only match drops
 // every promo GX and, with the Promo toggle on, relaxes to non-GX junk. Match the name as a fallback.
-const NAME_STAMPED = { gx:/\bgx\b/i, break:/\bbreak\b/i, vmax:/\bvmax\b/i, vstar:/\bvstar\b/i };
+const NAME_STAMPED = { gx:/\bgx\b/i, break:/\bbreak\b/i, vmax:/\bvmax\b/i, vstar:/\bvstar\b/i,
+  v:/(^|\s)v(\s|$)/i, ex:/(^|[\s-])ex(\s|$)/i };   // v/ex: exact tag only, so "melmetal v" never pulls VMAX, ex or GX
 // true if the card carries this stage/subtype tier either in its subtypes OR (for name-stamped tiers) its name
 function stampOK(tier, r){
   if((r.st||[]).map(x=>x.toLowerCase()).includes(tier)) return true;
@@ -3031,6 +3037,9 @@ function parse(raw){
   else if(/\btera\b/.test(text)){ f.stage="Tera"; text=text.replace(/\btera\b/g," "); }
   else if(/\bbasic\b/.test(text)){ f.stage="Basic"; text=text.replace(/\bbasic\b/g," "); }
 
+  // plain "v" / "ex": exact mechanic tag (subtype or name), checked separately so "charizard ex tera" still works
+  if(/(^|\s)v(\s|$)/.test(text)){ f.mech="v"; text=text.replace(/(^|\s)v(?=\s|$)/g," "); }
+  else if(/(^|\s)ex(\s|$)/.test(text)){ f.mech="ex"; text=text.replace(/(^|\s)ex(?=\s|$)/g," "); }
   const SUB = [[/\bbaby\b/,"Baby"],[/\bgold star\b|\bstar\b/,"Star"],[/\bbreak\b/,"BREAK"],[/\bancient\b/,"Ancient"],[/\bfuture\b/,"Future"],[/\bmega\b/,"MEGA"],[/\bgx\b/,"GX"],[/\bprism star\b|\bprism\b/,"Prism Star"],[/\btag team\b/,"TAG TEAM"],[/\bultra beast\b|\bub\b/,"Ultra Beast"],[/\bsingle strike\b/,"Single Strike"],[/\brapid strike\b/,"Rapid Strike"],[/\bfusion( strike)?\b/,"Fusion"]];
   for(const [re,st] of SUB){ if(re.test(text)){ f.subtype=st; text=text.replace(re," "); break; } }
 
@@ -3114,6 +3123,8 @@ function parse(raw){
   m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/);
   if(m){ f.number=m[1]; text=text.replace(m[0]," "); }
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
+  if(LANG==="en"){ const en=f.setName||(f.setCode?SET_CODES[f.setCode]:null), tw=en&&SET_TWINS[en];
+    if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; } }
   if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
     const jc = en && EN_TO_JP[String(en).toLowerCase()];
@@ -3149,12 +3160,13 @@ function run(raw){
   if(f.exp.length) bits.push("→ "+f.exp.join(", "));
   if(f.setCode) bits.push(SET_CODES[f.setCode]);
   if(f.setName) bits.push(f.setName);
-  if(f.setIn) bits.push("e-Reader");
+  if(f.setIn) bits.push(f.setInLabel||"e-Reader");
   if(f.jpCodes) bits.push("JP "+f.jpCodes.join("/").toUpperCase());
   if(f.type) bits.push(f.type);
   if(f.hp!=null) bits.push(f.hp+" HP (±20)");
   if(f.stage) bits.push(f.stage);
   if(f.subtype) bits.push(f.subtype);
+  if(f.mech) bits.push(f.mech==="v"?"V":"ex");
   if(f.delta) bits.push("δ Delta Species");
   if(f.rarity) bits.push(f.rarity.label);
   if(f.jp) bits.push(f.jp.label+" ("+f.jp.code+")");
@@ -3190,6 +3202,7 @@ function run(raw){
     if(lv<1 && f.hp!=null){ const h=parseInt(r.hp)||0; if(!h || Math.abs(h-f.hp)>20) return false; }
     if(lv<2 && slc && !stampOK(slc, r)) return false;
     if(lv<2 && f.subtype && !stampOK(f.subtype.toLowerCase(), r)) return false;
+    if(f.mech && !stampOK(f.mech, r)) return false;
     if(lv<1 && f.delta && !(r.n||"").includes("δ")) return false;
     if(f.eraMax!=null && r.y>f.eraMax) return false;
     if(f.eraMin!=null && r.y<f.eraMin) return false;
@@ -3205,7 +3218,7 @@ function run(raw){
   };
   // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
   const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
-    && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName) && (!f.setIn || f.setIn.has(r.s||""))
+    && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName) && (!f.setIn || f.setIn.has(r.s||"")) && (!f.mech || stampOK(f.mech, r))
     && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
     && (!f.number || numMatch(r.num, f.number));
 
@@ -3220,12 +3233,15 @@ function run(raw){
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
       for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
     }
+    // exact name (typed in full or picked from a suggestion chip): only cards carrying that whole name.
+    // "mew" -> Mew, Mew ex, Ancient Mew; never Mewtwo. "meowth" keeps Alolan / Team Rocket's Meowth.
+    if(isBaseName(q)){ const qq=" "+q+" ", ex=res.filter(r=>(" "+normName(r.n)+" ").includes(qq)); if(ex.length) res=ex; }
   } else {
     res = CARDS.map(c=>({...c, score:1})).filter(r=>passFilters(r));
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  const hasFilter = !!(f.mech||f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
   // a 2+ word name query (e.g. "misty poliwhirl", "brock zubat") is itself discriminating: rank by
   // relevance so a precise multi-token match wins, not by year — otherwise the OR/phonetic fallback
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
@@ -3322,6 +3338,13 @@ function sugIndex(){
   }
   const bases=[...cnt].map(([lc,k])=>({b:disp.get(lc),lc,k})).sort((a,b)=>b.k-a.k);
   return (SUG={key,cnt,bases,byBase});
+}
+const normName = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+let BASE_NORM=null, BASE_KEY="";
+function isBaseName(q){   // q is a complete Pokemon/character name in the current game+lang
+  const idx=sugIndex();
+  if(BASE_KEY!==idx.key){ BASE_NORM=new Set([...idx.cnt.keys()].map(normName)); BASE_KEY=idx.key; }
+  return BASE_NORM.has(normName(q));
 }
 function sugExpand(tok){
   for(const [re,v] of NICK){ if(re.source.replace(/\\b/g,"")===tok) return v; }

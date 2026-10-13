@@ -104,6 +104,9 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - **PHON** — phonetic sounds-like fallback for misspellings beyond fuzzy's reach (`goldengo` → gholdengo). Only fires when normal search is thin.
 - MiniSearch: prefix matching at length ≥ 3, fuzzy at length > 4.
 - Rarity shorthands `dr ir sir ur hr` (and JP `sr ar sar`) are **reserved** so a set code can't hijack them. `DR` = Double Rare (community shorthand; `rr` also works).
+- Mechanic tags are exact filters: `v`, `ex` (f.mech), `vmax`, `vstar` (stage), `gx`, `break` (subtype). Matched by subtype OR name via `stampOK`/`NAME_STAMPED`, so "melmetal v" never returns VMAX, ex or GX. Applied in the fallback (passId) too.
+- Exact name: when the name part of the query is a complete base name (`isBaseName`, from the suggestion index), results keep only cards whose name contains that whole name. "mew" never returns Mewtwo; "meowth" keeps Alolan / Team Rocket's Meowth. Partial input ("meo") still prefix-matches. Same rule whether typed or picked from a chip.
+- `SET_TWINS`: a promo line split across two set names (pokemon-tcg-data's joined cards vs TCGplayer standalones, e.g. "SV: Scarlet & Violet Promo Cards"/SVP and "Scarlet & Violet Black Star Promos"/PR-SV) searches as one set. Add a pair when a new promo line splits.
 - `ereader` / `e-reader` / `e card` filters to the e-Reader sets (`EREADER_SETS`: EN Expedition, Aquapolis, Skyridge; JP Card e sets). Works alone or with a name.
 - Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`).
 
