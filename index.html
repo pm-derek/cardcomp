@@ -3233,6 +3233,9 @@ function run(raw){
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
       for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
     }
+    // exact name (typed in full or picked from a suggestion chip): only cards carrying that whole name.
+    // "mew" -> Mew, Mew ex, Ancient Mew; never Mewtwo. "meowth" keeps Alolan / Team Rocket's Meowth.
+    if(isBaseName(q)){ const qq=" "+q+" ", ex=res.filter(r=>(" "+normName(r.n)+" ").includes(qq)); if(ex.length) res=ex; }
   } else {
     res = CARDS.map(c=>({...c, score:1})).filter(r=>passFilters(r));
   }
@@ -3335,6 +3338,13 @@ function sugIndex(){
   }
   const bases=[...cnt].map(([lc,k])=>({b:disp.get(lc),lc,k})).sort((a,b)=>b.k-a.k);
   return (SUG={key,cnt,bases,byBase});
+}
+const normName = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+let BASE_NORM=null, BASE_KEY="";
+function isBaseName(q){   // q is a complete Pokemon/character name in the current game+lang
+  const idx=sugIndex();
+  if(BASE_KEY!==idx.key){ BASE_NORM=new Set([...idx.cnt.keys()].map(normName)); BASE_KEY=idx.key; }
+  return BASE_NORM.has(normName(q));
 }
 function sugExpand(tok){
   for(const [re,v] of NICK){ if(re.source.replace(/\\b/g,"")===tok) return v; }
