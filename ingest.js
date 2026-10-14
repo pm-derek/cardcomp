@@ -345,7 +345,7 @@ async function gameCards(catName, game, idPrefix){
 }
 const lorcanaCards = () => gameCards("Lorcana", "lorcana", "lc");
 
-// data.json as committed on or before `days` ago -> Map(id -> best price). null outside git / no history.
+// data.json as committed on or before `days` ago -> Map(id -> px). null outside git / no history.
 function snapshot(days){
   try {
     const before = new Date(Date.now() - days * 864e5).toISOString();
@@ -353,7 +353,7 @@ function snapshot(days){
     if (!sha) return null;
     const date = execSync(`git log -1 --format=%cs ${sha}`, { encoding: "utf8" }).trim();
     const d = JSON.parse(execSync(`git show ${sha}:data.json`, { encoding: "utf8", maxBuffer: 1 << 30 }));
-    const m = new Map(); for (const c of d.cards || []) { const b = bestPrice(c.px || {}); if (b) m.set(c.id, b); }
+    const m = new Map(); for (const c of d.cards || []) if (c.px) m.set(c.id, c.px);
     m.date = date; return m;
   } catch (e) { console.log("snapshot failed: " + e.message.split("\n")[0]); return null; }
 }
@@ -412,12 +412,18 @@ function coverageProblems(kept){
   // ---- price trend: best price now vs the data.json committed ~7 and ~30 days ago (git history is the archive)
   for (const [key, days] of [["d7", 7], ["d30", 30]]){
     const old = snapshot(days); if (!old) { console.log(`trend ${key}: no snapshot that old in git history, skipped`); continue; }
+    // Same printing on both days (the top-priced one present in both, i.e. what the app shows), and
+    // only real market prices: a price that equals the low listing is a lone listing, not a trade.
+    // Moves over 200% are almost always a data artifact on a thin card; show nothing rather than noise.
+    const lone = v => !v || v.m == null || (v.l != null && Math.abs(v.m - v.l) < 0.005);
     let n = 0;
     for (const c of kept){
-      const was = old.get(c.id), now = bestPrice(c.px);
-      if (!was || !now) continue;
-      const pct = Math.round((now - was) / was * 100);
-      if (Math.abs(pct) >= 1){ c[key] = pct; n++; }
+      const o = old.get(c.id); if (!o || !c.px) continue;
+      let k = null, top = -1;
+      for (const x in c.px){ const m = c.px[x].m; if (o[x] && m != null && m > top){ top = m; k = x; } }
+      if (!k || lone(c.px[k]) || lone(o[k])) continue;
+      const pct = Math.round((c.px[k].m - o[k].m) / o[k].m * 100);
+      if (Math.abs(pct) >= 1 && Math.abs(pct) <= 200){ c[key] = pct; n++; }
     }
     console.log(`trend ${key}: vs ${old.date}, ${n} cards moved >= 1%`);
   }

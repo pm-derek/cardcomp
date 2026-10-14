@@ -2513,9 +2513,9 @@ function copyAmt(val, el){
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 // price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
 function pctTxt(p){ return `<span style="color:${p<0?"var(--red)":"var(--green)"}">${p<0?"↓":"↑"}${Math.abs(p)}%</span>`; }
-function trendTag(r){   // collapsed card: 30d move only when it matters
+function trendTag(r){   // collapsed card: 30d move only when it matters (15%+, about 1 card in 6)
   if(r.ps) return ` · <b style="color:var(--gold)">⚠ price ${fmtDay(r.ps)}</b>`;
-  return (r.d30!=null && Math.abs(r.d30)>=5) ? ` · ${pctTxt(r.d30)} 30d` : "";
+  return (r.d30!=null && Math.abs(r.d30)>=15) ? ` · ${pctTxt(r.d30)} 30d` : "";
 }
 function trendLine(r){   // detail line: both windows
   if(!r) return "";
