@@ -2465,11 +2465,11 @@ function tcgProductUrl(pid, printing, cond){
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
 // Collector numbers are printed zero-padded ("095", "095/095") but ingest de-pads them to "95",
 // so a typed "Cynthia 095" never matched. Compare with padding stripped from both sides.
-function numMatch(cardNum, want){
+function numMatch(cardNum, want, exact){   // prefix while typing; exact when the number is complete ("4/102")
   const dp=s=>String(s==null?"":s).toLowerCase().trim().replace(/^0+(?=\d)/,"");
   const n=dp(cardNum), w=dp(want);
   if(!w) return true;
-  return n===w || n.startsWith(w);
+  return n===w || (!exact && n.startsWith(w));
 }
 // Three values per recommendation: the exact margin bid, the whole-dollar round-DOWN you would
 // actually type into Whatnot (with its own % so you can see what rounding costs you), and the
@@ -3226,7 +3226,7 @@ function run(raw){
     if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
-    if(f.number && !numMatch(r.num, f.number)) return false;
+    if(f.number && !numMatch(r.num, f.number, !!f.setSize)) return false;
     if(lv<1 && f.setSize){ const z=SET_SIZE[r.s]; if(z && !z.includes(f.setSize)) return false; }   // unknown size: keep; relaxed retry drops it
     return true;
   };
@@ -3234,7 +3234,7 @@ function run(raw){
   const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
     && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName) && (!f.setIn || f.setIn.has(r.s||"")) && (!f.mech || stampOK(f.mech, r))
     && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
-    && (!f.number || numMatch(r.num, f.number));
+    && (!f.number || numMatch(r.num, f.number, !!f.setSize));
 
   let res, literal=false;
   if(q){
