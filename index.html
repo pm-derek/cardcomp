@@ -3425,8 +3425,8 @@ function suggest(raw){
   const solid=out.filter(x=>x.k>1);   // hide one-off oddities ("Pikachu SM04 Target") when real choices exist
   return {frag,items:(solid.length>=3?solid:out).slice(0,6)};
 }
-// keyboard: Shift+Tab (or Up/Down) moves a highlight, Tab takes the highlight (or the first chip), Enter takes it only
-// when one is highlighted (otherwise Enter searches what was typed), Esc hides. Tap works as before.
+// keyboard: Tab / Shift+Tab (or Down/Up) move a highlight right / left, Enter or Space takes it. With nothing
+// highlighted, Enter searches what was typed and Space types a space. Esc hides. Tap works as before.
 let SUG_SEL=-1, SUG_PICK=null, SUG_N=0;
 function renderSug(){
   const box=$("#sug"), qel=$("#q");
@@ -3457,9 +3457,8 @@ function sugKey(e){   // true if the key was used by the suggestion chips
   if(!SUG_N || !SUG_PICK || !$("#sug").classList.contains("on")) return false;
   if(e.key==="ArrowDown"){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }
   if(e.key==="ArrowUp"){ e.preventDefault(); sugHighlight(SUG_SEL<0 ? -1 : SUG_SEL-1); return true; }
-  if(e.key==="Tab" && e.shiftKey){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }   // home-row way to move along the chips
-  if(e.key==="Tab"){ e.preventDefault(); SUG_PICK(SUG_SEL<0?0:SUG_SEL); return true; }
-  if(e.key==="Enter" && SUG_SEL>=0){ e.preventDefault(); SUG_PICK(SUG_SEL); return true; }
+  if(e.key==="Tab"){ e.preventDefault(); sugHighlight(e.shiftKey ? (SUG_SEL<0 ? -1 : SUG_SEL-1) : SUG_SEL+1); return true; }   // Tab right, Shift+Tab left
+  if((e.key==="Enter" || e.key===" ") && SUG_SEL>=0){ e.preventDefault(); SUG_PICK(SUG_SEL); return true; }   // only once a chip is highlighted
   if(e.key==="Escape"){ e.preventDefault(); const box=$("#sug"); box.dataset.hidden=$("#q").value; box.classList.remove("on"); box.innerHTML=""; SUG_N=0; return true; }
   return false;
 }
