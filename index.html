@@ -3020,6 +3020,62 @@ const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
 const SET_NICK = {"30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 // EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
+// EN set (lowercased) -> JP set NAMES, for eras where JP sets have no codes or split into pairs.
+// Searching an EN set name in JP mode filters to these. Where the EN/JP split is not one-to-one
+// (BW, DP, late EX) neighbouring JP sets are included: a slightly wide result beats a miss.
+const EN_TO_JP_NAMES = {
+ "base":["Expansion Pack","Expansion Pack (No Rarity)"],"jungle":["Pokemon Jungle"],"fossil":["Mystery of the Fossils"],
+ "base set 2":["Expansion Pack","Expansion Pack (No Rarity)","Pokemon Jungle"],"team rocket":["Rocket Gang"],
+ "gym heroes":["Leaders' Stadium"],"gym challenge":["Challenge from the Darkness"],
+ "neo genesis":["Gold, Silver, to a New World..."],"neo discovery":["Crossing the Ruins..."],
+ "neo revelation":["Awakening Legends"],"neo destiny":["Darkness, and to Light..."],"southern islands":["Southern Island"],
+ "legendary collection":["Expansion Pack","Expansion Pack (No Rarity)","Pokemon Jungle","Mystery of the Fossils","Rocket Gang"],
+ "expedition":["Base Expansion Pack","The Town on No Map"],"aquapolis":["Wind from the Sea","Split Earth"],
+ "skyridge":["Split Earth","Mysterious Mountains"],
+ "ruby & sapphire":["ADV Expansion Pack"],"sandstorm":["Miracle of the Desert"],"ex dragon":["Rulers of the Heavens"],
+ "team magma vs team aqua":["Magma VS Aqua: Two Ambitions"],"hidden legends":["Undone Seal"],
+ "firered & leafgreen":["Flight of Legends"],"team rocket returns":["Rocket Gang Strikes Back"],
+ "deoxys":["Clash of the Blue Sky"],"emerald":["Golden Sky, Silvery Ocean"],"unseen forces":["Mirage Forest"],
+ "delta species":["Holon Research Tower"],"legend maker":["Holon Phantom","Miracle Crystal"],"holon phantoms":["Holon Phantom"],
+ "crystal guardians":["Miracle Crystal"],"dragon frontiers":["Offense and Defense of the Furthest Ends"],
+ "power keepers":["Offense and Defense of the Furthest Ends","Miracle Crystal"],
+ "diamond & pearl":["DP1: Space-Time Creation"],"mysterious treasures":["DP2: Secret of the Lakes"],
+ "secret wonders":["DP3: Shining Darkness"],"great encounters":["DP4: Dawn Dash","DP4: Moonlit Pursuit"],
+ "majestic dawn":["DP5: Cry from the Mysterious","DP5: Temple of Anger"],
+ "legends awakened":["DP5: Cry from the Mysterious","DP5: Temple of Anger","Intense Fight in the Destroyed Sky"],
+ "stormfront":["Intense Fight in the Destroyed Sky","DP5: Cry from the Mysterious","DP5: Temple of Anger"],
+ "platinum":["Pt1: Galactic's Conquest"],"rising rivals":["Pt2: Bonds to the End of Time"],
+ "supreme victors":["Pt3: Beat of the Frontier"],"arceus":["Pt4: Advent of Arceus"],
+ "heartgold & soulsilver":["L1: HeartGold Collection","L1: SoulSilver Collection"],"unleashed":["L2: Revival Legends"],
+ "undaunted":["L2: Revival Legends","L3: Clash at the Summit"],"triumphant":["L3: Clash at the Summit"],
+ "call of legends":["LL: Lost Link","L3: Clash at the Summit"],
+ "black & white":["BW1: Black Collection","BW1: White Collection"],"emerging powers":["BW2: Red Collection"],
+ "noble victories":["BW2: Red Collection","BW3: Hail Blizzard","BW3: Psycho Drive"],
+ "next destinies":["BW3: Hail Blizzard","BW3: Psycho Drive","BW4: Dark Rush"],"dark explorers":["BW4: Dark Rush"],
+ "dragons exalted":["BW5: Dragon Blade","BW5: Dragon Blast"],"boundaries crossed":["BW6: Cold Flare","BW6: Freeze Bolt"],
+ "plasma storm":["BW7: Plasma Gale"],"plasma freeze":["BW8: Spiral Force","BW8: Thunder Knuckle"],"plasma blast":["BW9: Megalo Cannon"],
+ "legendary treasures":["EX Battle Boost"],"dragon vault":["Dragon Selection"],
+ "xy":["XY-Bx: Collection X","XY-By: Collection Y"],"flashfire":["XY2: Wild Blaze"],"furious fists":["XY3: Rising Fist"],
+ "phantom forces":["XY4: Phantom Gate"],"primal clash":["XY5-Bg: Gaia Volcano","XY5-Bt: Tidal Storm"],
+ "double crisis":["CP1: Magma Gang vs Aqua Gang: Double Crisis"],"roaring skies":["XY6: Emerald Break"],
+ "ancient origins":["XY7: Bandit Ring"],"breakthrough":["XY8-Bb: Blue Shock","XY8-Br: Red Flash"],
+ "breakpoint":["XY9: Rage of the Broken Heavens"],"generations":["CP2: Legendary Shine Collection"],
+ "fates collide":["XY10: Awakening Psychic King"],"steam siege":["XY11-Bb: Fever-Burst Fighter","XY11-Br: Cruel Traitor"],
+ "evolutions":["CP6: Expansion Pack 20th Anniversary"],
+ "sm base set":["SM1M: Collection Moon","SM1S: Collection Sun","sm1+: Enhanced Expansion Pack Sun & Moon"],
+ "guardians rising":["SM2K: Islands Await You","SM2L: Alolan Moonlight","SM2+: Facing a New Trial"],
+ "burning shadows":["SM3H: To Have Seen the Battle Rainbow","SM3N: Darkness that Consumes Light"],
+ "shining legends":["SM3+: Shining Legends"],"crimson invasion":["SM4A: Ultradimensional Beasts","SM4S: Awakened Heroes","SM4+: GX Battle Boost"],
+ "ultra prism":["SM5M: Ultra Moon","SM5S: Ultra Sun","SM5+: Ultra Force"],"forbidden light":["SM6: Forbidden Light"],
+ "celestial storm":["SM7: Sky-Splitting Charisma","SM6b: Champion Road"],"dragon majesty":["SM6a: Dragon Storm"],
+ "lost thunder":["SM8: Super-Burst Impact","SM7a: Thunderclap Spark","SM7b: Fairy Rise"],
+ "team up":["SM9: Tag Bolt","SM8a: Dark Order","SM9a: Night Unison"],
+ "unbroken bonds":["SM10: Double Blaze","SM9b: Full Metal Wall","SM10a: GG End"],
+ "unified minds":["SM11: Miracle Twin","SM10b: Sky Legend","SM11a: Remix Bout"],
+ "hidden fates":["SM8b: GX Ultra Shiny"],"hidden fates shiny vault":["SM8b: GX Ultra Shiny"],
+ "cosmic eclipse":["SM12: Alter Genesis","SM11b: Dream League","SM12a: TAG TEAM GX: Tag All Stars"],
+ "detective pikachu":["smP2: Great Detective Pikachu"]
+};
 const EN_TO_JP = {
  "151":["sv2a"],"scarlet & violet":["sv1s","sv1v"],"paldea evolved":["sv2d","sv2p"],
  "obsidian flames":["sv3"],"paradox rift":["sv4k","sv4m"],"paldean fates":["sv4a"],
@@ -3201,8 +3257,10 @@ function parse(raw){
     else if(SET_GROUP[en]){ f.setIn=SET_GROUP[en]; f.setInLabel=en+" + Classic"; f.setName=null; f.setCode=null; } }   // main set: include its Classic Collection
   if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
+    const jn = en && EN_TO_JP_NAMES[String(en).toLowerCase()];
     const jc = en && EN_TO_JP[String(en).toLowerCase()];
-    if(jc){ f.jpCodes=jc; f.setName=null; f.setCode=null; }
+    if(jn){ f.setIn=new Set(jn); f.setInLabel="JP "+en; f.setName=null; f.setCode=null; }   // by JP set name (named map wins)
+    else if(jc){ f.jpCodes=jc; f.setName=null; f.setCode=null; }
     else if(en && !jpHasSet(en)){   // EN set with no JP twin (vintage JP sets have no codes and different names): match by era instead
       const y=enSetYear(en);
       if(y){ f.eraMax=Math.min(f.eraMax||9999, y); f.setName=null; f.setCode=null; f.note.push(en+" → JP by year"); }
