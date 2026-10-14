@@ -3079,7 +3079,10 @@ function parse(raw){
     [/\bshadowless\b/, "shadowless", "Shadowless"],
     [/\bunlimited\b/, "unlimited", "Unlimited"]
   ];
-  for(const [re,key,lab] of PRINTS){ if(re.test(text)){ f.printing=key; f.printingLabel=lab; if(key==="1st edition"){ f.eraMax=f.eraMax||2002; } text=text.replace(re," "); break; } }
+  // "1st edition shadowless" (either order): both words matter. Only Base Set has that printing, so
+  // taking just "1st edition" returned Neo Destiny's 1st Ed Machop first.
+  if(PRINTS[0][0].test(text) && PRINTS[1][0].test(text)){ f.printing="shadowless 1st edition"; f.printingLabel="Shadowless 1st Edition"; f.eraMax=f.eraMax||2002; text=text.replace(PRINTS[0][0]," ").replace(PRINTS[1][0]," "); }
+  else for(const [re,key,lab] of PRINTS){ if(re.test(text)){ f.printing=key; f.printingLabel=lab; if(key==="1st edition"){ f.eraMax=f.eraMax||2002; } text=text.replace(re," "); break; } }
 
   // finishes & printings -> deferred to price layer (recognized, not filtered here)
   const FIN = [

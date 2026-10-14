@@ -36,7 +36,7 @@ Vintage JP (Expansion Pack through Neo, Gym, VS) prints no collector number, so 
 - **Carry forward**: TCGplayer has no price row some days for pricey illiquid cards (Gold Stars, $1k+ vintage), so they used to vanish from search for a day. A card whose product got no price today keeps yesterday's entry up to 30 days with `ps` set; the app shows "⚠ no TCGplayer price since <date>". Cards present but under the floor, or whose product reappeared under a new id, are not carried.
 - **Trend** (`d7`/`d30`): read from git history (the workflow fetches 40 days; every daily commit is a snapshot, so full history already exists for free). Compares the same printing on both days (top printing with a real market price both days; m == l is a lone listing and skipped), drops moves > 200% as artifacts. Collapsed card shows the 30d move at 15%+ (about 1 card in 6); the detail line shows both.
 
-Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings.
+Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings. Folded printings (Shadowless, Master Ball / Poké Ball patterns) are separate TCGplayer products, so each keeps its own product id in `px[k].p`; every TCGplayer link uses the selected printing's `p` (falling back to `pid`) and strips the prefix for the Printing filter. Without it the link opens the base card (shipped once: 1st Ed Shadowless Machop opened regular Machop).
 
 ## The card object
 
@@ -118,7 +118,8 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - 25th anniversary: "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations" and code "cel" all mean `CEL25_SETS` (Celebrations + its Classic Collection + McDonald's 25th promos); JP mode maps to S8a / s8a-G / s8a-P. `SET_GROUP`: naming a main set also covers its Classic Collection (Celebrations, 30th Celebration), because the vintage reprints like Charizard live only in the Classic Collection. Naming the Classic Collection itself stays exact. Singular "celebration" is left to the 30th.
 - `ereader` / `e-reader` / `e card` filters to the e-Reader sets (`EREADER_SETS`: EN Expedition, Aquapolis, Skyridge; JP Card e sets). Works alone or with a name.
 - `4/102`: the number must match exactly and the set's printed size (`sz`) must include 102; sets with no recorded size are kept, and a zero result relaxes to closest by name.
-- Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`).
+- Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`). `1st` + `shadowless` together (any order) mean the Shadowless 1st Edition printing.
+- Condition grid: the `NM ↗` label and the market price both open TCGplayer listings for that printing and condition; the bid copies.
 
 ## Other UI notes
 
