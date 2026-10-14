@@ -90,6 +90,19 @@ Bids **copy to clipboard as whole dollars, floored** (`Math.floor`) — Whatnot 
 
 Each condition row and the collapsed card also show the **net $ profit** at that bid. `thinFlag()` marks bids built on shaky price data (no market, low-listing-only, or wide spread).
 
+## Condition multipliers (TIERS / tierFor in index.html)
+
+LP/MP/HP/DMG prices = NM x multiplier by era (and price band for 2020+). Measured 2026-10 from a TCGplayer Seller Portal pricing export of 13 full sets with every condition (Base Set, Shadowless, Neo Discovery, EX R&S, EX Magma/Aqua, XY, BREAKpoint, Crimson Invasion, Lost Thunder, Crown Zenith, Temporal Forces, Prismatic, Phantasmal Flames; ~13.5k prices). Era drives the discount; price band barely matters.
+
+```
+                LP    MP    HP    DMG
+1999-2016      60%   40%   29%   21%    (measured: WOTC, EX and XY all ~59-61% LP)
+2017-2019      74%   58-60 44-45 33-38  (SM measured LP 74%)
+2020+          80-90 55-78 35-58 22-42  (kept cautious; measured LP ~100% but thin markets)
+```
+
+Before this, the era line was 2010, so XY / BW cards used modern 90% LP and played older cards were overbid. To re-tune: export a few full sets (all conditions) from the Seller Portal pricing page and rerun the per-card played/NM medians by era.
+
 ## Full-art / chase toggle: isChase()
 
 Per-game classification:

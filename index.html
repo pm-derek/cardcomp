@@ -2360,12 +2360,17 @@ const COND_COLORS = {NM:"#5fd6a0",LP:"#9ed36a",MP:"#f5b301",HP:"#ff9e4a",DMG:"#f
 const MULT_DEF = {NM:1,LP:0.85,MP:0.70,HP:0.55,DMG:0.40};
 function getNum(id,def){ const el=$("#cfg-"+id); const v=el?parseFloat(el.value):NaN; return isNaN(v)?def:v; }
 function mult(cond){ const el=document.querySelector('.multrow input[data-c="'+cond+'"]'); const v=el?parseFloat(el.value):NaN; return isNaN(v)?MULT_DEF[cond]:v; }
+// Condition multipliers (share of NM). Measured 2026-10 from a TCGplayer pricing export of 13 full sets,
+// every condition (Base Set through Phantasmal Flames, ~13.5k prices): era drives the discount, price
+// barely does. Pre-2017 cards sell at LP ~60% / MP ~40%; Sun & Moon LP ~74%. 2020+ measured higher
+// (LP ~100%, thin markets) but keeps the older, more cautious numbers so played modern bids stay safe.
 const TIERS = {
-  modern:  { lo:{LP:.90,MP:.78,HP:.58,DMG:.42}, mid:{LP:.85,MP:.65,HP:.42,DMG:.28}, hi:{LP:.80,MP:.55,HP:.35,DMG:.22} },
-  vintage: { lo:{LP:.78,MP:.58,HP:.38,DMG:.22}, mid:{LP:.70,MP:.50,HP:.30,DMG:.18}, hi:{LP:.62,MP:.42,HP:.22,DMG:.12} }
+  older:  { lo:{LP:.60,MP:.40,HP:.29,DMG:.21}, mid:{LP:.60,MP:.40,HP:.29,DMG:.21}, hi:{LP:.60,MP:.40,HP:.29,DMG:.21} },   // 1999-2016
+  sm:     { lo:{LP:.74,MP:.60,HP:.45,DMG:.38}, mid:{LP:.74,MP:.58,HP:.44,DMG:.35}, hi:{LP:.74,MP:.58,HP:.44,DMG:.33} },   // 2017-2019
+  modern: { lo:{LP:.90,MP:.78,HP:.58,DMG:.42}, mid:{LP:.85,MP:.65,HP:.42,DMG:.28}, hi:{LP:.80,MP:.55,HP:.35,DMG:.22} }    // 2020+
 };
 function tierFor(year, price){
-  const era = (year && year<=2010) ? "vintage" : "modern";
+  const era = !year ? "modern" : year<=2016 ? "older" : year<=2019 ? "sm" : "modern";
   const band = price>100 ? "hi" : price>=20 ? "mid" : "lo";
   return {era, band, m:TIERS[era][band]};
 }
