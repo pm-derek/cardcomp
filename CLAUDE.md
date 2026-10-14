@@ -90,6 +90,19 @@ Bids **copy to clipboard as whole dollars, floored** (`Math.floor`) — Whatnot 
 
 Each condition row and the collapsed card also show the **net $ profit** at that bid. `thinFlag()` marks bids built on shaky price data (no market, low-listing-only, or wide spread).
 
+## Condition multipliers (TIERS / tierFor in index.html)
+
+LP/MP/HP/DMG prices = NM x multiplier by era (and price band for 2020+). Measured 2026-10 from a TCGplayer Seller Portal pricing export of 13 full sets with every condition (Base Set, Shadowless, Neo Discovery, EX R&S, EX Magma/Aqua, XY, BREAKpoint, Crimson Invasion, Lost Thunder, Crown Zenith, Temporal Forces, Prismatic, Phantasmal Flames; ~13.5k prices). Era drives the discount; price band barely matters.
+
+```
+                LP    MP    HP    DMG
+1999-2016      60%   40%   29%   21%    (measured: WOTC, EX and XY all ~59-61% LP)
+2017-2019      74%   58-60 44-45 33-38  (SM measured LP 74%)
+2020+          80-90 55-78 35-58 22-42  (kept cautious; measured LP ~100% but thin markets)
+```
+
+Before this, the era line was 2010, so XY / BW cards used modern 90% LP and played older cards were overbid. To re-tune: export a few full sets (all conditions) from the Seller Portal pricing page and rerun the per-card played/NM medians by era.
+
 ## Full-art / chase toggle: isChase()
 
 Per-game classification:
@@ -151,7 +164,7 @@ JP                10%   16%    20%     24%     25%     25%
 
 - fast = vintage (pre-2014), played (LP or worse), promos. normal = everything else. Price band uses the condition row's own price (spec §12). Rare/Holo Rare was dropped as a fast trait: split by era, modern NM rares sell only x0.85 vs their price band (the fast reading was vintage holos); modern NM promos hold up at x0.58.
 - Snapshot caveat: the inventory export has no listing dates, so months-to-sell (stock / sales rate) can only be biased toward slow. "Fast" readings are trustworthy; "slow" ones may be recent buy-ins. That is why SIR/SWSH/XY-SM/ME (1.1-1.3x) are treated as normal and JP is damped from 2.7x to 1.8x. Re-run quarterly with fresh exports before trusting the $50+ steps.
-- UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". The pill is a passive label, not tappable (Derek found tap-to-explain annoying in the list); tapping it opens the card like the rest of the row, and the detail line shows the reason ("NM 20% · slow JP"). Never swap text into the pill or bid column: any width change there squeezes the card name to nothing (shipped once, broke live). No icons or ratings. Keep it lean.
+- UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". The pill is a passive label, not tappable (Derek found tap-to-explain annoying in the list); tapping it opens the card like the rest of the row. The open card explains it in one sentence under the bid table (`speedExplain`), shown whenever the card is fast/slow or its margin differs from the floor: what made it fast/slow (vintage / played / promo / JP / price band), months to sell vs typical, and the resulting margin. Opening the card is the mobile "hover": no long-press or tap-to-reveal (both fought live use). Never swap text into the pill or bid column: any width change there squeezes the card name to nothing (shipped once, broke live). No icons or ratings. Keep it lean.
 - New card fields used by this go in `storeFields` (see the storeFields bug above).
 
 ## Deliberately not doing (don't rebuild these)

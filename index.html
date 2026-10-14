@@ -2360,12 +2360,17 @@ const COND_COLORS = {NM:"#5fd6a0",LP:"#9ed36a",MP:"#f5b301",HP:"#ff9e4a",DMG:"#f
 const MULT_DEF = {NM:1,LP:0.85,MP:0.70,HP:0.55,DMG:0.40};
 function getNum(id,def){ const el=$("#cfg-"+id); const v=el?parseFloat(el.value):NaN; return isNaN(v)?def:v; }
 function mult(cond){ const el=document.querySelector('.multrow input[data-c="'+cond+'"]'); const v=el?parseFloat(el.value):NaN; return isNaN(v)?MULT_DEF[cond]:v; }
+// Condition multipliers (share of NM). Measured 2026-10 from a TCGplayer pricing export of 13 full sets,
+// every condition (Base Set through Phantasmal Flames, ~13.5k prices): era drives the discount, price
+// barely does. Pre-2017 cards sell at LP ~60% / MP ~40%; Sun & Moon LP ~74%. 2020+ measured higher
+// (LP ~100%, thin markets) but keeps the older, more cautious numbers so played modern bids stay safe.
 const TIERS = {
-  modern:  { lo:{LP:.90,MP:.78,HP:.58,DMG:.42}, mid:{LP:.85,MP:.65,HP:.42,DMG:.28}, hi:{LP:.80,MP:.55,HP:.35,DMG:.22} },
-  vintage: { lo:{LP:.78,MP:.58,HP:.38,DMG:.22}, mid:{LP:.70,MP:.50,HP:.30,DMG:.18}, hi:{LP:.62,MP:.42,HP:.22,DMG:.12} }
+  older:  { lo:{LP:.60,MP:.40,HP:.29,DMG:.21}, mid:{LP:.60,MP:.40,HP:.29,DMG:.21}, hi:{LP:.60,MP:.40,HP:.29,DMG:.21} },   // 1999-2016
+  sm:     { lo:{LP:.74,MP:.60,HP:.45,DMG:.38}, mid:{LP:.74,MP:.58,HP:.44,DMG:.35}, hi:{LP:.74,MP:.58,HP:.44,DMG:.33} },   // 2017-2019
+  modern: { lo:{LP:.90,MP:.78,HP:.58,DMG:.42}, mid:{LP:.85,MP:.65,HP:.42,DMG:.28}, hi:{LP:.80,MP:.55,HP:.35,DMG:.22} }    // 2020+
 };
 function tierFor(year, price){
-  const era = (year && year<=2010) ? "vintage" : "modern";
+  const era = !year ? "modern" : year<=2016 ? "older" : year<=2019 ? "sm" : "modern";
   const band = price>100 ? "hi" : price>=20 ? "mid" : "lo";
   return {era, band, m:TIERS[era][band]};
 }
@@ -2439,6 +2444,23 @@ function speedOf(card, price, cond){
   const tier = months<=1.5 ? "fast" : months>=4.5 ? "slow" : "";
   if(!why.length) why.push(price<2?"bulk":"$"+(price<5?"2-5":price<10?"5-10":price<25?"10-25":price<50?"25-50":price<100?"50-100":"100+"));
   return {tier, margin, months, why:why.join(", ")};
+}
+// one plain sentence for the open card: what made it fast/slow and what that did to the margin
+function speedExplain(sp, price){
+  const floor=getNum("tgtmargin",10)/100, pct=x=>Math.round(x*100)+"%";
+  if(!sp || sp.months==null || (!sp.tier && !(sp.margin>floor+1e-9))) return "";   // plain 10% card: nothing to explain
+  const mo=x=>x<1?"under a month":"~"+(Math.round(x*10)/10)+" mo";
+  const band=price<2?"under $2":"$"+(price<5?"2-5":price<10?"5-10":price<25?"10-25":price<50?"25-50":price<100?"50-100":"100+");
+  const base=bandMonths(price), w=sp.why.split(", ");
+  const traits=w.filter(x=>["vintage","played","promo"].includes(x));
+  const marginTxt = sp.margin>floor+1e-9
+    ? `so the bid uses a ${pct(sp.margin)} margin instead of your ${pct(floor)} (aiming for ~50%/yr on money tied up)`
+    : `so the margin stays at your ${pct(floor)}`;
+  const lab = sp.tier==="fast" ? `<b style="color:var(--green)">Fast seller.</b> ` : sp.tier==="slow" ? `<b style="color:var(--gold)">Slow seller.</b> ` : "";
+  const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+  if(traits.length) return `${lab}${cap(traits.join(" + "))} cards sell about 2x faster than others: ${mo(sp.months)} to sell vs ${mo(base)} typical at ${band}, ${marginTxt}.`;
+  if(w.includes("JP")) return `${lab}JP cards sell ~1.8x slower than English: ${mo(sp.months)} to sell at ${band} (English ${mo(base)}), ${marginTxt}.`;
+  return `${lab}${cap(band)} cards ${sp.tier==="fast"?"sell in":"take"} ${mo(sp.months)}${sp.tier==="fast"?"":" to sell"} in your sales history, ${marginTxt}.`;
 }
 function speedReason(sp){ return `${sp.tier||"normal"}: ${sp.why}, ~${sp.months<1?"<1":Math.round(sp.months)} mo to sell, ${Math.round(sp.margin*100)}% margin`; }
 function flatBidTag(sp, mkt, tiers){   // the bid at your flat settings margin, shown only when speed lowered the bid
@@ -2599,9 +2621,9 @@ function renderPrices(host, data, prices, src){
     const np=netProceeds(listSale(nm));
     // one short line: margin + speed reason, flat bid only when it's $1+ higher, low listing, data warning
     const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl);
-    const spdTxt = sp.tier ? ` · <span style="color:${sp.tier==="fast"?"var(--green)":"var(--gold)"}">${sp.tier} ${escH(sp.why)}</span>` : "";
+    const spdTxt = "";   // the why now gets its own sentence below (speedExplain)
     const flatTxt = (sp.margin>fl+1e-9 && fb-bid>=1) ? ` · flat <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>` : "";
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>${speedExplain(sp, nm)?`<span class="mbsub" style="display:block;margin-top:4px">${speedExplain(sp, nm)}</span>`:""}`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
