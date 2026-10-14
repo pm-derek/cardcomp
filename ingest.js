@@ -412,16 +412,17 @@ function coverageProblems(kept){
   // ---- price trend: best price now vs the data.json committed ~7 and ~30 days ago (git history is the archive)
   for (const [key, days] of [["d7", 7], ["d30", 30]]){
     const old = snapshot(days); if (!old) { console.log(`trend ${key}: no snapshot that old in git history, skipped`); continue; }
-    // Same printing on both days (the top-priced one present in both, i.e. what the app shows), and
-    // only real market prices: a price that equals the low listing is a lone listing, not a trade.
+    // Same printing on both days: the top-priced one with a real market price on both days. A price
+    // equal to the low listing is a lone listing, not a trade (Base Charizard's $100k Shadowless 1st Ed),
+    // so that card compares its Unlimited Holo instead.
     // Moves over 200% are almost always a data artifact on a thin card; show nothing rather than noise.
     const lone = v => !v || v.m == null || (v.l != null && Math.abs(v.m - v.l) < 0.005);
     let n = 0;
     for (const c of kept){
       const o = old.get(c.id); if (!o || !c.px) continue;
       let k = null, top = -1;
-      for (const x in c.px){ const m = c.px[x].m; if (o[x] && m != null && m > top){ top = m; k = x; } }
-      if (!k || lone(c.px[k]) || lone(o[k])) continue;
+      for (const x in c.px){ const m = c.px[x].m; if (o[x] && !lone(c.px[x]) && !lone(o[x]) && m > top){ top = m; k = x; } }
+      if (!k) continue;
       const pct = Math.round((c.px[k].m - o[k].m) / o[k].m * 100);
       if (Math.abs(pct) >= 1 && Math.abs(pct) <= 200){ c[key] = pct; n++; }
     }
