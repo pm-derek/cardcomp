@@ -2864,8 +2864,19 @@ const NICK = [
   [/\bzard\b/g,"charizard"],[/\bpika\b/g,"pikachu"],[/\bgard\b/g,"gardevoir"],
   [/\bgyara\b/g,"gyarados"],[/\bgren\b/g,"greninja"],[/\bttar\b/g,"tyranitar"],
   [/\blax\b/g,"snorlax"],[/\blucar\b/g,"lucario"],[/\bmence\b/g,"salamence"],
-  [/\bchomp\b/g,"garchomp"],[/\bdnite\b/g,"dragonite"]
+  [/\bchomp\b/g,"garchomp"],[/\bdnite\b/g,"dragonite"],
+  // energy names as people say them vs as printed ("Electric Energy" is Lightning Energy on TCGplayer)
+  [/\b(electric|electricity|yellow)\s+energy\b/g,"lightning energy"],[/\b(dark|black)\s+energy\b/g,"darkness energy"],
+  [/\b(steel|silver)\s+energy\b/g,"metal energy"],[/\b(red)\s+energy\b/g,"fire energy"],[/\b(blue)\s+energy\b/g,"water energy"],
+  [/\b(green)\s+energy\b/g,"grass energy"],[/\b(purple)\s+energy\b/g,"psychic energy"]
 ];
+let _BIG=null, _BIGSRC=null;
+function nameBigrams(){   // consecutive word pairs from every card name in the current game, for "is this phrase a name?"
+  if(_BIGSRC===NAMESET) return _BIG;
+  _BIG=new Set(); _BIGSRC=NAMESET;
+  for(const n of NAMESET){ const w=n.replace(/[^a-z0-9' ]+/g," ").split(/\s+/).filter(Boolean); for(let i=0;i+1<w.length;i++) _BIG.add(w[i]+" "+w[i+1]); }
+  return _BIG;
+}
 const TYPES = {fire:"Fire",water:"Water",grass:"Grass",lightning:"Lightning",electric:"Lightning",
   psychic:"Psychic",fighting:"Fighting",darkness:"Darkness",dark:"Darkness",metal:"Metal",steel:"Metal",
   dragon:"Dragon",fairy:"Fairy",colorless:"Colorless",normal:"Colorless"};
@@ -3055,8 +3066,11 @@ function parse(raw){
   // "dark" is a card-name prefix (Dark Charizard, Dark Electrode - Team Rocket), not a type shorthand.
   // Only 30 of 168 "Dark X" cards are actually Darkness-type, so treating it as a type filter hid the rest.
   // "darkness" still selects the type.
-  m = text.match(/\b(fire|water|grass|lightning|electric|psychic|fighting|darkness|metal|steel|dragon|fairy|colorless|normal)\b/);
-  if(m){ f.type=TYPES[m[1]]; text=text.replace(m[0]," "); }
+  // A type word that is part of a real card name with the next word ("lightning energy", "double
+  // colorless energy", "electric generator", "metal saucer") stays in the name; otherwise energy and
+  // trainer cards (no type) got filtered out by a type they don't carry.
+  m = text.match(/\b(fire|water|grass|lightning|electric|psychic|fighting|darkness|metal|steel|dragon|fairy|colorless|normal)\b(\s+([a-z0-9']+))?/);
+  if(m && !(m[3] && nameBigrams().has(m[1]+" "+m[3]))){ f.type=TYPES[m[1]]; text=text.replace(new RegExp("\\b"+m[1]+"\\b")," "); }
 
   if(/\bstage\s*2\b/.test(text)){ f.stage="Stage 2"; text=text.replace(/\bstage\s*2\b/g," "); }
   else if(/\bstage\s*1\b/.test(text)){ f.stage="Stage 1"; text=text.replace(/\bstage\s*1\b/g," "); }
@@ -3411,7 +3425,7 @@ function suggest(raw){
   const solid=out.filter(x=>x.k>1);   // hide one-off oddities ("Pikachu SM04 Target") when real choices exist
   return {frag,items:(solid.length>=3?solid:out).slice(0,6)};
 }
-// keyboard: Up/Down move a highlight, Tab takes the highlight (or the first chip), Enter takes it only
+// keyboard: Shift+Tab (or Up/Down) moves a highlight, Tab takes the highlight (or the first chip), Enter takes it only
 // when one is highlighted (otherwise Enter searches what was typed), Esc hides. Tap works as before.
 let SUG_SEL=-1, SUG_PICK=null, SUG_N=0;
 function renderSug(){
@@ -3443,7 +3457,8 @@ function sugKey(e){   // true if the key was used by the suggestion chips
   if(!SUG_N || !SUG_PICK || !$("#sug").classList.contains("on")) return false;
   if(e.key==="ArrowDown"){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }
   if(e.key==="ArrowUp"){ e.preventDefault(); sugHighlight(SUG_SEL<0 ? -1 : SUG_SEL-1); return true; }
-  if(e.key==="Tab" && !e.shiftKey){ e.preventDefault(); SUG_PICK(SUG_SEL<0?0:SUG_SEL); return true; }
+  if(e.key==="Tab" && e.shiftKey){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }   // home-row way to move along the chips
+  if(e.key==="Tab"){ e.preventDefault(); SUG_PICK(SUG_SEL<0?0:SUG_SEL); return true; }
   if(e.key==="Enter" && SUG_SEL>=0){ e.preventDefault(); SUG_PICK(SUG_SEL); return true; }
   if(e.key==="Escape"){ e.preventDefault(); const box=$("#sug"); box.dataset.hidden=$("#q").value; box.classList.remove("on"); box.innerHTML=""; SUG_N=0; return true; }
   return false;
