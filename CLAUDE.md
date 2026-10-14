@@ -118,6 +118,7 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - 25th anniversary: "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations" and code "cel" all mean `CEL25_SETS` (Celebrations + its Classic Collection + McDonald's 25th promos); JP mode maps to S8a / s8a-G / s8a-P. `SET_GROUP`: naming a main set also covers its Classic Collection (Celebrations, 30th Celebration), because the vintage reprints like Charizard live only in the Classic Collection. Naming the Classic Collection itself stays exact. Singular "celebration" is left to the 30th.
 - `ereader` / `e-reader` / `e card` filters to the e-Reader sets (`EREADER_SETS`: EN Expedition, Aquapolis, Skyridge; JP Card e sets). Works alone or with a name.
 - `4/102`: the number must match exactly and the set's printed size (`sz`) must include 102; sets with no recorded size are kept, and a zero result relaxes to closest by name.
+- Suggestion chips, keyboard: Up/Down move a gold highlight, Tab takes the highlight or the first chip, Enter takes a chip only when one is highlighted (otherwise searches what was typed, so phone "Go" is unchanged), Esc hides until the next keystroke. Tap works as before.
 - Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`). `1st` + `shadowless` together (any order) mean the Shadowless 1st Edition printing.
 - Condition grid: the `NM ↗` label and the market price both open TCGplayer listings for that printing and condition; the bid copies.
 

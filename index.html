@@ -57,6 +57,7 @@
   .sug::-webkit-scrollbar{display:none}
   .sug.on{display:flex}
   .sug button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 13px;font-size:15px;font-family:inherit;cursor:pointer;line-height:1.1}
+  .sug button.sel{border-color:var(--gold);background:rgba(245,179,1,.12)}   /* keyboard highlight: Tab/Enter picks it */
   .sug button i{font-style:normal;color:var(--faint);font-size:11px;margin-left:5px}
   .pchip{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
   .pchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
@@ -3410,23 +3411,42 @@ function suggest(raw){
   const solid=out.filter(x=>x.k>1);   // hide one-off oddities ("Pikachu SM04 Target") when real choices exist
   return {frag,items:(solid.length>=3?solid:out).slice(0,6)};
 }
+// keyboard: Up/Down move a highlight, Tab takes the highlight (or the first chip), Enter takes it only
+// when one is highlighted (otherwise Enter searches what was typed), Esc hides. Tap works as before.
+let SUG_SEL=-1, SUG_PICK=null, SUG_N=0;
 function renderSug(){
   const box=$("#sug"), qel=$("#q");
   if(!box || !qel) return;
   const {frag,items}=suggest(qel.value);
-  if(!items.length || document.activeElement!==qel){ box.classList.remove("on"); box.innerHTML=""; return; }
+  SUG_SEL=-1; SUG_N=0; SUG_PICK=null;
+  if(!items.length || document.activeElement!==qel || box.dataset.hidden===qel.value){ box.classList.remove("on"); box.innerHTML=""; return; }
   box.innerHTML=items.map((x,i)=>`<button type="button" data-i="${i}">${escH(x.label)}<i>${x.k}</i></button>`).join("");
   box.classList.add("on");
-  box.querySelectorAll("button").forEach(b=>{
-    b.onclick=()=>{
-      const lab=items[+b.dataset.i].label, pick = lab==="★" ? "star" : lab;   // parse() reads "star" as the Gold Star subtype; the glyph is ignored
-      const val=qel.value, cut=val.length-frag.length;
-      qel.value=val.slice(0,cut).replace(/\s*$/, cut>0?" ":"")+pick+" ";
-      qel.focus(); try{ qel.setSelectionRange(qel.value.length,qel.value.length); }catch(_){}
-      $("#qclear").style.display="block";
-      clearTimeout(t); run(qel.value); renderSug();
-    };
-  });
+  SUG_N=items.length;
+  SUG_PICK=i=>{
+    const lab=items[i].label, pick = lab==="★" ? "star" : lab;   // parse() reads "star" as the Gold Star subtype; the glyph is ignored
+    const val=qel.value, cut=val.length-frag.length;
+    qel.value=val.slice(0,cut).replace(/\s*$/, cut>0?" ":"")+pick+" ";
+    qel.focus(); try{ qel.setSelectionRange(qel.value.length,qel.value.length); }catch(_){}
+    $("#qclear").style.display="block";
+    clearTimeout(t); run(qel.value); renderSug();
+  };
+  box.querySelectorAll("button").forEach(b=>{ b.onclick=()=>SUG_PICK(+b.dataset.i); });
+}
+function sugHighlight(i){
+  const bs=[...$("#sug").querySelectorAll("button")]; if(!bs.length) return;
+  SUG_SEL=(i+bs.length)%bs.length;
+  bs.forEach((b,j)=>b.classList.toggle("sel", j===SUG_SEL));
+  bs[SUG_SEL].scrollIntoView({block:"nearest",inline:"nearest"});
+}
+function sugKey(e){   // true if the key was used by the suggestion chips
+  if(!SUG_N || !SUG_PICK || !$("#sug").classList.contains("on")) return false;
+  if(e.key==="ArrowDown"){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }
+  if(e.key==="ArrowUp"){ e.preventDefault(); sugHighlight(SUG_SEL<0 ? -1 : SUG_SEL-1); return true; }
+  if(e.key==="Tab" && !e.shiftKey){ e.preventDefault(); SUG_PICK(SUG_SEL<0?0:SUG_SEL); return true; }
+  if(e.key==="Enter" && SUG_SEL>=0){ e.preventDefault(); SUG_PICK(SUG_SEL); return true; }
+  if(e.key==="Escape"){ e.preventDefault(); const box=$("#sug"); box.dataset.hidden=$("#q").value; box.classList.remove("on"); box.innerHTML=""; SUG_N=0; return true; }
+  return false;
 }
 
 /* ---------- wiring ---------- */
@@ -3434,7 +3454,7 @@ let t=null;
 $("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
 $("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
-$("#q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
+$("#q").addEventListener("keydown", e=>{ if(sugKey(e)) return; if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
 $("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
 $("#q").addEventListener("input", renderSug);
 $("#q").addEventListener("focus", renderSug);
