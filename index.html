@@ -2976,6 +2976,9 @@ function enSetYear(s){
 const SET_TWINS = {"SV: Scarlet & Violet Promo Cards":"Scarlet & Violet Black Star Promos",
   "SWSH: Sword & Shield Promo Cards":"SWSH Black Star Promos"};
 for(const [a,b] of Object.entries(SET_TWINS)) SET_TWINS[b]=a;
+const CEL25_SETS = new Set(["Celebrations","Celebrations: Classic Collection","McDonald's 25th Anniversary Promos"]);
+// a main set name (or its code) also covers its Classic Collection reprints; naming the Classic Collection stays exact
+const SET_GROUP = {"Celebrations": CEL25_SETS, "30th Celebration": new Set(["30th Celebration","30th Celebration: Classic Collection"])};
 const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
@@ -3032,6 +3035,15 @@ function parse(raw){
   // reserved 2-char tokens a set code must never hijack: rarity shorthands + card mechanics (ex->Expedition code "EX", gx)
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
+  // 25th anniversary (2021): "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations"
+  // all mean Celebrations + its Classic Collection + the McDonald's 25th promos (JP: the S8a family).
+  // Singular "celebration" is left alone: that is the 30th. "celebrations classic collection" stays exact.
+  { const re=/\b25th(\s+(anniversary|celebrations?))*\b|\bcel\s?25\b|\bcelebrations\b(?!\s*:?\s*classic)/;
+    if(!f.setName && !f.setIn && re.test(text)){
+      if(LANG==="jp") f.jpCodes=["s8a","s8a-g","s8a-p"];
+      else { f.setIn=CEL25_SETS; f.setInLabel="Celebrations (25th)"; }
+      text=text.replace(new RegExp(re.source,"g")," ");
+    } }
   if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().replace(/[^a-z0-9]+/g," ").split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
   if(!f.setName){ for(const nm of SET_NAMES){ if(NAMESET.has(nm.toLowerCase())) continue; const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/ /g,"[^a-z0-9]+")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }   // skip set names that are also a Pokémon (e.g. "Arceus"): treat the word as the card, not the set, so "arceus vstar" searches the Pokémon
 
@@ -3137,7 +3149,8 @@ function parse(raw){
   if(m){ f.number=m[1]; if(m[2]) f.setSize=+m[2]; text=text.replace(m[0]," "); }   // "4/102": the 102 picks sets printed out of 102
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
   if(LANG==="en"){ const en=f.setName||(f.setCode?SET_CODES[f.setCode]:null), tw=en&&SET_TWINS[en];
-    if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; } }
+    if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; }
+    else if(SET_GROUP[en]){ f.setIn=SET_GROUP[en]; f.setInLabel=en+" + Classic"; f.setName=null; f.setCode=null; } }   // main set: include its Classic Collection
   if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
     const jc = en && EN_TO_JP[String(en).toLowerCase()];
