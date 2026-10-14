@@ -2,6 +2,11 @@ name: Refresh prices
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish even if card coverage dropped sharply (only when the drop is real)"
+        type: boolean
+        default: false
   schedule:
     - cron: "0 21 * * *"
 
@@ -13,10 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # ~40 days of history so ingest.js can read the data.json from 7 and 30 days ago for price trends
+      - run: git fetch --shallow-since="$(date -u -d '40 days ago' +%F)" origin "$GITHUB_REF_NAME"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # exits non-zero (failing the run, which emails the owner) if coverage dropped sharply vs the current data.json
       - run: node ingest.js
+        env:
+          FORCE: ${{ inputs.force && '1' || '0' }}
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"

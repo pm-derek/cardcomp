@@ -2279,7 +2279,7 @@
 //# sourceMappingURL=index.js.map
 </script>
 <script>
-let CARDS = [];
+let CARDS = [], SET_SIZE = {};   // SET_SIZE: set name -> printed set sizes ("4/102" -> 102), from data.json sz
 const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
 let MODE = "";   // "" | "fa" | "bulk" | "val25" | "val50" | "promo" | "sealed" — mutually-exclusive result filter
@@ -2342,7 +2342,7 @@ function checkStale(){
 }
 async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
-  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; DATA_UPDATED=d.updated||""; }
+  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale();
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
@@ -2511,6 +2511,19 @@ function copyAmt(val, el){
   else copyFallback(s,flash);
 }
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
+// price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
+function pctTxt(p){ return `<span style="color:${p<0?"var(--red)":"var(--green)"}">${p<0?"↓":"↑"}${Math.abs(p)}%</span>`; }
+function trendTag(r){   // collapsed card: 30d move only when it matters
+  if(r.ps) return ` · <b style="color:var(--gold)">⚠ price ${fmtDay(r.ps)}</b>`;
+  return (r.d30!=null && Math.abs(r.d30)>=5) ? ` · ${pctTxt(r.d30)} 30d` : "";
+}
+function trendLine(r){   // detail line: both windows
+  if(!r) return "";
+  if(r.ps) return ` · <b style="color:var(--gold)">⚠ no TCGplayer price since ${fmtDay(r.ps)}</b>`;
+  const b=[]; if(r.d7!=null) b.push("7d "+pctTxt(r.d7)); if(r.d30!=null) b.push("30d "+pctTxt(r.d30));
+  return b.length ? " · "+b.join(" ") : "";
+}
+function fmtDay(s){ const d=new Date(s+"T12:00:00Z"); return isNaN(d) ? s : d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
 function thinFlag(pr){   // flag a bid built on shaky price data
   if(!pr) return "";
   const m=pr.market??pr.mid??0, l=pr.low;
@@ -2585,7 +2598,7 @@ function renderPrices(host, data, prices, src){
     const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl);
     const spdTxt = sp.tier ? ` · <span style="color:${sp.tier==="fast"?"var(--green)":"var(--gold)"}">${sp.tier} ${escH(sp.why)}</span>` : "";
     const flatTxt = (sp.margin>fl+1e-9 && fb-bid>=1) ? ` · flat <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>` : "";
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
@@ -2637,7 +2650,7 @@ function renderSealed(host, prices, card, pid){
     const pbid=bidForProfit(base, td, st);
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(base), st);
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
     const u=tcgProductUrl(pid, sel);
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:"";
@@ -3120,8 +3133,8 @@ function parse(raw){
   ];
   for(const [re,mm] of RAR){ if(re.test(text)){ f.rarity=mm; text=text.replace(re," "); break; } }
 
-  m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/);
-  if(m){ f.number=m[1]; text=text.replace(m[0]," "); }
+  m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*(\d{1,3})\b/);
+  if(m){ f.number=m[1]; if(m[2]) f.setSize=+m[2]; text=text.replace(m[0]," "); }   // "4/102": the 102 picks sets printed out of 102
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
   if(LANG==="en"){ const en=f.setName||(f.setCode?SET_CODES[f.setCode]:null), tw=en&&SET_TWINS[en];
     if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; } }
@@ -3145,7 +3158,7 @@ let ms = null;
 function buildIndex(){
   ms = new MiniSearch({
     fields:["n","atk","s","kind"],
-    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o"],
+    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o","d7","d30","ps"],
     searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=3 }
   });
   ms.addAll(CARDS);
@@ -3171,7 +3184,7 @@ function run(raw){
   if(f.rarity) bits.push(f.rarity.label);
   if(f.jp) bits.push(f.jp.label+" ("+f.jp.code+")");
   if(f.printing) bits.push(f.printingLabel||f.printing);
-  if(f.number) bits.push("#"+f.number);
+  if(f.number) bits.push("#"+f.number+(f.setSize?"/"+f.setSize:""));
   if(f.eraMax) bits.push("≤"+f.eraMax);
   if(f.eraMin) bits.push("≥"+f.eraMin);
   const noteStr = f.note.length ? ("  <span style='color:var(--faint)'>· "+f.note.join(" · ")+"</span>") : "";
@@ -3214,6 +3227,7 @@ function run(raw){
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
     if(f.number && !numMatch(r.num, f.number)) return false;
+    if(lv<1 && f.setSize){ const z=SET_SIZE[r.s]; if(z && !z.includes(f.setSize)) return false; }   // unknown size: keep; relaxed retry drops it
     return true;
   };
   // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
@@ -3241,7 +3255,7 @@ function run(raw){
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.mech||f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  const hasFilter = !!(f.setSize||f.mech||f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
   // a 2+ word name query (e.g. "misty poliwhirl", "brock zubat") is itself discriminating: rank by
   // relevance so a precise multi-token match wins, not by year — otherwise the OR/phonetic fallback
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
@@ -3275,7 +3289,7 @@ function render(res, literal, newestFirst){
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
             ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
-            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}</div>
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}</div>
         </div>
         ${bidHTML}
         <div class="rails">
