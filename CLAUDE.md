@@ -31,6 +31,11 @@ Every English TCGCSV *card product* becomes an entry: if it joins to a pokemon-t
 
 Vintage JP (Expansion Pack through Neo, Gym, VS) prints no collector number, so TCGplayer has no `Number` field. A product with no Number is only treated as sealed if it also lacks card fields (Rarity/HP/Card Type); otherwise it is a single with `num:""`. Regressing this silently drops ~1,700 vintage JP cards. In JP mode, an EN set name with no JP twin (Neo Genesis, Base Set) filters JP cards to <= that EN set's year instead of an exact set name.
 
+### Loud fail, carry forward, trend (end of ingest.js)
+- **Guard** (`coverageProblems`): compares against the data.json already in the repo and exits 1 (run fails, GitHub emails, nothing published) if >3% of $3+ cards vanish by id, a 200+ card segment (Pokemon EN/JP, sealed, Lorcana, One Piece) loses 20%, or 4+ sets fail to download after 3 retries. Single-set losses only log. Thresholds come from replaying 30 days of real runs (normal churn peaks ~0.9%). Manual run with `force` publishes anyway.
+- **Carry forward**: TCGplayer has no price row some days for pricey illiquid cards (Gold Stars, $1k+ vintage), so they used to vanish from search for a day. A card whose product got no price today keeps yesterday's entry up to 30 days with `ps` set; the app shows "⚠ no TCGplayer price since <date>". Cards present but under the floor, or whose product reappeared under a new id, are not carried.
+- **Trend** (`d7`/`d30`): read from git history (the workflow fetches 40 days; every daily commit is a snapshot, so full history already exists for free). Compares the same printing on both days (top printing with a real market price both days; m == l is a lone listing and skipped), drops moves > 200% as artifacts. Collapsed card shows the 30d move at 15%+ (about 1 card in 6); the detail line shows both.
+
 Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings.
 
 ## The card object
@@ -39,8 +44,11 @@ Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Sh
 { id, n:name, s:set, c:setCode, y:year, o:groupRecency, num, r:rarity,
   hp, t:[types], st:[subtypes], atk, img, lang:"en"|"jp", game:"pkmn"|"lorcana"|"onepiece",
   px:{ "<printing>": {m:marketOrMid, l:low} }, pid:tcgplayerProductId,
-  sealed:true?, kind:"<sealed type>"? }
+  sealed:true?, kind:"<sealed type>"?,
+  d7?, d30?:<% change>, ps?:"<YYYY-MM-DD last real price>" }
 ```
+
+`data.json` also carries `sz: { "<set name>": [printed set sizes] }` for "4/102" search.
 
 `game` defaults to `"pkmn"` when absent. `px` printing keys become the printing chips in the UI.
 
@@ -108,6 +116,7 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - Exact name: when the name part of the query is a complete base name (`isBaseName`, from the suggestion index), results keep only cards whose name contains that whole name. "mew" never returns Mewtwo; "meowth" keeps Alolan / Team Rocket's Meowth. Partial input ("meo") still prefix-matches. Same rule whether typed or picked from a chip.
 - `SET_TWINS`: a promo line split across two set names (pokemon-tcg-data's joined cards vs TCGplayer standalones, e.g. "SV: Scarlet & Violet Promo Cards"/SVP and "Scarlet & Violet Black Star Promos"/PR-SV) searches as one set. Add a pair when a new promo line splits.
 - `ereader` / `e-reader` / `e card` filters to the e-Reader sets (`EREADER_SETS`: EN Expedition, Aquapolis, Skyridge; JP Card e sets). Works alone or with a name.
+- `4/102`: the number must match exactly and the set's printed size (`sz`) must include 102; sets with no recorded size are kept, and a zero result relaxes to closest by name.
 - Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`).
 
 ## Other UI notes
