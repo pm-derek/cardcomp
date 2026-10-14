@@ -2458,6 +2458,7 @@ const TCG_COND={NM:"Near Mint",LP:"Lightly Played",MP:"Moderately Played",HP:"He
 function tcgProductUrl(pid, printing, cond){
   if(!pid) return "";
   const q=["Language=English"];
+  printing=(printing||"").replace(/^(Shadowless|Master Ball|Pok[eé] Ball) /,"");   // folded printings live on their own product under the plain printing name
   if(printing && TCG_PRINTINGS.has(printing)) q.push("Printing="+encodeURIComponent(printing));
   if(cond && TCG_COND[cond]) q.push("Condition="+encodeURIComponent(TCG_COND[cond]));
   return "https://www.tcgplayer.com/product/"+pid+"?"+q.join("&");
@@ -2534,13 +2535,14 @@ function thinFlag(pr){   // flag a bid built on shaky price data
 }
 function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
+  pid=(pr&&pr.p)||pid;
   const rows=CONDS.map(cond=>{
     const atc=base*condMult(cond, year, base);
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings on TCGplayer" style="color:inherit">$${atc.toFixed(2)}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
 }
@@ -2569,7 +2571,7 @@ async function loadPrices(card, host){
   if(!e || !Object.keys(e).length){ host.innerHTML='<div class="muted">No price for this card (below the bid floor, or not on TCGplayer).</div>'; }
   else {
     const prices={};
-    for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l}; }
+    for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l, p:v.p}; }   // p: this printing's own TCGplayer product (Shadowless, Master Ball...)
     renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
   }
   addDetailFlags(host, card);
@@ -2618,7 +2620,7 @@ function renderPrices(host, data, prices, src){
       if(srow && bmRow){ bmRow.insertAdjacentHTML("afterend", srow); const f=cardEl.querySelector(".bids .bs .flat"); if(f) f.onclick=(e)=>{ e.stopPropagation(); copyAmt(f.dataset.bid, f); }; }
       put(".bids .bp", pbid, nm);
     }
-    const u=tcgProductUrl(pid, sel)||fallbackUrl;
+    const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
@@ -2652,7 +2654,7 @@ function renderSealed(host, prices, card, pid){
     const np=netProceeds(listSale(base), st);
     mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
-    const u=tcgProductUrl(pid, sel);
+    const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel);
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:"";
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
     addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };

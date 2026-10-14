@@ -227,7 +227,8 @@ async function englishCards(){
       const name = p.name || "";
       if (isShadowless){                          // fold shadowless printings onto the base card
         const card = shadowSetId ? byId[`${shadowSetId}-${num}`] : null;
-        if (card){ card.px = card.px || {}; for (const k in px) card.px["Shadowless " + k] = px[k]; if (!card.pid) card.pid = p.productId; if (!card.o) card.o = g.groupId; enr++; continue; }
+        // each folded printing keeps its own product id (p): the link must open the Shadowless product, not the base card
+        if (card){ card.px = card.px || {}; for (const k in px) card.px["Shadowless " + k] = Object.assign({}, px[k], { p: p.productId }); if (!card.pid) card.pid = p.productId; if (!card.o) card.o = g.groupId; enr++; continue; }
         // no base match -> fall through and emit standalone below
       }
       let prefix = "";
@@ -239,7 +240,7 @@ async function englishCards(){
         card.o = g.groupId;
         if (prefix){                            // special holo pattern -> add as its own printing(s)
           card.px = card.px || {};
-          for (const k in px) card.px[prefix + k] = px[k];
+          for (const k in px) card.px[prefix + k] = Object.assign({}, px[k], { p: p.productId });   // own product for the link
           if (!card.pid) card.pid = p.productId;
         } else {                                // the base product
           // Several products in a group can share a collector number (a later re-release, a
