@@ -3018,7 +3018,7 @@ const SET_GROUP = {"Celebrations": CEL25_SETS, "30th Celebration": new Set(["30t
 const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
-const SET_NICK = {"30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
+const SET_NICK = {"swsh promos":"SWSH Black Star Promos","swsh promo":"SWSH Black Star Promos","sv promos":"Scarlet & Violet Black Star Promos","sv promo":"Scarlet & Violet Black Star Promos","me promos":"ME: Mega Evolution Promo","me promo":"ME: Mega Evolution Promo","tcg classic":"Trading Card Game Classic","pokemon tcg classic":"Trading Card Game Classic","trading card game classic":"Trading Card Game Classic","30th celebration classic collection":"30th Celebration: Classic Collection","30th classic collection":"30th Celebration: Classic Collection","30th classic":"30th Celebration: Classic Collection","celebrations classic collection":"Celebrations: Classic Collection","prismatic":"Prismatic Evolutions","destined rivals":"Destined Rivals","silver tempest":"Silver Tempest","twilight masquerade":"Twilight Masquerade","furious fists":"Furious Fists","team rocket returns":"Team Rocket Returns","legendary collection":"Legendary Collection","base set 2":"Base Set 2","neo genesis":"Neo Genesis","neo destiny":"Neo Destiny","gym heroes":"Gym Heroes","gym challenge":"Gym Challenge"};
 // EN set name (lowercased) -> JP set code(s). In JP mode, typing an EN set name routes to its JP analog. One EN set can merge several JP sets. Add a line per new release.
 // EN set (lowercased) -> JP set NAMES, for eras where JP sets have no codes or split into pairs.
 // Searching an EN set name in JP mode filters to these. Where the EN/JP split is not one-to-one
@@ -3074,7 +3074,20 @@ const EN_TO_JP_NAMES = {
  "unified minds":["SM11: Miracle Twin","SM10b: Sky Legend","SM11a: Remix Bout"],
  "hidden fates":["SM8b: GX Ultra Shiny"],"hidden fates shiny vault":["SM8b: GX Ultra Shiny"],
  "cosmic eclipse":["SM12: Alter Genesis","SM11b: Dream League","SM12a: TAG TEAM GX: Tag All Stars"],
- "detective pikachu":["smP2: Great Detective Pikachu"]
+ "detective pikachu":["smP2: Great Detective Pikachu"],
+ // 2020+ specials and subsets (main SV / SWSH / ME sets use the code map below)
+ "shining fates":["S4a: Shiny Star V"],"shining fates shiny vault":["S4a: Shiny Star V"],
+ "brilliant stars trainer gallery":["S9: Star Birth","S8b: VMAX Climax"],
+ "astral radiance trainer gallery":["S9a: Battle Region","S10D: Time Gazer","S10P: Space Juggler"],
+ "lost origin trainer gallery":["S11: Lost Abyss","S10a: Dark Phantasma"],
+ "silver tempest trainer gallery":["S12: Paradigm Trigger","S11a: Incandescent Arcana"],
+ "crown zenith galarian gallery":["S12a: VSTAR Universe"],
+ "30th celebration":["M6a: MEGA Expansion 30th Celebration","MF: 30th CELEBRATION Premium Deck Set Espeon & Umbreon"],
+ "pitch black":["M5: Abyss Eye"],   // by release order (M1-M4 match ME sets 1-4); confirm when the JP/EN lists are official
+ "trading card game classic":["Pokemon TCG Classic: Blastoise","Pokemon TCG Classic: Charizard","Pokemon TCG Classic: Venusaur"],
+ "sv: scarlet & violet promo cards":["SV-P Promotional Cards"],"scarlet & violet black star promos":["SV-P Promotional Cards"],
+ "swsh black star promos":["S-P: Sword & Shield Promos"],"swsh: sword & shield promo cards":["S-P: Sword & Shield Promos"],
+ "me: mega evolution promo":["M-P Promotional Cards"]
 };
 const EN_TO_JP = {
  "151":["sv2a"],"scarlet & violet":["sv1s","sv1v"],"paldea evolved":["sv2d","sv2p"],
@@ -3087,7 +3100,7 @@ const EN_TO_JP = {
  "sword & shield":["s1h","s1w"],"rebel clash":["s2"],"darkness ablaze":["s3"],
  "vivid voltage":["s4","s3a"],"battle styles":["s5r","s5i"],"chilling reign":["s6h","s6k"],
  "evolving skies":["s7r","s7d"],"fusion strike":["s8"],"brilliant stars":["s9"],
- "astral radiance":["s9a"],"pokemon go":["s10b"],"lost origin":["s11","s10a"],
+ "astral radiance":["s9a","s10d","s10p"],"pokemon go":["s10b"],"lost origin":["s11","s10a"],
  "silver tempest":["s12","s11a"],"crown zenith":["s12a"],"shining fates":["s4a"],
  "ultra prism":["sm5m","sm5s"],"forbidden light":["sm6"],"celestial storm":["sm7"],
  "lost thunder":["sm8"],"team up":["sm9"],"unbroken bonds":["sm10"],"cosmic eclipse":["sm12"],
@@ -3126,7 +3139,8 @@ function parse(raw){
   // set: ptcgo code, nickname, full name  (rarity shorthands are reserved so they can't be read as a set code)
   // reserved 2-char tokens a set code must never hijack: rarity shorthands + card mechanics (ex->Expedition code "EX", gx)
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
-  for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
+  // a code followed by "promo" ("sv promo") is a promo line (SET_NICK), not the code's set (Supreme Victors)
+  for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ") && !text.includes(" "+code+" promo")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
   // "base 2" / "base2" / "bs2" mean Base Set 2, not Base Set card #2. "base 2/102" keeps meaning #2 of 102.
   { const re=/\b(base\s?2|bs\s?2)\b(?!\s*\/)/;
     if(!f.setName && !f.setIn && re.test(text)){ f.setName="Base Set 2"; text=text.replace(re," "); } }
