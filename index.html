@@ -57,6 +57,7 @@
   .sug::-webkit-scrollbar{display:none}
   .sug.on{display:flex}
   .sug button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 13px;font-size:15px;font-family:inherit;cursor:pointer;line-height:1.1}
+  .sug button.sel{border-color:var(--gold);background:rgba(245,179,1,.12)}   /* keyboard highlight: Tab/Enter picks it */
   .sug button i{font-style:normal;color:var(--faint);font-size:11px;margin-left:5px}
   .pchip{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim);cursor:pointer;white-space:nowrap}
   .pchip.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
@@ -2279,7 +2280,7 @@
 //# sourceMappingURL=index.js.map
 </script>
 <script>
-let CARDS = [];
+let CARDS = [], SET_SIZE = {};   // SET_SIZE: set name -> printed set sizes ("4/102" -> 102), from data.json sz
 const $ = s => document.querySelector(s);
 let LANG = "en", DATA_UPDATED = "";
 let MODE = "";   // "" | "fa" | "bulk" | "val25" | "val50" | "promo" | "sealed" — mutually-exclusive result filter
@@ -2342,7 +2343,7 @@ function checkStale(){
 }
 async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
-  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; DATA_UPDATED=d.updated||""; }
+  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale();
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
@@ -2458,6 +2459,7 @@ const TCG_COND={NM:"Near Mint",LP:"Lightly Played",MP:"Moderately Played",HP:"He
 function tcgProductUrl(pid, printing, cond){
   if(!pid) return "";
   const q=["Language=English"];
+  printing=(printing||"").replace(/^(Shadowless|Master Ball|Pok[eé] Ball) /,"");   // folded printings live on their own product under the plain printing name
   if(printing && TCG_PRINTINGS.has(printing)) q.push("Printing="+encodeURIComponent(printing));
   if(cond && TCG_COND[cond]) q.push("Condition="+encodeURIComponent(TCG_COND[cond]));
   return "https://www.tcgplayer.com/product/"+pid+"?"+q.join("&");
@@ -2465,11 +2467,11 @@ function tcgProductUrl(pid, printing, cond){
 function pctMkt(bid, mkt, sfx){ return mkt>0 ? Math.round(bid/mkt*100)+"%"+(sfx||"") : ""; }   // bid as % of market, for a fast live read
 // Collector numbers are printed zero-padded ("095", "095/095") but ingest de-pads them to "95",
 // so a typed "Cynthia 095" never matched. Compare with padding stripped from both sides.
-function numMatch(cardNum, want){
+function numMatch(cardNum, want, exact){   // prefix while typing; exact when the number is complete ("4/102")
   const dp=s=>String(s==null?"":s).toLowerCase().trim().replace(/^0+(?=\d)/,"");
   const n=dp(cardNum), w=dp(want);
   if(!w) return true;
-  return n===w || n.startsWith(w);
+  return n===w || (!exact && n.startsWith(w));
 }
 // Three values per recommendation: the exact margin bid, the whole-dollar round-DOWN you would
 // actually type into Whatnot (with its own % so you can see what rounding costs you), and the
@@ -2511,6 +2513,19 @@ function copyAmt(val, el){
   else copyFallback(s,flash);
 }
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
+// price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
+function pctTxt(p){ return `<span style="color:${p<0?"var(--red)":"var(--green)"}">${p<0?"↓":"↑"}${Math.abs(p)}%</span>`; }
+function trendTag(r){   // collapsed card: 30d move only when it matters (15%+, about 1 card in 6)
+  if(r.ps) return ` · <b style="color:var(--gold)">⚠ price ${fmtDay(r.ps)}</b>`;
+  return (r.d30!=null && Math.abs(r.d30)>=15) ? ` · ${pctTxt(r.d30)} 30d` : "";
+}
+function trendLine(r){   // detail line: both windows
+  if(!r) return "";
+  if(r.ps) return ` · <b style="color:var(--gold)">⚠ no TCGplayer price since ${fmtDay(r.ps)}</b>`;
+  const b=[]; if(r.d7!=null) b.push("7d "+pctTxt(r.d7)); if(r.d30!=null) b.push("30d "+pctTxt(r.d30));
+  return b.length ? " · "+b.join(" ") : "";
+}
+function fmtDay(s){ const d=new Date(s+"T12:00:00Z"); return isNaN(d) ? s : d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
 function thinFlag(pr){   // flag a bid built on shaky price data
   if(!pr) return "";
   const m=pr.market??pr.mid??0, l=pr.low;
@@ -2521,13 +2536,14 @@ function thinFlag(pr){   // flag a bid built on shaky price data
 }
 function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
+  pid=(pr&&pr.p)||pid;
   const rows=CONDS.map(cond=>{
     const atc=base*condMult(cond, year, base);
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">$${atc.toFixed(2)}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings on TCGplayer" style="color:inherit">$${atc.toFixed(2)}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
 }
@@ -2556,7 +2572,7 @@ async function loadPrices(card, host){
   if(!e || !Object.keys(e).length){ host.innerHTML='<div class="muted">No price for this card (below the bid floor, or not on TCGplayer).</div>'; }
   else {
     const prices={};
-    for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l}; }
+    for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l, p:v.p}; }   // p: this printing's own TCGplayer product (Shadowless, Master Ball...)
     renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
   }
   addDetailFlags(host, card);
@@ -2585,7 +2601,7 @@ function renderPrices(host, data, prices, src){
     const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl);
     const spdTxt = sp.tier ? ` · <span style="color:${sp.tier==="fast"?"var(--green)":"var(--gold)"}">${sp.tier} ${escH(sp.why)}</span>` : "";
     const flatTxt = (sp.margin>fl+1e-9 && fb-bid>=1) ? ` · flat <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>` : "";
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
@@ -2605,7 +2621,7 @@ function renderPrices(host, data, prices, src){
       if(srow && bmRow){ bmRow.insertAdjacentHTML("afterend", srow); const f=cardEl.querySelector(".bids .bs .flat"); if(f) f.onclick=(e)=>{ e.stopPropagation(); copyAmt(f.dataset.bid, f); }; }
       put(".bids .bp", pbid, nm);
     }
-    const u=tcgProductUrl(pid, sel)||fallbackUrl;
+    const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
@@ -2637,9 +2653,9 @@ function renderSealed(host, prices, card, pid){
     const pbid=bidForProfit(base, td, st);
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(base), st);
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
-    const u=tcgProductUrl(pid, sel);
+    const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel);
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:"";
     addEl.innerHTML=`<button class="cadd" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:9px 14px">+ add to cart</button>`;
     addEl.querySelector(".cadd").onclick=(e)=>{ e.stopPropagation(); const b=e.currentTarget; addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:base,cond:null,y:card.y,sealed:true,wtier:wsel,lang:card.lang||"en",game:card.game||"pkmn"}); b.textContent="✓ added"; setTimeout(()=>{b.textContent="+ add to cart";},900); };
@@ -2963,6 +2979,9 @@ function enSetYear(s){
 const SET_TWINS = {"SV: Scarlet & Violet Promo Cards":"Scarlet & Violet Black Star Promos",
   "SWSH: Sword & Shield Promo Cards":"SWSH Black Star Promos"};
 for(const [a,b] of Object.entries(SET_TWINS)) SET_TWINS[b]=a;
+const CEL25_SETS = new Set(["Celebrations","Celebrations: Classic Collection","McDonald's 25th Anniversary Promos"]);
+// a main set name (or its code) also covers its Classic Collection reprints; naming the Classic Collection stays exact
+const SET_GROUP = {"Celebrations": CEL25_SETS, "30th Celebration": new Set(["30th Celebration","30th Celebration: Classic Collection"])};
 const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
@@ -3019,6 +3038,15 @@ function parse(raw){
   // reserved 2-char tokens a set code must never hijack: rarity shorthands + card mechanics (ex->Expedition code "EX", gx)
   const RAR_CODES = new Set(["dr","ir","sir","ur","hr","rr","sr","ar","sar","ex","gx"]);
   for(const code in SET_CODES){ if(code.length>=2 && !RAR_CODES.has(code) && !NAMESET.has(code) && text.includes(" "+code+" ")){ f.setCode=code; text=text.replace(new RegExp("\\b"+code+"\\b","g")," "); break; } }
+  // 25th anniversary (2021): "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations"
+  // all mean Celebrations + its Classic Collection + the McDonald's 25th promos (JP: the S8a family).
+  // Singular "celebration" is left alone: that is the 30th. "celebrations classic collection" stays exact.
+  { const re=/\b25th(\s+(anniversary|celebrations?))*\b|\bcel\s?25\b|\bcelebrations\b(?!\s*:?\s*classic)/;
+    if(!f.setName && !f.setIn && re.test(text)){
+      if(LANG==="jp") f.jpCodes=["s8a","s8a-g","s8a-p"];
+      else { f.setIn=CEL25_SETS; f.setInLabel="Celebrations (25th)"; }
+      text=text.replace(new RegExp(re.source,"g")," ");
+    } }
   if(!f.setName){ for(const k in SET_NICK){ if(text.includes(k)){ f.setName=SET_NICK[k]; text=text.replace(k," "); f.setName.toLowerCase().replace(/[^a-z0-9]+/g," ").split(/\s+/).forEach(w=>{ if(w.length>2) text=text.replace(new RegExp("\\b"+w+"\\b","g")," "); }); break; } } }   // also consume the rest of the resolved set-name words (e.g. "prismatic evolutions" -> drop "evolutions" too)
   if(!f.setName){ for(const nm of SET_NAMES){ if(NAMESET.has(nm.toLowerCase())) continue; const re=new RegExp("\\b"+nm.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/ /g,"[^a-z0-9]+")+"\\b"); if(re.test(text)){ f.setName=nm; text=text.replace(re," "); break; } } }   // skip set names that are also a Pokémon (e.g. "Arceus"): treat the word as the card, not the set, so "arceus vstar" searches the Pokémon
 
@@ -3052,7 +3080,10 @@ function parse(raw){
     [/\bshadowless\b/, "shadowless", "Shadowless"],
     [/\bunlimited\b/, "unlimited", "Unlimited"]
   ];
-  for(const [re,key,lab] of PRINTS){ if(re.test(text)){ f.printing=key; f.printingLabel=lab; if(key==="1st edition"){ f.eraMax=f.eraMax||2002; } text=text.replace(re," "); break; } }
+  // "1st edition shadowless" (either order): both words matter. Only Base Set has that printing, so
+  // taking just "1st edition" returned Neo Destiny's 1st Ed Machop first.
+  if(PRINTS[0][0].test(text) && PRINTS[1][0].test(text)){ f.printing="shadowless 1st edition"; f.printingLabel="Shadowless 1st Edition"; f.eraMax=f.eraMax||2002; text=text.replace(PRINTS[0][0]," ").replace(PRINTS[1][0]," "); }
+  else for(const [re,key,lab] of PRINTS){ if(re.test(text)){ f.printing=key; f.printingLabel=lab; if(key==="1st edition"){ f.eraMax=f.eraMax||2002; } text=text.replace(re," "); break; } }
 
   // finishes & printings -> deferred to price layer (recognized, not filtered here)
   const FIN = [
@@ -3120,11 +3151,12 @@ function parse(raw){
   ];
   for(const [re,mm] of RAR){ if(re.test(text)){ f.rarity=mm; text=text.replace(re," "); break; } }
 
-  m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*\d{1,3}\b/);
-  if(m){ f.number=m[1]; text=text.replace(m[0]," "); }
+  m = text.match(/#\s*([a-z]{0,3}\d{1,3}[a-z]?)\b/) || text.match(/\b(\d{1,3})\s*\/\s*(\d{1,3})\b/);
+  if(m){ f.number=m[1]; if(m[2]) f.setSize=+m[2]; text=text.replace(m[0]," "); }   // "4/102": the 102 picks sets printed out of 102
   else { const bm = text.match(/\b(\d{1,3})\b/); if(bm){ if(NUMSETS.has(bm[1])) f.setName=bm[1]; else f.number=bm[1]; text=text.replace(bm[0]," "); } }
   if(LANG==="en"){ const en=f.setName||(f.setCode?SET_CODES[f.setCode]:null), tw=en&&SET_TWINS[en];
-    if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; } }
+    if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; }
+    else if(SET_GROUP[en]){ f.setIn=SET_GROUP[en]; f.setInLabel=en+" + Classic"; f.setName=null; f.setCode=null; } }   // main set: include its Classic Collection
   if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
     const jc = en && EN_TO_JP[String(en).toLowerCase()];
@@ -3145,7 +3177,7 @@ let ms = null;
 function buildIndex(){
   ms = new MiniSearch({
     fields:["n","atk","s","kind"],
-    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o"],
+    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o","d7","d30","ps"],
     searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=3 }
   });
   ms.addAll(CARDS);
@@ -3171,7 +3203,7 @@ function run(raw){
   if(f.rarity) bits.push(f.rarity.label);
   if(f.jp) bits.push(f.jp.label+" ("+f.jp.code+")");
   if(f.printing) bits.push(f.printingLabel||f.printing);
-  if(f.number) bits.push("#"+f.number);
+  if(f.number) bits.push("#"+f.number+(f.setSize?"/"+f.setSize:""));
   if(f.eraMax) bits.push("≤"+f.eraMax);
   if(f.eraMin) bits.push("≥"+f.eraMin);
   const noteStr = f.note.length ? ("  <span style='color:var(--faint)'>· "+f.note.join(" · ")+"</span>") : "";
@@ -3213,14 +3245,15 @@ function run(raw){
     if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
-    if(f.number && !numMatch(r.num, f.number)) return false;
+    if(f.number && !numMatch(r.num, f.number, !!f.setSize)) return false;
+    if(lv<1 && f.setSize){ const z=SET_SIZE[r.s]; if(z && !z.includes(f.setSize)) return false; }   // unknown size: keep; relaxed retry drops it
     return true;
   };
   // set/number/printing identity, kept even in the loosest name-collision net so a fallback can't cross a set boundary
   const passId = r => (r.game||"pkmn")===GAME && (GAME!=="pkmn"||(r.lang||"en")===LANG) && inEra(r) && passMode(r)
     && (!f.setCode || (r.c||"").toLowerCase()===f.setCode) && (!f.setName || (r.s||"")===f.setName) && (!f.setIn || f.setIn.has(r.s||"")) && (!f.mech || stampOK(f.mech, r))
     && (!f.printing || Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing)))
-    && (!f.number || numMatch(r.num, f.number));
+    && (!f.number || numMatch(r.num, f.number, !!f.setSize));
 
   let res, literal=false;
   if(q){
@@ -3241,7 +3274,7 @@ function run(raw){
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
-  const hasFilter = !!(f.mech||f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
+  const hasFilter = !!(f.setSize||f.mech||f.setCode||f.setName||f.setIn||f.jpCodes||f.type||f.hp!=null||f.stage||f.subtype||f.delta||f.eraMin!=null||f.eraMax!=null||f.rarity||f.number||f.jp||f.printing);
   // a 2+ word name query (e.g. "misty poliwhirl", "brock zubat") is itself discriminating: rank by
   // relevance so a precise multi-token match wins, not by year — otherwise the OR/phonetic fallback
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
@@ -3275,7 +3308,7 @@ function render(res, literal, newestFirst){
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
             ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
-            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}</div>
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}</div>
         </div>
         ${bidHTML}
         <div class="rails">
@@ -3378,23 +3411,42 @@ function suggest(raw){
   const solid=out.filter(x=>x.k>1);   // hide one-off oddities ("Pikachu SM04 Target") when real choices exist
   return {frag,items:(solid.length>=3?solid:out).slice(0,6)};
 }
+// keyboard: Up/Down move a highlight, Tab takes the highlight (or the first chip), Enter takes it only
+// when one is highlighted (otherwise Enter searches what was typed), Esc hides. Tap works as before.
+let SUG_SEL=-1, SUG_PICK=null, SUG_N=0;
 function renderSug(){
   const box=$("#sug"), qel=$("#q");
   if(!box || !qel) return;
   const {frag,items}=suggest(qel.value);
-  if(!items.length || document.activeElement!==qel){ box.classList.remove("on"); box.innerHTML=""; return; }
+  SUG_SEL=-1; SUG_N=0; SUG_PICK=null;
+  if(!items.length || document.activeElement!==qel || box.dataset.hidden===qel.value){ box.classList.remove("on"); box.innerHTML=""; return; }
   box.innerHTML=items.map((x,i)=>`<button type="button" data-i="${i}">${escH(x.label)}<i>${x.k}</i></button>`).join("");
   box.classList.add("on");
-  box.querySelectorAll("button").forEach(b=>{
-    b.onclick=()=>{
-      const lab=items[+b.dataset.i].label, pick = lab==="★" ? "star" : lab;   // parse() reads "star" as the Gold Star subtype; the glyph is ignored
-      const val=qel.value, cut=val.length-frag.length;
-      qel.value=val.slice(0,cut).replace(/\s*$/, cut>0?" ":"")+pick+" ";
-      qel.focus(); try{ qel.setSelectionRange(qel.value.length,qel.value.length); }catch(_){}
-      $("#qclear").style.display="block";
-      clearTimeout(t); run(qel.value); renderSug();
-    };
-  });
+  SUG_N=items.length;
+  SUG_PICK=i=>{
+    const lab=items[i].label, pick = lab==="★" ? "star" : lab;   // parse() reads "star" as the Gold Star subtype; the glyph is ignored
+    const val=qel.value, cut=val.length-frag.length;
+    qel.value=val.slice(0,cut).replace(/\s*$/, cut>0?" ":"")+pick+" ";
+    qel.focus(); try{ qel.setSelectionRange(qel.value.length,qel.value.length); }catch(_){}
+    $("#qclear").style.display="block";
+    clearTimeout(t); run(qel.value); renderSug();
+  };
+  box.querySelectorAll("button").forEach(b=>{ b.onclick=()=>SUG_PICK(+b.dataset.i); });
+}
+function sugHighlight(i){
+  const bs=[...$("#sug").querySelectorAll("button")]; if(!bs.length) return;
+  SUG_SEL=(i+bs.length)%bs.length;
+  bs.forEach((b,j)=>b.classList.toggle("sel", j===SUG_SEL));
+  bs[SUG_SEL].scrollIntoView({block:"nearest",inline:"nearest"});
+}
+function sugKey(e){   // true if the key was used by the suggestion chips
+  if(!SUG_N || !SUG_PICK || !$("#sug").classList.contains("on")) return false;
+  if(e.key==="ArrowDown"){ e.preventDefault(); sugHighlight(SUG_SEL+1); return true; }
+  if(e.key==="ArrowUp"){ e.preventDefault(); sugHighlight(SUG_SEL<0 ? -1 : SUG_SEL-1); return true; }
+  if(e.key==="Tab" && !e.shiftKey){ e.preventDefault(); SUG_PICK(SUG_SEL<0?0:SUG_SEL); return true; }
+  if(e.key==="Enter" && SUG_SEL>=0){ e.preventDefault(); SUG_PICK(SUG_SEL); return true; }
+  if(e.key==="Escape"){ e.preventDefault(); const box=$("#sug"); box.dataset.hidden=$("#q").value; box.classList.remove("on"); box.innerHTML=""; SUG_N=0; return true; }
+  return false;
 }
 
 /* ---------- wiring ---------- */
@@ -3402,7 +3454,7 @@ let t=null;
 $("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
 $("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
-$("#q").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
+$("#q").addEventListener("keydown", e=>{ if(sugKey(e)) return; if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
 $("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
 $("#q").addEventListener("input", renderSug);
 $("#q").addEventListener("focus", renderSug);
