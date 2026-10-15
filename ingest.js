@@ -159,7 +159,7 @@ async function categoryId(want){
 async function englishCards(){
   // 1) pokemon-tcg-data identity ------------------------------------------------
   const sets = await getJSON(`${GH}/sets/en.json`);
-  const byId = {}; const cards = [];
+  const byId = {}, byNum = {}; const cards = [];
   for (const sm of sets){
     let raw; try { raw = await getJSON(`${GH}/cards/en/${sm.id}.json`); } catch { FAILED.push("pokemon-tcg-data " + sm.id); continue; }
     if (sm.printedTotal) (SZ[sm.name] || (SZ[sm.name] = new Set())).add(sm.printedTotal);
@@ -170,10 +170,23 @@ async function englishCards(){
         r:c.rarity||"", hp:c.hp||"", t:c.types||[], st:c.subtypes||[],
         atk, img:(c.images||{}).small||"", lang:"en" };
       cards.push(card); byId[c.id] = card;
+      const nk = `${sm.id}|${num0(c.number)}`; (byNum[nk] || (byNum[nk] = [])).push(card);
       if (FIND && FIND.test(c.name)) console.log(`FIND pokemon-tcg-data ${sm.id} "${sm.name}" | ${c.name} | #${c.number} | id ${c.id}`);
     }
   }
   console.log(`EN identity: ${cards.length} cards / ${sets.length} sets`);
+  // set + number -> card. Reprint subsets keep their original numbers, so a number can repeat in one set
+  // (30th Celebration Classic Collection: Shining Celebi, Palkia LV.X and M Gardevoir-EX are all #106).
+  // Then pick by name; joining by number alone poured Palkia's price into Shining Celebi and dropped
+  // Palkia / M Gardevoir / Genesect entirely. No name match among several -> standalone, never a guess.
+  const nameToks = s => new Set(pname(s).replace(/\blv x\b/g, "lvx").split(" ").filter(Boolean));
+  const joinCard = (setId, num, productName) => {
+    const list = setId ? byNum[`${setId}|${num}`] : null;
+    if (!list) return null;
+    if (list.length === 1) return list[0];
+    const pt = nameToks(productName);
+    return list.find(c => [...nameToks(c.n)].every(t => pt.has(t))) || null;
+  };
 
   // 2) which TCGCSV group does each pokemon-tcg-data set claim? -----------------
   const groups = (await getJSON(`${TC}/${EN_CAT}/groups`)).results;
@@ -235,7 +248,7 @@ async function englishCards(){
       noteSize(setName, ext.Number);
       const name = p.name || "";
       if (isShadowless){                          // fold shadowless printings onto the base card
-        const card = shadowSetId ? byId[`${shadowSetId}-${num}`] : null;
+        const card = joinCard(shadowSetId, num, p.cleanName || name);
         // each folded printing keeps its own product id (p): the link must open the Shadowless product, not the base card
         if (card){ card.px = card.px || {}; for (const k in px) card.px["Shadowless " + k] = Object.assign({}, px[k], { p: p.productId }); if (!card.pid) card.pid = p.productId; if (!card.o) card.o = g.groupId; enr++; continue; }
         // no base match -> fall through and emit standalone below
@@ -244,7 +257,7 @@ async function englishCards(){
       if (/master ?ball/i.test(name)) prefix = "Master Ball ";
       else if (/pok[eé] ?ball/i.test(name)) prefix = "Poké Ball ";
 
-      const card = setId ? byId[`${setId}-${num}`] : null;
+      const card = joinCard(setId, num, p.cleanName || name);
       if (card){                                // ---- JOINED: enrich pokemon-tcg-data card ----
         card.o = g.groupId;
         if (prefix){                            // special holo pattern -> add as its own printing(s)
