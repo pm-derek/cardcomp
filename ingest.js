@@ -63,6 +63,14 @@ async function getJSON(url){   // 3 tries with backoff: a transient TCGCSV hiccu
   }
   throw err;
 }
+// FIND="gardevoir|palkia" (workflow input "find"): log every matching TCGCSV product with its group,
+// number and whether it has a price row, to answer "why is card X missing?" without guessing.
+const FIND = process.env.FIND ? new RegExp(process.env.FIND, "i") : null;
+function findLog(g, p, ext, px){
+  if (!FIND || !FIND.test(p.cleanName || p.name || "")) return;
+  const pr = px ? Object.entries(px).map(([k, v]) => `${k} m=${v.m} l=${v.l}`).join("; ") : "NO PRICE ROW (dropped)";
+  console.log(`FIND ${g.name} | ${p.cleanName || p.name} | #${ext.Number || "-"} | product ${p.productId} | ${pr}`);
+}
 const FAILED = [];   // groups/sets we could not fetch even after retries; reported, and the guard fails the run on too many
 // "4/102" -> set size. Collected per set name so the app can narrow "charizard 4/102" to sets printed out of 102.
 const SZ = {};
@@ -162,6 +170,7 @@ async function englishCards(){
         r:c.rarity||"", hp:c.hp||"", t:c.types||[], st:c.subtypes||[],
         atk, img:(c.images||{}).small||"", lang:"en" };
       cards.push(card); byId[c.id] = card;
+      if (FIND && FIND.test(c.name)) console.log(`FIND pokemon-tcg-data ${sm.id} "${sm.name}" | ${c.name} | #${c.number} | id ${c.id}`);
     }
   }
   console.log(`EN identity: ${cards.length} cards / ${sets.length} sets`);
@@ -213,7 +222,7 @@ async function englishCards(){
 
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      const px = pm[p.productId]; if (!px) continue;
+      const px = pm[p.productId]; findLog(g, p, ext, px); if (!px) continue;
       if (!("Number" in ext)){                   // ---- SEALED (no card number) ----
         const kind = classifySealed(p.cleanName || p.name || "");
         if (!kind) continue;                     // unrecognized non-card product -> skip junk
@@ -290,7 +299,7 @@ async function japaneseCards(){
     const gyear = parseInt((g.publishedOn||"0").slice(0,4))||0;
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      const px = pm[p.productId]; if (!px) continue;
+      const px = pm[p.productId]; findLog(g, p, ext, px); if (!px) continue;
       // Vintage JP cards (Base through Neo, Gym, VS...) print no collector number, so no Number
       // does not mean sealed. Anything with card fields (Rarity/HP/Card Type) is still a single.
       const isCard = ext.Rarity || ext.HP || ext["Card Type"];
@@ -328,7 +337,7 @@ async function gameCards(catName, game, idPrefix){
     const gyear = parseInt((g.publishedOn||"0").slice(0,4)) || 0;
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
-      const px = pm[p.productId]; if (!px) continue;
+      const px = pm[p.productId]; findLog(g, p, ext, px); if (!px) continue;
       if (!("Number" in ext)){
         const kind = classifySealed(p.cleanName || p.name || "");
         if (!kind) continue;

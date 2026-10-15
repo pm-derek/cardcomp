@@ -7,6 +7,10 @@ on:
         description: "Publish even if card coverage dropped sharply (only when the drop is real)"
         type: boolean
         default: false
+      find:
+        description: "Debug: log TCGplayer products whose name matches this (regex), e.g. gardevoir|palkia"
+        type: string
+        default: ""
   schedule:
     - cron: "0 21 * * *"
 
@@ -27,6 +31,7 @@ jobs:
       - run: node ingest.js
         env:
           FORCE: ${{ inputs.force && '1' || '0' }}
+          FIND: ${{ inputs.find }}
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
