@@ -33,9 +33,22 @@ tap you get two confirmations before any money moves: the chip flips to `Whatnot
 the Whatnot page names the card and the amount. Whatnot's own Place bid button is the final step and it is
 always yours.
 
+## Live TCGplayer price into the bid
+
+Tap a condition's `LP ↗` (or its market price) in CardComp. The TCGplayer listing page opens in a tab; the
+extension reads that condition's market price (lowest listing if no market) and sends it back. The row's
+market gets a gold `live` mark, its max bid is recomputed from the live number, and the chip is ready to
+tap. Changing the condition filter on the TCGplayer page updates the matching row too. Live numbers last
+until you reload CardComp.
+
+## Your own bid
+
+Under the condition grid: `your bid $ [ 14 ] send`. It is prefilled with the NM margin bid. Change it to
+15, press Enter or send, and that number goes to Whatnot (and the clipboard) like any tapped bid.
+
 ## What it does and does not do
 
-- Only ever types the amount. It never clicks Place bid, Bid, or Buy.
+- Only ever types the amount. It clicks Whatnot's "Custom" button to open the box when it is closed. It never clicks Place bid, Bid, or Buy.
 - Fills one tab: the active Whatnot tab, else the one you touched last.
 - Whole dollars, floored, same as the clipboard copy.
 

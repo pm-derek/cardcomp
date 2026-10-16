@@ -10,3 +10,4 @@ window.addEventListener("message", (e) => {
 });
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
+chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.type === "cardcomp-tcg-price") cc.contentWindow.postMessage(msg, "*"); });

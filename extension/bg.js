@@ -5,7 +5,14 @@ if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!msg || msg.type !== "cardcomp-bid") return;
+  if (!msg) return;
+  if (msg.type === "cardcomp-tcg-price") {   // TCGplayer tab -> CardComp (side panel page + CardComp tabs)
+    chrome.runtime.sendMessage(msg).catch(() => {});
+    chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => tabs.forEach((t) => chrome.tabs.sendMessage(t.id, msg).catch(() => {})));
+    reply({ ok: true });
+    return;
+  }
+  if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
     if (!tabs.length) { reply({ ok: false, why: "no Whatnot tab" }); return; }
     // One stream only: the active Whatnot tab, else the one touched most recently.
