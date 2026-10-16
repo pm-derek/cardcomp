@@ -267,3 +267,16 @@ Build order:
 3. Model call, recording, debug page, suggestion display, behind the switch. Tested on a fake stream: the 20
    frames played as a video in the mock Whatnot page with a resetting lot timer. Failure cases tested.
 4. Streams in the test mode; replay to tune; then decide: promote, keep tuning, or strip.
+
+## Build status (2026-10-16)
+
+Steps 1 and 2 built on `claude/screenshot-test-setup-4marhe`; `node scripts/recog-check.js` passes all 30 checks.
+- Step 1, capture check: Alt+Shift+R on a Whatnot stream grabs one frame (video copy, else a screenshot
+  cropped to the video), retries 5 s later with no key press, and shows the result in a toast. Results page:
+  extension Options > "the recognition test page". Waiting on Derek to try it on a real stream.
+- Step 2, match rules: `recog/automatch.js` (`autoMatch(read)`). On the 20 confirmed frames, no model gets a
+  strong suggestion wrong; Opus reads give 9 right suggestions and 6 "right card in top 5"; the one wrong
+  suggestion for every model is Radiant Heatran (only the Prize Pack printing is in the catalog). A read set
+  total that does not fit the set downgrades a number match to weak (Haiku invented Ursaring 063/090).
+- Removal: `node scripts/strip-recog.js`; tested to restore index.html, bg.js, options.html, README, CLAUDE.md
+  and the manifest byte for byte against main.

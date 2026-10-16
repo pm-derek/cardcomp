@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock whatnot</title>
+<!-- Test page for scripts/recog-check.js: a Whatnot-like layout with a live <video> (canvas stream) and a stubbed
+     chrome.* so the extension's recognition scripts run outside Chrome. ?mode=video | tainted | novideo -->
+<style>body{margin:0;background:#111;color:#ddd;font:14px sans-serif}#v{position:absolute;left:100px;top:20px;width:540px;height:760px;object-fit:cover;background:#000}
+#chat{position:absolute;left:700px;top:20px;width:520px;height:760px;background:#1b1b1b;padding:10px;box-sizing:border-box}</style></head><body>
+<div id="chat">rewired: Zapdos please sir<br>jpdaddy12: $11 blue light special</div>
+<script>
+const mode = new URLSearchParams(location.search).get("mode") || "video";
+window.__sent = []; window.__listeners = [];
+Object.defineProperty(window, "chrome", { configurable: true, writable: true, value: {
+  runtime: { onMessage: { addListener: (fn) => window.__listeners.push(fn) } },
+  commands: { onCommand: { addListener: () => {} } },
+  tabs: {
+    query: () => Promise.resolve([]),
+    captureVisibleTab: () => Promise.resolve(window.__shot),
+    sendMessage: (id, msg) => { window.__sent.push(msg); return new Promise((res) => { let done = false;
+      for (const fn of window.__listeners) fn(msg, {}, (r) => { done = true; res(r); }); if (!done) res(undefined); }); }
+  }
+} });
+if (mode === "tainted") HTMLCanvasElement.prototype.toDataURL = function () { throw new DOMException("Tainted canvases may not be exported.", "SecurityError"); };
+if (mode === "novideo") { window.__mockReady = true; }
+else {
+  const src = document.createElement("canvas"); src.width = 1280; src.height = 720;
+  const g = src.getContext("2d"); let f = 0;
+  const draw = () => { g.fillStyle = "#3a6ea5"; g.fillRect(0, 0, 1280, 720); g.fillStyle = "#f3e9c6"; g.fillRect(500, 120 + (f++ % 4), 280, 400);
+    g.fillStyle = "#111"; g.font = "bold 26px sans-serif"; g.fillText("Kyurem ex", 520, 165); g.font = "16px sans-serif"; g.fillText("157/086", 520, 500); };
+  draw(); setInterval(draw, 100);
+  const v = document.createElement("video"); v.id = "v"; v.muted = true; v.autoplay = true; v.playsInline = true;
+  v.srcObject = src.captureStream(10); document.body.appendChild(v);
+  v.addEventListener("playing", () => { const w = () => v.videoWidth ? (window.__mockReady = true) : setTimeout(w, 50); w(); });
+  v.play();
+}
+</script></body></html>

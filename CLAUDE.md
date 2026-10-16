@@ -179,6 +179,17 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 - Headroom (checked 2026-10, Derek asked to be reminded when it matters): Pages 100 GB/mo soft (12 MB a load, ~300 loads/mo used), Pages 10 builds/hr soft (live branch never builds), API 5k/hr per token (~40 per stream), Actions unlimited on a public repo, live.json grows a few KB/mo. Tell Derek before any change that writes to `main` per click, loads the catalog far more often, or moves the app off GitHub, since those are the only ways to reach a limit.
 - Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it.
 
+<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
+## Auto-recognition (experiment, removable)
+
+Plan and results: docs/auto-recognition-handoff.md. Everything lives in `recog/` (app: `autoMatch`, never called by
+manual search) and `extension/recog/` (capture check, Alt+Shift+R, results page), plus lines tagged `RECOG` and
+blocks between RECOG-BEGIN / RECOG-END. `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js`
+runs fixtures (20 confirmed frames), a 258-search regression (identical with and without), the strip test and the
+capture tests on a mock Whatnot page. Rule: a strong suggestion is never the wrong card; no closest-by-name fallback.
+Any new hook line in an existing file gets the `RECOG` tag.
+
+<!-- RECOG-END -->
 ## Other UI notes
 
 - **Stale-price banner**: if `data.json`'s `updated` is > 2 days old, a warning shows (the daily ingest may have stalled).

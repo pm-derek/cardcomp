@@ -1,6 +1,7 @@
 // Relay: CardComp (tab or side panel) -> the Whatnot tab you are watching.
 // Toolbar button opens CardComp in the side panel next to the Whatnot stream.
 importScripts("store.js");
+try { importScripts("recog/recog-bg.js"); } catch (_) {}   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
 const TO_APP = new Set(["cardcomp-tcg-price", "cardcomp-lot", "cardcomp-lot-end"]);
 if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});

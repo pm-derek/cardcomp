@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "CardComp to Whatnot",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Tap a bid in CardComp and it lands in Whatnot's Custom bid box. You still place the bid.",
   "permissions": [
     "sidePanel",
-    "storage"
+    "storage",
+    "activeTab"
   ],
   "host_permissions": [
     "https://*.whatnot.com/*",
@@ -54,9 +55,26 @@
         "tcgplayer.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.whatnot.com/*"
+      ],
+      "js": [
+        "recog/recog-whatnot.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
     "128": "icon.png"
+  },
+  "commands": {
+    "recog-grab": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Recognition test (experiment): grab a frame of the Whatnot stream"
+    }
   }
 }
