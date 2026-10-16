@@ -15,9 +15,27 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const amt = String(Math.max(0, Math.floor(Number(msg.amount) || 0)));
   if (amt === "0") { reply({ ok: false, why: "no amount" }); return; }
   pending = { amt, name: msg.name || "", at: Date.now() };
-  take(pending).then((how) => reply({ ok: true, how }));
+  take(pending).then((how) => {
+    // Under the minimum (Custom bid shows "$2 $3 $4 $5" and "Enter an amount of $2 or more"): the box is
+    // filled so Derek sees it, but Whatnot will refuse it, so say pass instead of "place the bid".
+    setTimeout(() => {
+      const min = minBid();
+      if (min != null && +amt < min) {
+        toast(`Pass: your max $${amt}${pending && pending.name ? " for " + pending.name : ""} is under the next bid $${min}.`, "bad");
+        reply({ ok: false, why: "under", min });
+      } else reply({ ok: true, how });
+    }, 200);
+  });
   return true;
 });
+function minBid() {   // the lowest bid Whatnot will take right now
+  for (const el of document.querySelectorAll("*")) {
+    if (el.children.length) continue;
+    const m = /enter an amount of \$([\d,]+) or more/i.exec(el.textContent || "");
+    if (m) return +m[1].replace(/,/g, "");
+  }
+  return lotLastState && lotLastState.next != null && !lotLastState.ended ? lotLastState.next : null;
+}
 
 async function take(p) {
   let inp = findBidInput();
@@ -202,17 +220,17 @@ function readLot() {
   }
   st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
   st.cond = COND_TXT[(st.sub.split("·")[0] || "").trim().toLowerCase()] || "";
-  let wonBy = "";
+  let wonBy = "", meWon = false, wonUser = "";
   for (let i = 0; i < all.length; i++) {
     const t = all[i].textContent.trim(); let m;
     const prev = i > 0 ? all[i - 1].textContent.trim() : "";
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
     else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
-    else if (/^won!?$/i.test(t) && userLike(prev)) wonBy = prev;              // "daybreakfm" + "won!"
+    else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
     else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
-    else if (LOT_RX.meWon.test(t)) { wonBy = "me"; st.me = true; }
+    else if (LOT_RX.meWon.test(t)) { meWon = true; st.me = true; }           // "You won" popup in the middle of the video
     else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
     else if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i])) { chatSeen.add(all[i]); seen(m[1], "joins"); } }   // one-leaf "X joined" variant
     else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
@@ -221,6 +239,10 @@ function readLot() {
     }
   }
   if (isMe(st.lead)) st.me = true;
+  // "You won" in the middle + "rewired won!" bottom left on the same screen: rewired is Derek. Learn it
+  // once, so later wins and "rewired is Winning!" count as his even when the popup is gone.
+  if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { chrome.storage.local.set({ wnUser: wonUser }); } catch (_) {} }
+  if (meWon) wonBy = "me";
   if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
   return st;
 }
