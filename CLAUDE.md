@@ -143,6 +143,14 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`). `1st` + `shadowless` together (any order) mean the Shadowless 1st Edition printing.
 - Condition grid: the `NM ↗` label and the market price both open TCGplayer listings for that printing and condition; the bid copies.
 
+## Bid into Whatnot (extension/)
+
+Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its README) that puts the tapped bid into Whatnot's Custom bid box. It never presses Place bid.
+
+- `copyAmt` in index.html still copies to the clipboard, then `sendToWhatnot` posts `{type:"cardcomp-bid", amount, name}` to its own window and to its parent frame. With no extension nothing listens; the chip says `copied $X`. With it, the ack flips the chip to `Whatnot $X`.
+- `cardcomp.js` (content script on pm-derek.github.io) and `panel.js` (side panel iframing CardComp) forward the message to `bg.js`, which sends it to the active whatnot.com tab. `whatnot.js` fills the box: a bid-looking input if visible, else clicks the "Custom bid" button and waits for it, else arms the next input Derek taps (2 min) and says so in a toast. Whatnot's markup is undocumented, so the selectors are heuristic; the armed fallback is what keeps it working after a redesign.
+- Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it.
+
 ## Other UI notes
 
 - **Stale-price banner**: if `data.json`'s `updated` is > 2 days old, a warning shows (the daily ingest may have stalled).

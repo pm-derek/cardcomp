@@ -2515,7 +2515,7 @@ function bidTableHTML(np, bid, pbid, mkt, td){
   const ncol=n=>n==null?"var(--faint)":n>0?"var(--green)":n<0?"var(--red)":"var(--dim)";
   return `<div class="bidtbl">`+
     cols.map(x=>`<span class="lb" title="${x.tip}">${x.lab}</span>`).join("")+
-    cols.map(x=>`<b class="${x.dat!=null?"cpy ":""}v ${x.cls}"${x.dat!=null?` data-bid="${x.dat}" title="tap to copy"`:""}>${x.val}</b>`).join("")+
+    cols.map(x=>`<b class="${x.dat!=null?"cpy ":""}v ${x.cls}"${x.dat!=null?` data-bid="${x.dat}" title="${cpTitle()}"`:""}>${x.val}</b>`).join("")+
     cols.map(x=>`<span class="pc">${x.pct}</span>`).join("")+
     cols.map(x=>`<span class="nt" style="color:${ncol(x.net)}">${x.net==null?"—":money(x.net)}</span>`).join("")+
   `</div>`;
@@ -2530,10 +2530,37 @@ function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }      
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
-  const flash=()=>{ if(!el) return; const t=el.textContent, c=el.style.color; el.textContent="copied $"+s; el.style.color="var(--green)"; setTimeout(()=>{ el.textContent=t; el.style.color=c; },800); };
+  const show=(msg)=>{ if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color="var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },900); };
+  const flash=()=>show("copied $"+s);
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
   else copyFallback(s,flash);
+  sendToWhatnot(s, el, show);
 }
+// Desktop: the "CardComp to Whatnot" Chrome extension (extension/) listens for this message and types the
+// amount into Whatnot's Custom bid box. Posted to this window (CardComp in a tab) and to the parent (CardComp
+// in the extension's side panel). No extension: nothing hears it, the clipboard copy above still happened.
+let WN_PENDING=null, WN_EXT=false;   // WN_EXT: the extension said hello, so a tap sends the bid into Whatnot
+function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to copy"; }
+function sendToWhatnot(s, el, show){
+  let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
+  const msg={type:"cardcomp-bid", amount:+s, name};
+  WN_PENDING={s, show, at:Date.now()};
+  try{ window.postMessage(msg, location.origin); }catch(_){ }
+  if(window.parent!==window){ try{ window.parent.postMessage(msg, "*"); }catch(_){ } }
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-bid-ack") return;
+  const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
+  if(!(fromSelf||fromPanel)) return;
+  const p=WN_PENDING; if(!p || Date.now()-p.at>3000) return;
+  if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null; }
+});
+window.addEventListener("message", e=>{   // extension handshake: relabel the bid chips so the tap reads as the confirm
+  const d=e.data; if(!d || d.type!=="cardcomp-ext-ready") return;
+  const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
+  if(!(fromSelf||fromPanel)) return;
+  WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
+});
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 // price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
 function pctTxt(p){ return `<span style="color:${p<0?"var(--red)":"var(--green)"}">${p<0?"↓":"↑"}${Math.abs(p)}%</span>`; }
@@ -3420,8 +3447,8 @@ function render(res, literal, newestFirst){
     const mb = best>0 ? bidForMargin(best, sp.margin) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="tap to copy">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
-        <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="tap to copy">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="${cpTitle()}">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
+        <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="${cpTitle()}">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
       <div class="row">
