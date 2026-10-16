@@ -3,7 +3,7 @@
 window.addEventListener("message", (e) => {
   if (e.source !== window || e.origin !== location.origin) return;
   const d = e.data;
-  if (d && /^cardcomp-auto-(hello|config|match|outcome)$/.test(d.type || "")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }   // RECOG app -> extension
+  if (d && /^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }   // RECOG app -> extension
   if (d && (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }
   if (d && d.type === "cardcomp-snapshot") { try { chrome.runtime.sendMessage(d, (r) => window.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), location.origin)); } catch (_) {} return; }
   if (d && (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read")) {
@@ -28,4 +28,4 @@ window.addEventListener("message", (e) => {
 // Hello, so CardComp can label the bid chips "this bid goes into Whatnot".
 window.postMessage({ type: "cardcomp-ext-ready" }, location.origin);
 chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) window.postMessage(msg, location.origin); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt)?$/.test(msg.type)) window.postMessage(msg, location.origin); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type)) window.postMessage(msg, location.origin); });   // RECOG extension -> app

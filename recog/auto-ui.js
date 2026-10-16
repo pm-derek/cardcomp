@@ -12,7 +12,7 @@
   const fromExt = (e) => (e.source === window && e.origin === location.origin) || (window.parent !== window && e.source === window.parent);
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
   const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
-  let EXT = false, STATE = { on: false, model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null;
+  let EXT = false, STATE = { on: false, model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null, WATCH = null;
   const AUTO = {};   // lot key (whatnot startedAt) -> { best: {m, r, d} }
   const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
 
@@ -20,6 +20,7 @@
   css.textContent = "#autoline{display:none;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.4;color:var(--dim);padding:4px 9px;margin-top:4px}" +
     "#autoline .sw{cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:0 6px;margin-right:6px}#autoline .sw.on{color:var(--green);border-color:var(--green)}" +
     "#autoline select{background:var(--panel2);color:var(--dim);border:1px solid var(--line);border-radius:5px;font:inherit;margin-right:6px}" +
+    "#autoline .rn{cursor:pointer;border:1px solid var(--gold);color:var(--gold);border-radius:5px;padding:0 6px;margin-right:6px}#autoline .wt{color:var(--faint)}" +
     "#autoline a{color:var(--blue);cursor:pointer}#autoline .bad{color:var(--red)}#autoline .gold{color:var(--gold)}" +
     ".autobadge{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:700;vertical-align:middle}" +
     ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}";
@@ -38,8 +39,11 @@
     if (!STATE.on) msg = "reads the card on stream at each lot (experiment)";
     else if (!STATE.hasKey) msg = '<span class="bad">add your API key on the extension\'s Options page</span>';
     else if (!msg) msg = "waiting for the next lot";
-    el.innerHTML = `<span class="sw${STATE.on ? " on" : ""}" id="autosw" title="turn auto-recognition ${STATE.on ? "off" : "on"}">auto ${STATE.on ? "on" : "off"}</span>${STATE.on ? sel : ""}<span id="automsg">${msg}</span>`;
+    const rn = STATE.on && STATE.hasKey ? `<span class="rn" id="autoread" title="read the card on stream now (hotkey Ctrl+Shift+Y on the Whatnot tab)">read now</span>` : "";
+    const w = STATE.on && WATCH && Date.now() - WATCH.at < 6000 ? ` <span class="wt" title="what auto is doing between lots (picture change ${WATCH.mean} / ${WATCH.peak})">&middot; ${esc(WATCH.why)}</span>` : "";
+    el.innerHTML = `<span class="sw${STATE.on ? " on" : ""}" id="autosw" title="turn auto-recognition ${STATE.on ? "off" : "on"}">auto ${STATE.on ? "on" : "off"}</span>${STATE.on ? sel : ""}${rn}<span id="automsg">${msg}</span>${w}`;
     $("#autosw").onclick = () => post({ type: "cardcomp-auto-config", on: !STATE.on });
+    const rb = $("#autoread"); if (rb) rb.onclick = () => { MSG = "reading the card on stream..."; paint(); post({ type: "cardcomp-auto-read" }); };
     const ms = $("#automodel"); if (ms) ms.onchange = () => post({ type: "cardcomp-auto-config", model: ms.value });
     const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); };
   }
@@ -54,7 +58,7 @@
     else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
     else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
-    return `${d.pre ? "before start: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
+    return `${d.pre ? "before start: " : d.manual ? "read now: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
   function fill(m, r) {
     const q = $("#q"); if (!q || typeof render !== "function") return;
@@ -104,7 +108,7 @@
     // Derek typed or tapped a result for THIS card (within 1.5 s before the frame, or while it was being read):
     // leave his search alone. Measured from the frame, not the lot: the lot can exist well before its card is shown,
     // and a tap on the previous card then blocked the new one (live test).
-    const touched = TOUCH > (d.capAt || d.key) - 1500;
+    const touched = !d.manual && TOUCH > (d.capAt || d.key) - 1500;
     if (!touched) fill(m, r);
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
@@ -128,6 +132,8 @@
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
     else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
+    else if (d.type === "cardcomp-auto-watch") { WATCH = { why: d.phase === "watching" || d.phase === "live" || d.phase === "paused" || d.phase === "off" ? d.why : d.phase, mean: d.mean, peak: d.peak, at: Date.now() }; if (STATE.on) { const m = $("#autoline .wt"); if (m) m.innerHTML = "&middot; " + esc(WATCH.why); else paint(); } }
+    else if (d.type === "cardcomp-auto-readack" && !d.ok) { MSG = `<span class="bad">read now: ${esc(d.why || "failed")}</span>`; paint(); }
     else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
       ADOPT[d.from] = d.to;
       if (AUTO[d.from]) { AUTO[d.to] = AUTO[d.from]; delete AUTO[d.from]; }

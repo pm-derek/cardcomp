@@ -356,3 +356,12 @@ Causes found in the code (no export needed to see them):
 Chinese cards: TCGplayer (and so the catalog) has English and Japanese only. The prompt now tells Japanese (kana) from
 Chinese (no kana, Simplified or Traditional) and Korean (Hangul); a Chinese / Korean reading gets kind `foreign`: no
 suggestion, English printings listed for reference, a red "Chinese card: no Chinese prices" note on the line and status.
+
+## "No reads before the timer" (Derek, third session) and "read now"
+
+Likely causes, all fixed: (1) "live" was any visible timer, and Whatnot can show a lot's timer before the auction
+starts, which paused the watcher for exactly that window; now live = the timer value changed in the last 2.5 s.
+(2) Hold-still needed two near-still samples; now one (threshold 8), or after 3.5 s of a roughly steady card in a
+moving hand. (3) The 4-reads-per-gap cap only reset when a lot went live, so a seller whose timer is never read was
+capped for the whole stream; it now resets on every new lot. Added: "read now" on the auto line (Ctrl+Shift+Y on the
+Whatnot tab while auto is on), always fills even over typing, and a status readout of what the watcher is doing.

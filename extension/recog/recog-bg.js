@@ -190,7 +190,7 @@ async function recogOnFrame(msg, tab) {
   const s = await recogGet();
   if (!s.recogOn) return;
   const key = msg.key, n = msg.n || 1;
-  const head = { type: "cardcomp-auto", key, n, capAt: msg.capAt || Date.now(), title: msg.title || "", seller: msg.seller || "", pre: msg.trigger === "pre" };
+  const head = { type: "cardcomp-auto", key, n, capAt: msg.capAt || Date.now(), title: msg.title || "", seller: msg.seller || "", pre: msg.trigger === "pre", manual: msg.trigger === "manual" };
   let frame = msg.ok ? { img: msg.img, w: msg.w, h: msg.h, luma: msg.luma, method: "video" } : null;
   if (!frame && msg.rect && tab) {   // video copy blocked: a screenshot works once the tab was armed (shortcut / right-click)
     try { frame = Object.assign({ method: "screenshot" }, await recogCrop(await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 92 }), msg.rect, 1920)); }
@@ -217,6 +217,15 @@ async function recogOnFrame(msg, tab) {
       setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
     }
   }
+}
+
+// "Read now": the Whatnot tab Derek is watching (active first, else the one touched last) reads its frame right away.
+async function recogReadNow() {
+  const tabs = await chrome.tabs.query({ url: "https://*.whatnot.com/*" });
+  if (!tabs.length) return { ok: false, why: "no Whatnot tab" };
+  tabs.sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+  try { const r = await chrome.tabs.sendMessage(tabs[0].id, { type: "recog-read-now" }); return r && r.ok ? { ok: true } : { ok: false, why: "auto is off" }; }
+  catch (_) { return { ok: false, why: "Whatnot tab not ready, reload it" }; }
 }
 
 async function recogAdopt(msg) {
@@ -247,6 +256,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "recog-adopt") {   // a card read before the timer started, picture unchanged: it is this lot's reading
     recogAdopt(msg); reply({ ok: true }); return;
   }
+  if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg); return; }   // watcher status -> CardComp
+  if (msg.type === "cardcomp-auto-read") { recogReadNow().then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r)); }); return true; }   // "read now" button
   if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
   if (msg.type === "cardcomp-auto-config") {
     const set = {}; if ("on" in msg) set.recogOn = !!msg.on; if (msg.model && RECOG_MODELS[msg.model]) set.recogModel = msg.model;
@@ -310,6 +321,8 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (cmd !== "recog-grab") return;
   if (!tab || !tab.id) tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!tab || !/^https:\/\/([^/]*\.)?whatnot\.com\//.test(tab.url || "")) return;
+  const s = await recogGet();
+  if (s.recogOn) { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }   // auto on: the hotkey means "read now"
   recogGrab(tab);
 });
 // Right-click menu: same grab, no key needed (Chrome keeps some keys for itself, e.g. Alt+Shift+R is Reading Mode).
@@ -317,4 +330,8 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({ id: "recog-grab", title: "Recognition test: grab a frame", contexts: ["page", "video", "image", "link"],
     documentUrlPatterns: ["https://*.whatnot.com/*"] }, () => chrome.runtime.lastError);
 });
-chrome.contextMenus.onClicked.addListener((info, tab) => { if (info.menuItemId === "recog-grab" && tab && tab.id) recogGrab(tab); });
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "recog-grab" || !tab || !tab.id) return;
+  if ((await recogGet()).recogOn) { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }
+  recogGrab(tab);
+});
