@@ -186,7 +186,9 @@ Plan, results, decisions: docs/auto-recognition-handoff.md. App side: `recog/aut
 called by manual search) and `recog/auto-ui.js` (the "auto on/off" line under the lot strip, model picker, fills the
 search with candidates and marks the best guess, leaves the search alone if Derek typed or tapped a result since the
 lot started, reports the tapped/opened card at lot end via `recogLotDone`). Extension side: `extension/recog/`
-(`recog-whatnot.js` copies the `<video>` frame ~1 s after the lot timer starts; `recog-bg.js` calls the API with the
+(`recog-whatnot.js` copies the `<video>` frame; between lots a 24x42 thumbnail every 0.7 s spots a new card held
+still and reads it before the timer (max 4 per gap, never the sold card still held), and at timer start that reading
+is reused if the picture has not changed (`recog-adopt`), else a frame ~1 s after the timer starts; `recog-bg.js` calls the API with the
 key from Options, Haiku / Sonnet / Opus, 240 reads an hour cap, records every lot in IndexedDB; `debug.html` results
 page). Hooks in existing files are lines tagged `RECOG` or blocks between RECOG-BEGIN / RECOG-END.
 `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js` runs fixtures (20 confirmed frames), a

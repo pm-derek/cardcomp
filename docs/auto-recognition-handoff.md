@@ -296,3 +296,14 @@ Built and checked (`node scripts/recog-check.js`, 53 checks, mock Whatnot page +
   extension's IndexedDB, 30 days, export / delete on the results page, review buttons for unlabeled lots.
 - Cost, measured token counts pending: Haiku about $0.001 a lot, Opus $0.02 to $0.03 (full-size frame ~2,700
   image tokens). Max plan includes $100 a month of API credit.
+
+## Pre-start reads (Derek, 2026-10-16: "cards show up before the timer starts", short / sudden-death timers)
+
+Between lots (no timer running, Sold, Awaiting next item, not started), `recog-whatnot.js` takes a 24x42 grayscale
+thumbnail of the video every 0.7 s (local, no API call). A big change (mean difference > 14 of 255) followed by two
+still samples (< 5) means a new card is being held up: that full frame is read at once, unless it still looks like the
+last card read (< 10), which is how a sold card the seller keeps holding is skipped. At most 4 such reads per gap, 3 s
+apart. When the timer starts and the picture has not changed since that read, the reading is reused for the lot
+(`recog-adopt`, no second call); otherwise the usual read ~1 s after the start. CardComp shows "before start: read ...".
+Thresholds are guesses from a mock: each record stores the change value (`diff`) so they can be tuned from real lots.
+The watcher pauses when the Whatnot tab is hidden, and needs the video copy to work (it does on Derek's test stream).

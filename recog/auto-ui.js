@@ -14,6 +14,7 @@
   const RANK = { exact: 5, near: 4, unique: 3, ambiguous: 2, "number-miss": 1, none: 0 };
   let EXT = false, STATE = { on: false, model: "haiku", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null;
   const AUTO = {};   // lot key (whatnot startedAt) -> { best: {m, r, d} }
+  const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
 
   const css = document.createElement("style");
   css.textContent = "#autoline{display:none;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.4;color:var(--dim);padding:4px 9px;margin-top:4px}" +
@@ -52,7 +53,7 @@
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
     else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
-    return `read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
+    return `${d.pre ? "before start: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
   function fill(m, r) {
     const q = $("#q"); if (!q || typeof render !== "function") return;
@@ -75,9 +76,10 @@
   }
 
   function onAuto(d) {
-    LATEST = Math.max(LATEST, d.key || 0);
-    if ((d.key || 0) < LATEST) return;   // a late reply for a lot that already ended
-    const a = AUTO[d.key] = AUTO[d.key] || {};
+    const at = d.capAt || d.key || 0;   // capture time: a lot's key can be older than a pre-start reading
+    LATEST = Math.max(LATEST, at);
+    if (at < LATEST) return;   // a late reply for an older frame
+    const ak = ADOPT[d.key] || d.key, a = AUTO[ak] = AUTO[ak] || {};
     if (d.error) { if (!a.best) { MSG = `<span class="bad">${esc(d.error)}</span>`; paint(); } return; }
     const r = d.read;
     if (!r || r.card_visible === false || !r.name) {
@@ -117,5 +119,9 @@
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
     else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "haiku", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
+    else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
+      ADOPT[d.from] = d.to;
+      if (AUTO[d.from]) { AUTO[d.to] = AUTO[d.from]; delete AUTO[d.from]; }
+    }
   });
 })();

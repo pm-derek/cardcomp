@@ -1,7 +1,8 @@
 // RECOG experiment, background half (docs/auto-recognition-handoff.md). Removed by scripts/strip-recog.js.
 //
 // Auto mode (switch + model picker in the CardComp panel, API key on the Options page):
-//   recog-whatnot.js sends a frame ~1 s after a lot's timer starts -> read it with Claude -> send the reading to
+//   recog-whatnot.js sends a frame when a new card holds still between lots (pre-start), else ~1 s after a lot's
+//   timer starts -> read it with Claude -> send the reading to
 //   CardComp ("cardcomp-auto"), which matches it against the catalog (recog/automatch.js) and shows candidates.
 //   One more frame 2 s later only when the first read is unsure (no card, no number, low confidence, or the same
 //   card as the previous lot, i.e. the seller may still be holding the sold card).
@@ -46,8 +47,10 @@ async function recogPatch(id, patch) {
     tx.oncomplete = res; tx.onerror = res;
   });
 }
-// Read-modify-write one lot record (created on first use).
+// Read-modify-write one lot record (created on first use). A pre-start reading reused by a lot redirects there.
+const RECOG_ADOPT = {};   // pre-start key -> lot key
 async function recogLot(key, fn) {
+  key = RECOG_ADOPT[key] || key;
   const db = await recogDb();
   return new Promise((res) => {
     const tx = db.transaction("lots", "readwrite"), st = tx.objectStore("lots"), g = st.get(key);
@@ -179,7 +182,7 @@ async function recogOnFrame(msg, tab) {
   const s = await recogGet();
   if (!s.recogOn) return;
   const key = msg.key, n = msg.n || 1;
-  const head = { type: "cardcomp-auto", key, n, title: msg.title || "", seller: msg.seller || "" };
+  const head = { type: "cardcomp-auto", key, n, capAt: msg.capAt || Date.now(), title: msg.title || "", seller: msg.seller || "", pre: msg.trigger === "pre" };
   let frame = msg.ok ? { img: msg.img, w: msg.w, h: msg.h, luma: msg.luma, method: "video" } : null;
   if (!frame && msg.rect && tab) {   // video copy blocked: a screenshot works once the tab was armed (shortcut / right-click)
     try { frame = Object.assign({ method: "screenshot" }, await recogCrop(await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 92 }), msg.rect, 1920)); }
@@ -191,7 +194,7 @@ async function recogOnFrame(msg, tab) {
     await recogLot(key, (rec) => { lotHead(rec); rec.reads.push({ n, error }); });
     recogToApp(Object.assign(head, { error })); return;
   }
-  const fr = { n, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
+  const fr = { n, trigger: msg.trigger || "start", diff: msg.diff, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
   let res;
   if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
   else if (!recogCapOK()) res = { error: "hourly cap reached (" + RECOG_HOURLY_CAP + " reads)" };
@@ -200,17 +203,42 @@ async function recogOnFrame(msg, tab) {
   await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "haiku" }, res)); });
   recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0 }));
   if (res.read && tab) {
-    const r = res.read, held = n === 1 && sameCard(r, prev);
+    const r = res.read, held = n === 1 && !msg.afterPre && sameCard(r, prev);
     if (n === 1) recogPrev[tab.id] = r;
-    if (n === 1 && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
+    if (n === 1 && msg.trigger !== "pre" && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
       setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
     }
   }
 }
 
+async function recogAdopt(msg) {
+  RECOG_ADOPT[msg.from] = msg.to;   // a reading still on its way lands on the lot
+  const db = await recogDb();
+  await new Promise((res) => {
+    const tx = db.transaction("lots", "readwrite"), st = tx.objectStore("lots"), g = st.get(msg.from);
+    g.onsuccess = () => {
+      const pre = g.result; if (!pre) return;
+      const h = st.get(msg.to);
+      h.onsuccess = () => {
+        const rec = h.result || { key: msg.to, at: msg.to, frames: [], reads: [] };
+        rec.frames = (pre.frames || []).concat(rec.frames || []); rec.reads = (pre.reads || []).concat(rec.reads || []);
+        rec.matches = (pre.matches || []).concat(rec.matches || []);
+        rec.title = msg.title || rec.title || pre.title || ""; rec.seller = rec.seller || pre.seller || ""; rec.url = rec.url || pre.url || "";
+        rec.adopted = { from: msg.from, diff: msg.diff, earlyMs: msg.to - msg.from };
+        st.put(rec); st.delete(msg.from);
+      };
+    };
+    tx.oncomplete = res; tx.onerror = res;
+  });
+  recogToApp({ type: "cardcomp-auto-adopt", from: msg.from, to: msg.to });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg.type !== "string") return;
   if (msg.type === "recog-frame") { recogOnFrame(msg, sender.tab); reply({ ok: true }); return; }
+  if (msg.type === "recog-adopt") {   // a card read before the timer started, picture unchanged: it is this lot's reading
+    recogAdopt(msg); reply({ ok: true }); return;
+  }
   if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
   if (msg.type === "cardcomp-auto-config") {
     const set = {}; if ("on" in msg) set.recogOn = !!msg.on; if (msg.model && RECOG_MODELS[msg.model]) set.recogModel = msg.model;

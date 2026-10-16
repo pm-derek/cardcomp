@@ -4,11 +4,12 @@
 // 1. fixtures:   autoMatch on the 20 confirmed frames as read by Opus / Haiku / Sonnet (docs/recog-reads).
 //                Hard rule: a strong suggestion is never the wrong card.
 // 2. regression: manual search gives identical results with and without recog/automatch.js loaded.
-// 3. strip:      in a temp copy, scripts/strip-recog.js restores index.html, bg.js, options.html and the
-//                manifest to the base branch, and the stripped app still boots and searches.
+// 3. strip:      in a temp copy, scripts/strip-recog.js restores every touched file to main as it was before the
+//                experiment (apart from later unrelated changes), leaves nothing that mentions it, and the app still works.
 // 4. capture:    the extension's capture code against a mock Whatnot page with a live <video>: video copy,
 //                screenshot fallback when the canvas is blocked, no video, the 5 s automatic retry, the results page.
-// 5. auto, extension side: lot timer -> frame -> API (mocked) -> CardComp message, second frame rules, errors, records.
+// 5. auto, extension side: lot timer -> frame -> API (mocked) -> CardComp message, second frame rules, errors, records;
+//    reading a card held up before the timer, skipping a sold card still held, reusing the reading at timer start.
 // 6. auto, CardComp side: the auto line, switch, filled results with the mark, typing respected, outcome reported.
 // Needs playwright (preinstalled in the cloud session; locally: npm i playwright && npx playwright install chromium).
 const fs = require("fs"), path = require("path"), http = require("http"), os = require("os"), { execSync } = require("child_process");
@@ -109,18 +110,27 @@ async function appPage(browser, base, blockRecog) {
   fs.cpSync(ROOT, tmp, { recursive: true, filter: (s) => !/[\\/](\.git|node_modules)$/.test(s) && !/[\\/](data|prices)\.json$/.test(s) });
   fs.symlinkSync(path.join(ROOT, "data.json"), path.join(tmp, "data.json"));
   execSync("node scripts/strip-recog.js", { cwd: tmp, stdio: "pipe" });
+  // Base = main just before the experiment was added. A stripped file must equal it, except for changes main made
+  // later for other reasons (those lines must also be in the base..HEAD diff), and no leftover may mention recog.
   let baseRef = process.env.RECOG_BASE || "";
-  if (!baseRef) { try { execSync("git fetch -q origin main", { cwd: ROOT, stdio: "pipe" }); } catch (_) {} try { baseRef = execSync("git merge-base HEAD origin/main", { cwd: ROOT }).toString().trim(); } catch (_) {} }
+  if (!baseRef) { try { const add = execSync("git log --diff-filter=A --format=%H -- recog/automatch.js", { cwd: ROOT }).toString().trim().split("\n").pop(); if (add) baseRef = add + "^"; } catch (_) {} }
+  const diffLines = (a, b) => { const r = (() => { try { return execSync(`git diff --no-index -U0 "${a}" "${b}"`, { cwd: ROOT, maxBuffer: 64e6 }).toString(); } catch (e) { return String(e.stdout || ""); } })();
+    return r.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l)); };
   if (baseRef) {
-    for (const f of ["index.html", "extension/bg.js", "extension/options.html", "extension/README.md", "CLAUDE.md"]) {
-      const orig = execSync(`git show ${baseRef}:${f}`, { cwd: ROOT, maxBuffer: 64e6 }).toString();
-      ok(fs.readFileSync(path.join(tmp, f), "utf8") === orig, `${f} identical to the base branch after strip`);
+    const files = ["index.html", "extension/bg.js", "extension/options.html", "extension/README.md", "CLAUDE.md", "extension/whatnot.js", "extension/panel.js", "extension/cardcomp.js"];
+    for (const f of files) {
+      const orig = path.join(tmp, "__base_" + f.replace(/\//g, "_"));
+      fs.writeFileSync(orig, execSync(`git show ${baseRef}:${f}`, { cwd: ROOT, maxBuffer: 64e6 }));
+      const left = diffLines(orig, path.join(tmp, f));
+      const later = new Set(diffLines(orig, path.join(ROOT, f)));
+      const bad = left.filter((l) => /recog|automatch|auto-ui|cardcomp-auto|__recog/i.test(l) || !later.has(l));
+      ok(bad.length === 0, `${f}: ${left.length ? "matches the pre-experiment version apart from " + left.length + " line(s) main changed since" : "identical to the pre-experiment version"} after strip` + (bad[0] ? " (leftover: " + bad[0].slice(0, 100) + ")" : ""));
     }
     const om = JSON.parse(execSync(`git show ${baseRef}:extension/manifest.json`, { cwd: ROOT }).toString());
     const sm = JSON.parse(fs.readFileSync(path.join(tmp, "extension/manifest.json"), "utf8"));
     delete om.version; delete sm.version;
-    ok(JSON.stringify(om) === JSON.stringify(sm), "manifest identical to the base branch after strip (version aside)");
-  } else ok(false, "no origin/main to compare against");
+    ok(JSON.stringify(om) === JSON.stringify(sm), "manifest identical to the pre-experiment version after strip (version aside)");
+  } else ok(false, "could not find the commit that added the experiment");
   ok(!fs.existsSync(path.join(tmp, "recog")) && !fs.existsSync(path.join(tmp, "extension/recog")), "recog folders gone");
   for (const f of fs.readdirSync(path.join(tmp, "extension")).filter((f) => f.endsWith(".js"))) {
     try { execSync(`node --check extension/${f}`, { cwd: tmp, stdio: "pipe" }); } catch (e) { ok(false, "extension/" + f + " syntax after strip"); }
@@ -185,6 +195,8 @@ async function appPage(browser, base, blockRecog) {
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
   const tick = (key) => mp.evaluate((key) => { const lot = { startedAt: key, title: "$1 START SINGLES #" + (key % 100), ended: false }; window.__lot = lot; window.__recogTick({ timer: "00:12" }, lot); }, key);
+  const sold = () => mp.evaluate(() => { window.__lot.ended = true; window.__recogTick({ timer: "", sold: "Sold", ended: true }, window.__lot); });
+  const scene = (n) => mp.evaluate((n) => { window.__scene = n; }, n);
   const toApp = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto"));
   const lotRec = (key) => mp.evaluate((key) => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("lots").objectStore("lots").get(key); q.onsuccess = () => res(q.result); }; }), key);
   // off: nothing happens
@@ -199,17 +211,32 @@ async function appPage(browser, base, blockRecog) {
   ok(r1 && r1.frames.length === 1 && r1.frames[0].w === 1280 && r1.frames[0].sinceStart >= 900 && r1.reads[0].cost > 0, `lot recorded: frame ${r1 && r1.frames[0].w}x${r1 && r1.frames[0].h} at ${r1 && r1.frames[0].sinceStart} ms, $${r1 && r1.reads[0].cost.toFixed(5)}`);
   await tick(k1); await mp.waitForTimeout(1500);
   ok(apiCalls.length === 1, "same lot ticking on: no second capture");
-  // next lot shows the same card: a second frame 2 s later (seller may still hold the sold card)
-  const k2 = Date.now(); await tick(k2); await mp.waitForTimeout(5000);
-  const r2 = await lotRec(k2);
-  ok(r2 && r2.reads.length === 2 && apiCalls.length === 3, "same card as the previous lot: second frame read (" + (r2 && r2.reads.length) + " reads)");
-  // sold before the delay: no capture
-  const k3 = Date.now(); await tick(k3); await mp.evaluate(() => { window.__lot.ended = true; }); await mp.waitForTimeout(1500);
-  ok(apiCalls.length === 3, "lot sold within the first second: no API call");
-  // API rejects the key: the error reaches CardComp, nothing breaks
-  apiMode = "401"; const k4 = Date.now(); await tick(k4); await mp.waitForTimeout(2000);
+  // sold, seller keeps holding that card and talking: nothing new to read
+  await sold(); await mp.waitForTimeout(3500);
+  ok(apiCalls.length === 1, "sold, same card still held: no read");
+  // a new card is held up before the timer: read it as soon as it holds still
+  await scene(1); await mp.waitForTimeout(3600);
   msgs = await toApp();
-  ok(msgs.some((m) => m.key === k4 && /key rejected/.test(m.error)), "bad key: CardComp told 'API key rejected'");
+  const pre = msgs.filter((m) => m.pre);
+  ok(apiCalls.length === 2 && pre.length === 1, "new card held up before the timer: read once it holds still (" + pre.length + " pre-start read)");
+  await mp.waitForTimeout(2200);
+  ok(apiCalls.length === 2, "card keeps being held: no repeat reads");
+  // timer starts on that same card: the pre-start reading is reused, no second call
+  const k2 = Date.now(); await tick(k2); await mp.waitForTimeout(2200);
+  const r2 = await lotRec(k2), adopt = await mp.evaluate(() => window.__runtime.find((m) => m.type === "cardcomp-auto-adopt"));
+  ok(apiCalls.length === 2 && r2 && r2.adopted && r2.frames[0].trigger === "pre" && adopt && adopt.to === k2, "timer starts on that card: reading reused for the lot, no new call (" + (r2 && r2.adopted && (r2.adopted.earlyMs / 1000).toFixed(1)) + " s early)");
+  ok(!(await lotRec(pre[0].key)), "pre-start record merged into the lot");
+  // card swapped right as the timer starts (no time to hold still): read at the start, as before
+  await sold(); await scene(2); const k3 = Date.now(); await tick(k3); await mp.waitForTimeout(5000);
+  const r3 = await lotRec(k3);
+  ok(r3 && r3.frames[0].trigger === "start" && r3.reads.length === 2 && apiCalls.length === 4, "new card right at the timer: read at start (" + (r3 && r3.reads.length) + " reads, 2nd because it read the same card as before)");
+  // sold before the delay: no capture
+  const k4 = Date.now(); await tick(k4); await mp.evaluate(() => { window.__lot.ended = true; }); await mp.waitForTimeout(1500);
+  ok(apiCalls.length === 4, "lot sold within the first second: no API call");
+  // API rejects the key: the error reaches CardComp, nothing breaks
+  apiMode = "401"; const k5 = Date.now(); await tick(k5); await mp.waitForTimeout(2000);
+  msgs = await toApp();
+  ok(msgs.some((m) => m.key === k5 && /key rejected/.test(m.error)), "bad key: CardComp told 'API key rejected'");
   apiMode = "ok";
   // CardComp reports its match and the lot outcome back
   await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
@@ -222,7 +249,7 @@ async function appPage(browser, base, blockRecog) {
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
   const sum2 = await dbg2.textContent("#sum");
-  ok(/3 lots read/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  ok(/4 lots read/.test(sum2) && /Read before the timer: 1 lots \(1 reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
   await dbg2.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
   console.log("  results page screenshot: " + path.join(OUT, "recog-debug-page.png"));
   await dbg2.close(); await mp.close();
@@ -268,6 +295,21 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(150);
   const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
   ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true, "lot end: tapped card reported as the outcome");
+  // read before the timer: shown as "before start"; the lot (created earlier, older key) reuses it; outcome maps to the lot
+  await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();
+  await send({ type: "cardcomp-auto", key: preKey, capAt: preKey, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1100 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, first: (document.querySelector("#results .card") || {}).dataset }));
+  ok(/^auto on.*before start: read Numel/.test(st.line.replace(/\s+/g, " ")) && st.first && st.first.id === "me2pt5-223", "read before the timer: shown as 'before start', Numel IR first");
+  await send({ type: "cardcomp-auto-adopt", from: preKey, to: lotKey }); await ap.waitForTimeout(100);
+  await ap.evaluate((k) => window.recogLotDone({ startedAt: k, card: { id: "me2pt5-223", n: "Numel", label: "view" }, final: 4, me: false }), lotKey);
+  await ap.waitForTimeout(150);
+  const oc2 = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
+  ok(oc2 && oc2.key === lotKey && oc2.outcome.card.id === "me2pt5-223", "reused reading: the lot's outcome is reported under the lot");
+  const later = Date.now();
+  await send({ type: "cardcomp-auto", key: lotKey, capAt: later, n: 1, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me2pt5-242", "a newer frame wins even when its lot key is older than a pre-start read");
   await ap.click("#autosw"); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");

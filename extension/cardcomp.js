@@ -28,4 +28,4 @@ window.addEventListener("message", (e) => {
 // Hello, so CardComp can label the bid chips "this bid goes into Whatnot".
 window.postMessage({ type: "cardcomp-ext-ready" }, location.origin);
 chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) window.postMessage(msg, location.origin); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state)?$/.test(msg.type)) window.postMessage(msg, location.origin); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt)?$/.test(msg.type)) window.postMessage(msg, location.origin); });   // RECOG extension -> app
