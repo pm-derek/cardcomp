@@ -11,15 +11,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (TO_APP.has(msg.type)) {   // TCGplayer / Whatnot tab -> CardComp (side panel page + CardComp tabs)
     chrome.runtime.sendMessage(msg).catch(() => {});
     chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => tabs.forEach((t) => chrome.tabs.sendMessage(t.id, msg).catch(() => {})));
-    // First read on a freshly opened TCGplayer page: take Derek back to the stream (same window first).
-    if (msg.type === "cardcomp-tcg-price" && msg.first && !msg.none && sender.tab && sender.tab.active) {
-      chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
-        if (!tabs.length) return;
-        tabs.sort((a, b) => ((b.windowId === sender.tab.windowId) - (a.windowId === sender.tab.windowId)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
-        chrome.tabs.update(tabs[0].id, { active: true }).catch(() => {});
-        chrome.windows.update(tabs[0].windowId, { focused: true }).catch(() => {});
-      });
-    }
+    // No tab switching here. Click-outs open in a background tab, and an auto-return fired whenever Derek tabbed
+    // over to TCGplayer himself (the page often first renders, and reads, when it becomes visible).
     reply({ ok: true });
     return;
   }

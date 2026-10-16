@@ -2677,10 +2677,11 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
-let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false, LOT_ENDED_AT=0, LOT_END_SEEN_AT=0;
+const LABEL_MAX_MS=5*60000;   // a tap or opened card older than this never labels a lot (a lot runs ~30-90 s)   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
-  const v=LAST_VIEW; if(!v || v.at<from || v.at>to) return null;
+  const v=LAST_VIEW; if(!v || v.at<from || v.at>to || to-v.at>LABEL_MAX_MS) return null;
   const r=CARDS.find(x=>x.id===v.id); if(!r || !r.px) return null;
   const pk=v.el && v.el.querySelector(".pchip.on");
   let k=pk ? pk.dataset.k : ""; if(!k || !r.px[k]){ let best=-1; for(const p in r.px){ const m=(r.px[p].m!=null?r.px[p].m:r.px[p].l)||0; if(m>best){ best=m; k=p; } } }
@@ -2693,8 +2694,11 @@ function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
-  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent since the previous lot ended: lots are generic ("$2 start #43"), so an older tap is a different card
-  const view=!tap && LAST_VIEW && LAST_VIEW.at>=LOT_START ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
+  // only a bid sent (or a card opened) since the previous lot ended, and within 5 min: lots are generic
+  // ("$2 start #43"), so an older tap is a different card
+  const fresh=x=>x && x.at>=LOT_START && Date.now()-x.at<LABEL_MAX_MS;
+  const tap=fresh(LAST_TAP) ? LAST_TAP : null;
+  const view=!tap && fresh(LAST_VIEW) ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
   const over=tap && tap.bid>=1 && d.cur!=null && d.cur>=tap.bid && !d.ended;
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
@@ -2852,15 +2856,20 @@ window.addEventListener("message", e=>{
     // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
     // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
     if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
+    // Safety net: "Sold" on screen ends the label window even if no lot-end message arrives (an unread title
+    // once meant no lot-end at all, and a Numel tap labeled every lot after it)
+    if(d.ended && !LOT_ENDED_AT){ const t=LOT_ENDED_AT=Date.now(); setTimeout(()=>{ if(LOT_END_SEEN_AT<t-1000 && LOT_START<t){ LOT_START=t; TAPS_THIS_LOT=[]; paintLot(); } }, 1500); }
+    if(!d.ended) LOT_ENDED_AT=0;
     paintLot();
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
+    LOT_END_SEEN_AT=Date.now();
     // Card label: the last bid sent since the previous lot ended (pre-start taps included, at most 3 min
     // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
     // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
     // labeled with the last one; every tap is kept in bidsSent.
     const rec=d.rec, from=Math.max(LOT_START, (rec.startedAt||Date.now())-180000);
-    const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at ? LAST_TAP : null;
+    const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at && rec.at-LAST_TAP.at<LABEL_MAX_MS ? LAST_TAP : null;
     LOT_START=Date.now();
     if(rec.empty){ TAPS_THIS_LOT=[]; paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
     if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; }
