@@ -3,22 +3,46 @@
   "name": "CardComp to Whatnot",
   "version": "0.1.0",
   "description": "Tap a bid in CardComp and it lands in Whatnot's Custom bid box. You still place the bid.",
-  "permissions": ["sidePanel"],
-  "host_permissions": ["https://*.whatnot.com/*"],
-  "background": { "service_worker": "bg.js" },
-  "action": { "default_title": "CardComp" },
-  "side_panel": { "default_path": "panel.html" },
+  "permissions": [
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://*.whatnot.com/*"
+  ],
+  "background": {
+    "service_worker": "bg.js"
+  },
+  "action": {
+    "default_title": "CardComp",
+    "default_icon": {
+      "128": "icon.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://*.whatnot.com/*"],
-      "js": ["whatnot.js"],
+      "matches": [
+        "https://*.whatnot.com/*"
+      ],
+      "js": [
+        "whatnot.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://pm-derek.github.io/cardcomp/*"],
-      "js": ["cardcomp.js"],
+      "matches": [
+        "https://pm-derek.github.io/cardcomp/*"
+      ],
+      "js": [
+        "cardcomp.js"
+      ],
       "all_frames": true,
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "128": "icon.png"
+  }
 }
