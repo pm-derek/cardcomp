@@ -72,15 +72,26 @@
   .bidtbl .pc{font-size:10.5px;color:var(--dim);line-height:1.2}
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
-  .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:6px 9px;font-size:12.5px;align-items:center}
+  /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
+     every tap target is at least ~40px tall (phone thumb, side panel mouse) */
+  .condgrid{display:grid;grid-template-columns:auto auto minmax(92px,1fr) auto auto auto;gap:7px 10px;font-size:13.5px;align-items:center}
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
+  .condgrid .bd.h{text-align:center}
   .condgrid .c{font-weight:700}
+  .condgrid .c .clink,.condgrid .mk .clink{display:inline-block;padding:10px 2px}
   .condgrid .clink{text-decoration:underline dotted;text-underline-offset:2px}
-  .condgrid .carr{font-size:8px;opacity:.6;vertical-align:1px}
+  .condgrid .carr{font-size:9px;opacity:.6;vertical-align:1px}
   .condgrid .mk{color:var(--dim)}
-  .condgrid .bd{font-weight:700;text-align:right}
+  .condgrid .bd.cpy{display:block;text-align:center;font-weight:800;font-size:17px;line-height:1;padding:11px 8px;border:1px solid currentColor;border-radius:9px;background:rgba(255,255,255,.04);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .condgrid .bd.cpy:hover{background:rgba(255,255,255,.09)}
+  .condgrid .bd.cpy:active{transform:scale(.97)}
   .condgrid .mg{font-weight:600;text-align:right}
+  @media (max-width:440px){   /* phone: drop the % column so the bid button keeps its width */
+    .condgrid{grid-template-columns:auto auto minmax(80px,1fr) auto auto;gap:7px 7px}
+    .condgrid .pc{display:none}
+  }
+  .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
   .finep{color:var(--faint);font-size:10.5px;margin-top:11px;line-height:1.5}
   .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
@@ -2772,7 +2783,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }

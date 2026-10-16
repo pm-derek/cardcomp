@@ -141,7 +141,7 @@ The toggle relabels per game (Full Art / Enchanted+ / Chase).
 - Type words (fire, lightning/electric, colorless...) filter by Pokémon type, except when the word plus the next word is part of a real card name (`nameBigrams`): "double colorless energy", "lightning energy", "metal saucer" stay name searches. Energy aliases in `NICK`: electric/yellow -> lightning, dark/black -> darkness, steel/silver -> metal, red/blue/green/purple -> fire/water/grass/psychic ("electric energy" is Lightning Energy on TCGplayer).
 - `shining` filters rarity "Shining" or a name starting "Shining" (promo reprints like Shining Lugia SM82 carry rarity "Promo"). EN has no Shining Legends Shining Lugia; only JP does.
 - Printing selector: `first`/`1st`/`shadowless`/`unlimited` filter to that printing and auto-select it in the detail (`PRINT_HINT`). `1st` + `shadowless` together (any order) mean the Shadowless 1st Edition printing.
-- Condition grid: the `NM ↗` label and the market price both open TCGplayer listings for that printing and condition; the bid copies.
+- Condition grid: the `NM ↗` label and the market price both open TCGplayer listings for that printing and condition; the bid copies. Layout (Derek, 2026-10: "things are so small"): the max bid is a wide bordered button in a `minmax(92px,1fr)` middle column, 17px, ~41px tall; links get 10px vertical padding; cart `+ add` is a fixed 48x40 button. Under 440px wide the `% mkt` column is hidden so nothing overflows. Checked by rendering the real app in headless Chromium at 660px (side panel) and 380px (phone).
 
 ## Bid into Whatnot (extension/)
 
