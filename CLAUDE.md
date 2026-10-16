@@ -192,7 +192,9 @@ spots a new card held still (judged on the 15% most-changed pixels, so a small c
 hand is read after 3.5 s if roughly steady) and reads it before the timer ("live" = the timer is counting; a timer
 shown before the auction starts does not pause the watcher) (max 4 per gap, never the sold card still held); at timer start that reading is reused only if under 10 s old
 and the picture is unchanged (`recog-adopt`), else a frame ~1 s after the timer starts. Thinking off (Haiku disabled,
-Sonnet between_tools). "read now" on the auto line (or Ctrl+Shift+Y on the Whatnot tab while auto is on) reads
+Sonnet between_tools). Read now (Derek presses it every lot, faster than the trigger): a 66x52 "read" button left of the search box,
+right-click anywhere in CardComp (not in a text field; Shift+right-click keeps the browser menu), the mouse thumb
+back button, the ` key (even while typing), or Ctrl+Shift+Y; a ring under the pointer confirms. It reads
 immediately and fills even over typing, counts as that lot's reading (no automatic read after it, reused at the
 timer start within 60 s unless the card changed). Once Derek engages with a lot (read now, typing, tapping or opening
 a result) automatic readings never replace the results until the lot ends; they offer "show". Results page: lots

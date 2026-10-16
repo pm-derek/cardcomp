@@ -396,3 +396,10 @@ Fixture: `docs/recog-reads/live-2026-10-16b.json` (19 lots with a known card).
   printing (Haiku called the Celebrations Lugia "Reverse Holo").
 - CardComp: pictures bigger on desktop / side panel (list 60x84, opened card 120x168); phone unchanged (a bigger
   picture squeezed card names from 76 px to 24 px); tiles keep their crop.
+
+## Read triggers (Derek: presses read now every lot; small target, mouse lives mid-screen, Ctrl+Shift+Y awkward)
+
+Right-click anywhere in CardComp (text fields keep their menu, Shift+right-click keeps the browser menu), the mouse's
+thumb back button, the ` key (works while typing in the search box, types nothing), a 66x52 "read" button left of the
+search box (sticky row, shows "reading" until the reply), and Ctrl+Shift+Y. A ring under the pointer confirms. A double
+press within 1.5 s is one read. Not a click-anywhere zone: taps on results, chips and bids would fire reads.

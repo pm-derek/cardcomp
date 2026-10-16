@@ -368,6 +368,7 @@ async function appPage(browser, base, blockRecog) {
   const lotEnd = async () => { await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(80); };
   const posted = () => ap.evaluate(() => window.__posted);
   ok(await ap.evaluate(() => !document.querySelector("#autoline") || getComputedStyle(document.querySelector("#autoline")).display === "none"), "no extension: no auto line (phone / plain tab unchanged)");
+  ok(await ap.evaluate(() => { const b = document.querySelector("#readbig"); return !b || getComputedStyle(b).display === "none"; }), "no extension: no read button, right-click stays normal");
   await send({ type: "cardcomp-ext-ready" }); await ap.waitForTimeout(200);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-hello") && /auto off/.test(await ap.textContent("#autoline")), "extension present: line shows 'auto off' and asks for state");
   await send({ type: "cardcomp-auto-state", on: true, model: "haiku", hasKey: true }); await ap.waitForTimeout(100);
@@ -430,8 +431,29 @@ async function appPage(browser, base, blockRecog) {
   // read now button and watcher status on the line
   await send({ type: "cardcomp-auto-watch", phase: "watching", why: "waiting for the card to hold still", mean: 9, peak: 60 }); await ap.waitForTimeout(150);
   ok(/waiting for the card to hold still/.test(await ap.textContent("#autoline")), "watcher status shown on the auto line");
-  await ap.click("#autoread"); await ap.waitForTimeout(150);
-  ok((await posted()).some((m) => m.type === "cardcomp-auto-read"), "read now button asks the extension for a read");
+  // read triggers: the big button, right-click anywhere (not in a text field), the mouse thumb button, the ` key
+  const reads = async () => (await posted()).filter((m) => m.type === "cardcomp-auto-read").length;
+  let n0 = await reads();
+  const rbBox = await ap.evaluate(() => { const b = document.querySelector("#readbig"), q = document.querySelector("#q"); const r = b && b.getBoundingClientRect(), rq = q.getBoundingClientRect(); return b ? { w: Math.round(r.width), h: Math.round(r.height), qh: Math.round(rq.height), left: r.right <= rq.left + 1, disp: getComputedStyle(b).display } : null; });
+  ok(rbBox && rbBox.disp === "flex" && rbBox.w >= 60 && Math.abs(rbBox.h - rbBox.qh) <= 4 && rbBox.left, `read button left of the search box, ${rbBox && rbBox.w}x${rbBox && rbBox.h} (search box ${rbBox && rbBox.qh} tall)`);
+  await ap.click("#readbig"); await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1 && /reading/.test(await ap.textContent("#readbig")), "read button asks the extension for a read and shows 'reading'");
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, manual: true, read: { card_visible: false, name: "" }, model: "claude-sonnet-5-5", ms: 800 }); await ap.waitForTimeout(150);
+  ok(/read/.test(await ap.textContent("#readbig")) && !/reading/.test(await ap.textContent("#readbig")), "button returns to 'read' when the reading comes back (even 'no card')");
+  await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.click("#results", { button: "right", position: { x: 120, y: 60 } }); await ap.waitForTimeout(120);
+  const ringed = await ap.evaluate(() => !!document.querySelector(".readring"));
+  ok((await reads()) === n0 + 1 && ringed, "right-click in the results reads (ring under the pointer)");
+  await send({ type: "cardcomp-auto-readack", ok: true }); await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.click("#q", { button: "right" }); await ap.waitForTimeout(120);
+  ok((await reads()) === n0, "right-click in the search box keeps its normal menu (no read)");
+  await ap.evaluate(() => { const o = { bubbles: true, button: 3, clientX: 200, clientY: 300 }; document.querySelector("#results").dispatchEvent(new MouseEvent("mousedown", o)); document.querySelector("#results").dispatchEvent(new MouseEvent("mouseup", o)); });
+  await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1, "mouse thumb (back) button reads");
+  await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.fill("#q", "pika"); await ap.focus("#q"); await ap.keyboard.press("Backquote"); await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1 && (await ap.evaluate(() => document.querySelector("#q").value)) === "pika", "` key reads, even while typing, and types nothing");
+  await ap.screenshot({ path: path.join(OUT, "recog-readbutton.png") });
   await ap.fill("#q", "typing something"); await ap.waitForTimeout(100);
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, manual: true, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
   await ap.waitForTimeout(250);
