@@ -1,0 +1,21 @@
+shot,seller,lot_state,truth,number,in_catalog,read_by_claude,number_read,cardcomp_on_read
+1,sharcollects,live,Ursaring Prime JP (L1 SoulSilver Collection),061/070,yes,name ok,exact,right card
+2,sharcollects,sold (next lot),Time-Space Distortion JP,012/012,yes,name ok,exact,3 Collection Packs (ambiguous product)
+3,ed_tcg,live,Radiant Heatran (regular),,no,name ok,unreadable,WRONG: Prize Pack printing $20.93
+4,ed_tcg,sold (next lot),Jellicent ex UR (White Flare),160/086,no,name ok,unreadable,WRONG: SIR #168 $24.78
+5,ed_tcg,live,Spewpa IR,,no (under floor),name ok,unreadable,no matches (correct)
+6,ed_tcg,sold (next lot),Mew ex Futuristic Rare (30th Celebration),158,yes,name ok,unreadable,21 printings; right one 3rd
+7,munchingcards,live,Kyurem ex UR (Black Bolt),157/086,no,name ok,exact,WRONG: closest-by-name Mewtwo ex #157
+8,munchingcards,live,Honchkrow V (Brilliant Stars),162/172,yes,name ok,161 (off by 1),WRONG: closest-by-name Beedrill V #161
+9,munchingcards,live,Cetitan ex (Destined Rivals),210/182,no,name ok,exact,WRONG: closest-by-name Sinistcha ex #210
+10,munchingcards,live,Fomantis IR (Pitch Black),085/084,yes,name ok,085/064 (total off),right card
+11,letsplaycollectibles,live,Shining Rayquaza (Shining Legends),56,yes,name ok,unreadable,right card
+12,letsplaycollectibles,not started,Zapdos holo (Fossil),15/62,yes,name ok,from attack text,right card (bare name gives 30th Celebration first)
+13,zenzoogie,sold (next lot),Mega Scrafty ex SIR (Ascended Heroes),285,yes,name + SIR ok,unreadable,tie: #270 $2.92 vs #285 SIR $43.64
+14,zenzoogie,live,Giovanni's Exile full art (Hidden Fates),67/68,yes,name ok,unreadable,right card
+15,zenzoogie,live,Numel IR (Ascended Heroes),223,yes,name + IR ok,unreadable,right card
+16,zenzoogie,sold (next lot),Frogadier IR (Chaos Rising),89,yes,name + IR ok,unreadable,right card
+17,zenzoogie,sold (next lot),Carbink IR (Ascended Heroes),242,yes,name + IR ok,unreadable,right card
+18,zenzoogie,sold (next lot),Dhelmise IR (Pitch Black),91,yes,name + IR ok,unreadable,right card
+19,zenzoogie,live,Cynthia's Garchomp ex UR (Destined Rivals),215/182,yes,name ok,unreadable,right card #215 $3.98 (a SIR read sends it to #232 $184.63)
+20,zenzoogie,sold (next lot),Snorunt IR (Ascended Heroes),227,yes,name + IR ok,unreadable,tie: Paradox Rift #188 listed first

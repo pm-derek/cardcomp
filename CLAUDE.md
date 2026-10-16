@@ -179,6 +179,22 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 - Headroom (checked 2026-10, Derek asked to be reminded when it matters): Pages 100 GB/mo soft (12 MB a load, ~300 loads/mo used), Pages 10 builds/hr soft (live branch never builds), API 5k/hr per token (~40 per stream), Actions unlimited on a public repo, live.json grows a few KB/mo. Tell Derek before any change that writes to `main` per click, loads the catalog far more often, or moves the app off GitHub, since those are the only ways to reach a limit.
 - Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it.
 
+<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
+## Auto-recognition (experiment, removable)
+
+Plan, results, decisions: docs/auto-recognition-handoff.md. App side: `recog/automatch.js` (`autoMatch(read)`, never
+called by manual search) and `recog/auto-ui.js` (the "auto on/off" line under the lot strip, model picker, fills the
+search with candidates and marks the best guess, leaves the search alone if Derek typed or tapped a result since the
+lot started, reports the tapped/opened card at lot end via `recogLotDone`). Extension side: `extension/recog/`
+(`recog-whatnot.js` copies the `<video>` frame ~1 s after the lot timer starts; `recog-bg.js` calls the API with the
+key from Options, Haiku / Sonnet / Opus, 240 reads an hour cap, records every lot in IndexedDB; `debug.html` results
+page). Hooks in existing files are lines tagged `RECOG` or blocks between RECOG-BEGIN / RECOG-END.
+`node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js` runs fixtures (20 confirmed frames), a
+258-search regression, the strip test, capture tests and the auto flow on a mock Whatnot page with a mocked API.
+Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
+Any new hook line in an existing file gets the `RECOG` tag.
+
+<!-- RECOG-END -->
 ## Other UI notes
 
 - **Stale-price banner**: if `data.json`'s `updated` is > 2 days old, a warning shows (the daily ingest may have stalled).

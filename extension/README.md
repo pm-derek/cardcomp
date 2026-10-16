@@ -149,3 +149,24 @@ next input you tap. If a redesign breaks step 1 or 2, step 3 still works; fix th
 Mobile: the Whatnot app cannot be typed into from a browser (iOS has no path; Android would need an
 accessibility service app). The clipboard copy stays the mobile path: copy, switch, paste from the
 keyboard's clipboard chip.
+<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
+
+## Auto-recognition (experiment)
+
+Reads the card on stream at each lot with Claude and fills CardComp's search with the candidates, best guess
+marked (gold "✓ auto" when name and number match exactly, outlined "auto?" for a guess). It never opens a card
+and never bids. Plan and results: docs/auto-recognition-handoff.md.
+
+1. Reload the extension at chrome://extensions, then reload the Whatnot tab once.
+2. Options: paste your Anthropic API key (console.anthropic.com), Save, Test.
+3. In the CardComp panel, under the lot strip: tap "auto off" to turn it on, pick the model (Haiku is cheapest).
+4. Watch a stream. About 1 s after each lot's timer starts, one frame is read (a second one 2 s later only
+   when the first is unsure). If you typed or tapped a result since the lot started, your search stays and
+   the line offers "show".
+5. Results, frames and costs: Options > "the recognition test page". The card you tap or open in a lot is the
+   truth; mark the other lots there.
+
+Capture check: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) or right-click > "Recognition test: grab a frame".
+Not Alt+Shift+R: Chrome uses that for Reading Mode. Frames stay in this extension (30 days); calls go only to
+api.anthropic.com. Remove the whole experiment: `node scripts/strip-recog.js`.
+<!-- RECOG-END -->

@@ -1,0 +1,284 @@
+// RECOG experiment, background half (docs/auto-recognition-handoff.md). Removed by scripts/strip-recog.js.
+//
+// Auto mode (switch + model picker in the CardComp panel, API key on the Options page):
+//   recog-whatnot.js sends a frame ~1 s after a lot's timer starts -> read it with Claude -> send the reading to
+//   CardComp ("cardcomp-auto"), which matches it against the catalog (recog/automatch.js) and shows candidates.
+//   One more frame 2 s later only when the first read is unsure (no card, no number, low confidence, or the same
+//   card as the previous lot, i.e. the seller may still be holding the sold card).
+//   Every lot is recorded in IndexedDB "cardcomp-recog" (store "lots"): frames sent, readings, model, latency,
+//   cost, what CardComp matched, and what Derek tapped or opened. Results page: recog/debug.html.
+// Capture check (step 1): Ctrl+Shift+Y or right-click > "Recognition test: grab a frame" grabs one frame
+//   (store "frames"), then retries 5 s later with no key press.
+// Nothing here bids or touches Whatnot. Calls go straight to api.anthropic.com with Derek's key.
+
+const RECOG_DB = "cardcomp-recog";
+const RECOG_MODELS = { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5" };
+const RECOG_PRICE = { "claude-haiku-5-5": [0.10, 0.50], "claude-sonnet-5-5": [2, 10], "claude-opus-5-5": [4, 20] };   // $/MTok in, out (2026-10)
+const RECOG_HOURLY_CAP = 240;          // model calls per rolling hour (a busy stream is ~100 lots an hour)
+const RECOG_KEEP_DAYS = 30;            // lots and frames older than this are deleted
+
+function recogDb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(RECOG_DB, 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains("frames")) db.createObjectStore("frames", { keyPath: "id", autoIncrement: true });
+      if (!db.objectStoreNames.contains("lots")) db.createObjectStore("lots", { keyPath: "key" });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function recogTx(store, fn) {
+  const db = await recogDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite"), st = tx.objectStore(store);
+    let out; const q = fn(st); if (q) q.onsuccess = () => { out = q.result; };
+    tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error);
+  });
+}
+const recogPut = (rec) => recogTx("frames", (st) => st.add(rec));
+async function recogPatch(id, patch) {
+  const db = await recogDb();
+  return new Promise((res) => {
+    const tx = db.transaction("frames", "readwrite"), st = tx.objectStore("frames"), g = st.get(id);
+    g.onsuccess = () => { if (g.result) st.put(Object.assign(g.result, patch)); };
+    tx.oncomplete = res; tx.onerror = res;
+  });
+}
+// Read-modify-write one lot record (created on first use).
+async function recogLot(key, fn) {
+  const db = await recogDb();
+  return new Promise((res) => {
+    const tx = db.transaction("lots", "readwrite"), st = tx.objectStore("lots"), g = st.get(key);
+    let out;
+    g.onsuccess = () => { const rec = g.result || { key, at: key, frames: [], reads: [] }; fn(rec); st.put(rec); out = rec; };
+    tx.oncomplete = () => res(out); tx.onerror = () => res(null);
+  });
+}
+async function recogPrune() {
+  const cut = Date.now() - RECOG_KEEP_DAYS * 864e5;
+  for (const store of ["lots", "frames"]) {
+    await recogTx(store, (st) => { const c = st.openCursor(); c.onsuccess = () => { const cur = c.result; if (!cur) return; if ((cur.value.at || 0) < cut) cur.delete(); cur.continue(); }; }).catch(() => {});
+  }
+}
+recogPrune();
+
+async function recogDataUrl(blob) {
+  return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+}
+// Screenshot (data URL of the whole visible tab) -> JPEG of just the video box.
+async function recogCrop(shot, rect, maxEdge) {
+  const bmp = await createImageBitmap(await (await fetch(shot)).blob());
+  const k = bmp.width / rect.iw;   // device pixels per CSS pixel
+  const sx = Math.max(0, rect.x * k), sy = Math.max(0, rect.y * k);
+  const sw = Math.min(bmp.width - sx, rect.w * k), sh = Math.min(bmp.height - sy, rect.h * k);
+  const z = Math.min(1, (maxEdge || 1000) / Math.max(sw, sh)), w = Math.round(sw * z), h = Math.round(sh * z);
+  const c = new OffscreenCanvas(w, h), g = c.getContext("2d");
+  g.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data; let s = 0, n = 0;
+  for (let i = 0; i < d.length; i += 64) { s += d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; n++; }
+  return { img: await recogDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.88 })), w, h, luma: Math.round(s / n) };
+}
+
+// ---------------------------------------------------------------- the model call
+const RECOG_SYSTEM = "You identify Pokemon trading cards in frames of a Whatnot livestream. One card is shown to the camera, held in hand or in a sleeve or top-loader. Ignore cards on stands, in binders, in display cases or on the table behind it. Read only what is printed on the card held in front. Never guess a number you cannot read: return an empty string instead.";
+const RECOG_ASK = `Return the card held in front:
+- card_visible: false if no single card is being shown (seller's face, a pack, a stack, a blurred hand)
+- name: the card name as printed, in English (for a Japanese card, the English name of that Pokemon or trainer card), with prefixes and suffixes such as Radiant, Shining, Mega, Team Rocket's, Cynthia's, ex, EX, GX, V, VMAX, VSTAR, LV.X, Prime
+- number: the collector number at the bottom (digits or code before the slash, e.g. 233, SV049, TG12), "" if unreadable
+- total: the digits after the slash (e.g. 182), "" if none or unreadable
+- language: en, jp or other
+- rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
+- set: the set if you can tell, else ""
+- confidence: 0 to 1 that the name is right`;
+const RECOG_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["card_visible", "name", "number", "total", "language", "rarity", "set", "confidence"],
+  properties: {
+    card_visible: { type: "boolean" }, name: { type: "string" }, number: { type: "string" }, total: { type: "string" },
+    language: { type: "string", enum: ["en", "jp", "other"] }, rarity: { type: "string" }, set: { type: "string" }, confidence: { type: "number" }
+  }
+};
+function recogErr(status, txt) {
+  if (status === 401) return "API key rejected (Options page)";
+  if (status === 403) return "API key not allowed to use this model";
+  if (status === 429) return "rate limited by the API";
+  if (status === 529 || status >= 500) return "API busy (" + status + ")";
+  if (status === 400 && /credit|balance/i.test(txt)) return "out of API credit";
+  return "API error " + status + ": " + String(txt || "").slice(0, 120);
+}
+async function recogRead(img, modelKey, apiKey) {
+  const model = RECOG_MODELS[modelKey] || RECOG_MODELS.haiku;
+  let useFormat = true, useEffort = true, useFallback = model !== RECOG_MODELS.haiku;
+  const data = String(img).replace(/^data:image\/\w+;base64,/, "");
+  const t0 = Date.now();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const body = {
+      model, max_tokens: 2000, system: RECOG_SYSTEM,
+      messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
+        { type: "text", text: RECOG_ASK + (useFormat ? "" : "\nAnswer with one JSON object only, with exactly those keys.") }
+      ] }]
+    };
+    const oc = {};
+    if (useEffort) oc.effort = "low";
+    if (useFormat) oc.format = { type: "json_schema", schema: RECOG_SCHEMA };
+    if (Object.keys(oc).length) body.output_config = oc;
+    const headers = { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
+    if (useFallback) { headers["anthropic-beta"] = "server-side-fallback-2026-07-01"; body.fallbacks = "default"; }   // a declined read retries on another model
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 25000);
+    let r, txt;
+    try { r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body), signal: ctl.signal }); txt = await r.text(); }
+    catch (e) { return { error: e && e.name === "AbortError" ? "timed out (25 s)" : "network: " + (e && e.message), ms: Date.now() - t0, model }; }
+    finally { clearTimeout(tm); }
+    if (r.status === 400) {   // an option this model does not take: drop it and retry once each
+      if (useFallback && /fallback/i.test(txt)) { useFallback = false; continue; }
+      if (useEffort && /effort/i.test(txt)) { useEffort = false; continue; }
+      if (useFormat && /output_config|format|schema/i.test(txt)) { useFormat = false; continue; }
+    }
+    if ((r.status === 529 || r.status === 503) && attempt < 1) { await new Promise((s) => setTimeout(s, 800)); continue; }
+    const ms = Date.now() - t0;
+    if (!r.ok) return { error: recogErr(r.status, txt), status: r.status, ms, model };
+    let j; try { j = JSON.parse(txt); } catch (_) { return { error: "unreadable API reply", ms, model }; }
+    const u = j.usage || {}, p = RECOG_PRICE[j.model] || RECOG_PRICE[model] || [0, 0];
+    const cost = ((u.input_tokens || 0) * p[0] + (u.output_tokens || 0) * p[1]) / 1e6;
+    const base = { ms, model: j.model || model, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cost, stop: j.stop_reason };
+    if (j.stop_reason === "refusal") return Object.assign(base, { error: "the model declined this frame" });
+    const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    let read = null;
+    try { read = JSON.parse(text); } catch (_) { const m = text.match(/\{[\s\S]*\}/); if (m) { try { read = JSON.parse(m[0]); } catch (_) {} } }
+    if (!read) return Object.assign(base, { error: j.stop_reason === "max_tokens" ? "reply cut off" : "no JSON in the reply", raw: text.slice(0, 200) });
+    return Object.assign(base, { read });
+  }
+  return { error: "API options rejected", ms: Date.now() - t0, model };
+}
+
+// ---------------------------------------------------------------- settings, cap, messages to CardComp
+const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn", "recogModel", "recogKey"], (r) => res(r || {})));
+async function recogState() {
+  const s = await recogGet();
+  return { type: "cardcomp-auto-state", on: !!s.recogOn, model: s.recogModel || "haiku", hasKey: !!s.recogKey };
+}
+function recogToApp(msg) {   // side panel page + any CardComp tab (same path as lot messages)
+  try { const p = chrome.runtime.sendMessage(msg); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+  try { chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => (tabs || []).forEach((t) => { const p = chrome.tabs.sendMessage(t.id, msg); if (p && p.catch) p.catch(() => {}); })); } catch (_) {}
+}
+let recogCalls = [];
+function recogCapOK() {
+  const now = Date.now();
+  recogCalls = recogCalls.filter((t) => now - t < 3600e3);
+  if (recogCalls.length >= RECOG_HOURLY_CAP) return false;
+  recogCalls.push(now); return true;
+}
+
+// ---------------------------------------------------------------- auto mode: one frame per lot (two when unsure)
+const recogPrev = {};   // tabId -> last reading, to spot a seller still holding the sold card
+const sameCard = (a, b) => a && b && a.name && String(a.name).toLowerCase() === String(b.name).toLowerCase() && String(a.number || "") === String(b.number || "");
+async function recogOnFrame(msg, tab) {
+  const s = await recogGet();
+  if (!s.recogOn) return;
+  const key = msg.key, n = msg.n || 1;
+  const head = { type: "cardcomp-auto", key, n, title: msg.title || "", seller: msg.seller || "" };
+  let frame = msg.ok ? { img: msg.img, w: msg.w, h: msg.h, luma: msg.luma, method: "video" } : null;
+  if (!frame && msg.rect && tab) {   // video copy blocked: a screenshot works once the tab was armed (shortcut / right-click)
+    try { frame = Object.assign({ method: "screenshot" }, await recogCrop(await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 92 }), msg.rect, 1920)); }
+    catch (e) { msg.why = (msg.why || "") + "; screenshot: " + e.message; }
+  }
+  const lotHead = (rec) => { rec.title = msg.title || rec.title || ""; rec.seller = msg.seller || rec.seller || ""; rec.url = msg.url || rec.url || ""; };
+  if (!frame) {
+    const error = "no frame: " + (msg.why || "unknown");
+    await recogLot(key, (rec) => { lotHead(rec); rec.reads.push({ n, error }); });
+    recogToApp(Object.assign(head, { error })); return;
+  }
+  const fr = { n, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
+  let res;
+  if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
+  else if (!recogCapOK()) res = { error: "hourly cap reached (" + RECOG_HOURLY_CAP + " reads)" };
+  else res = await recogRead(frame.img, s.recogModel || "haiku", s.recogKey);
+  const prev = recogPrev[tab ? tab.id : 0];
+  await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "haiku" }, res)); });
+  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0 }));
+  if (res.read && tab) {
+    const r = res.read, held = n === 1 && sameCard(r, prev);
+    if (n === 1) recogPrev[tab.id] = r;
+    if (n === 1 && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
+      setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
+    }
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || typeof msg.type !== "string") return;
+  if (msg.type === "recog-frame") { recogOnFrame(msg, sender.tab); reply({ ok: true }); return; }
+  if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
+  if (msg.type === "cardcomp-auto-config") {
+    const set = {}; if ("on" in msg) set.recogOn = !!msg.on; if (msg.model && RECOG_MODELS[msg.model]) set.recogModel = msg.model;
+    chrome.storage.local.set(set, () => recogState().then(recogToApp)); reply({ ok: true }); return;
+  }
+  if (msg.type === "cardcomp-auto-match") {   // what CardComp made of a reading
+    recogLot(msg.key, (rec) => { (rec.matches = rec.matches || []).push({ n: msg.n, kind: msg.kind, strength: msg.strength, suggestion: msg.suggestion, cards: msg.cards, note: msg.note, filled: msg.filled, why: msg.why }); });
+    reply({ ok: true }); return;
+  }
+  if (msg.type === "cardcomp-auto-outcome") {   // lot ended: what Derek tapped or opened, the final price
+    recogLot(msg.key, (rec) => { rec.outcome = msg.outcome; });
+    reply({ ok: true }); return;
+  }
+  if (msg.type === "recog-key-test") {   // Options page: tiny text-only call to prove the key works
+    recogGet().then(async (s) => {
+      if (!s.recogKey) return reply({ ok: false, why: "no key saved" });
+      try {
+        const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": s.recogKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: RECOG_MODELS.haiku, max_tokens: 16, messages: [{ role: "user", content: "Reply with: ok" }] }) });
+        reply(r.ok ? { ok: true } : { ok: false, why: recogErr(r.status, await r.text()) });
+      } catch (e) { reply({ ok: false, why: "network: " + e.message }); }
+    });
+    return true;
+  }
+});
+
+// ---------------------------------------------------------------- capture check (step 1)
+async function recogGrabOnce(tab) {
+  const t0 = Date.now(), tries = [];
+  let r;
+  try { r = await chrome.tabs.sendMessage(tab.id, { type: "recog-grab" }); }
+  catch (e) { r = { ok: false, why: "Whatnot tab not ready (reload it once after installing)" }; }
+  if (r && r.ok) return { ok: true, method: "video", img: r.img, w: r.w, h: r.h, luma: r.luma, video: r.video, tries, ms: Date.now() - t0 };
+  tries.push("video copy: " + ((r && r.why) || "no answer"));
+  if (r && r.rect) {
+    try {
+      const shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 90 });
+      const c = await recogCrop(shot, r.rect, 1000);
+      return Object.assign({ ok: true, method: "screenshot", video: r.video, tries, ms: Date.now() - t0 }, c);
+    } catch (e) { tries.push("screenshot: " + e.message); }
+  }
+  return { ok: false, video: r && r.video, tries, ms: Date.now() - t0 };
+}
+async function recogGrab(tab) {
+  const g = await recogGrabOnce(tab);
+  const rec = { at: Date.now(), url: tab.url, trigger: "shortcut", ok: g.ok, method: g.method || "", w: g.w || 0, h: g.h || 0,
+    luma: g.luma, kb: g.img ? Math.round(g.img.length * 0.75 / 1024) : 0, ms: g.ms, video: g.video || null, tries: g.tries, img: g.img || "", later: "pending" };
+  let id = null;
+  try { id = await recogPut(rec); } catch (e) { rec.tries.push("save: " + e.message); }
+  chrome.tabs.sendMessage(tab.id, { type: "recog-grab-result", ok: rec.ok, method: rec.method, w: rec.w, h: rec.h, kb: rec.kb, luma: rec.luma, ms: rec.ms, tries: rec.tries }).catch(() => {});
+  // Same capture again in 5 s with no key press: can later lots be captured on their own?
+  setTimeout(async () => {
+    const again = await recogGrabOnce(tab).catch((e) => ({ ok: false, tries: [e.message] }));
+    const later = again.ok ? "ok (" + again.method + ")" : "failed: " + again.tries.join("; ");
+    if (id != null) recogPatch(id, { later });
+    chrome.tabs.sendMessage(tab.id, { type: "recog-later-result", ok: again.ok, later }).catch(() => {});
+  }, 5000);
+}
+chrome.commands.onCommand.addListener(async (cmd, tab) => {
+  if (cmd !== "recog-grab") return;
+  if (!tab || !tab.id) tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (!tab || !/^https:\/\/([^/]*\.)?whatnot\.com\//.test(tab.url || "")) return;
+  recogGrab(tab);
+});
+// Right-click menu: same grab, no key needed (Chrome keeps some keys for itself, e.g. Alt+Shift+R is Reading Mode).
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({ id: "recog-grab", title: "Recognition test: grab a frame", contexts: ["page", "video", "image", "link"],
+    documentUrlPatterns: ["https://*.whatnot.com/*"] }, () => chrome.runtime.lastError);
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => { if (info.menuItemId === "recog-grab" && tab && tab.id) recogGrab(tab); });
