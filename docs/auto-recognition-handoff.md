@@ -228,3 +228,42 @@ differ), so no latency or cost numbers yet; treat as relative accuracy.
   Those are app fixes and help all models equally.
 - Cost if Opus wins: ~1,300 input tokens a frame at $4/MTok is about $0.006 a lot, about $15 a month at
   2,600 lots (one frame). Haiku would be about $0.50. The accuracy gap (13 vs 9 of 15) is worth that.
+
+## Agreed plan (Derek, 2026-10-16)
+
+Status: planned, not built. Derek is not yet convinced, so it must be removable in one step and promotable
+without a rewrite.
+
+Decisions:
+- One extension, not two (Chrome shows one side panel at a time; a second copy would double-send bids).
+  Recognition lives in `extension/recog/` plus a handful of hook lines tagged `RECOG`, each a no-op when the
+  folder is gone. Separate storage. A strip script removes the folder and tagged lines; a headless check
+  proves the app and extension still work after stripping.
+- Off by default, armed per stream. Arming is a keyboard shortcut on the Whatnot tab (counts as a user
+  gesture, so the visible-tab screenshot fallback needs no broad permission; the icon keeps opening the panel).
+  First choice for capture is drawing Whatnot's `<video>` to a canvas; the panel reports which method worked.
+- What shows (Derek): it pulls up a real search result, like typing it. The best guess is marked as the
+  suggestion, more strongly when certain (exact name + number), and the other candidates stay listed like a
+  normal "charizard ex" search. Never the closest-by-name fallback; "not in catalog, likely under $1.50" when
+  nothing fits. Fills the search only if Derek has not typed since the lot started. Never bids.
+- Model: selectable in the panel (Haiku / Sonnet / Opus). Test with cheaper models; every lot records which
+  model ran, and frames are kept so any model can be replayed on the same lots later.
+- Recording per lot: cropped video frame (no chat), capture timing and method, model, latency, tokens, cost,
+  raw answer, query, outcome type, top candidates with prices, what Derek tapped / opened, lot facts.
+  Local only, frames kept 30 days, wipe button, one-click export. Debug page: summary on top (agreement,
+  outcome mix, latency, spend), one row per lot, mismatches first. Replay of recorded frames for tuning.
+- Truth: Derek's taps and opens, now sharper because "picked a different candidate than the suggestion" is a
+  direct miss. Plus ~20 random untapped lots marked on the debug page after a stream, so bulk is measured too.
+- Pass / strip bar: not set yet. Set it together after stream 1 from the debug page. Metric to watch from day
+  one: how often the strong suggestion was the wrong card.
+- Safety: monthly spend cap in the Anthropic console before any live call; per-hour call cap in the extension;
+  API failures show "auto: unavailable" and never block bidding.
+
+Build order:
+1. Capture check (tiny): a grab-frame action that saves one frame and reports the method. Derek tries it on
+   any stream for 5 minutes. If nothing works, stop here.
+2. Match rules as a separate function beside `run()` (manual search unchanged; a few hundred typical queries
+   diffed before / after). The 20 confirmed frames become fixtures.
+3. Model call, recording, debug page, suggestion display, behind the switch. Tested on a fake stream: the 20
+   frames played as a video in the mock Whatnot page with a resetting lot timer. Failure cases tested.
+4. Streams in the test mode; replay to tune; then decide: promote, keep tuning, or strip.
