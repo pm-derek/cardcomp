@@ -213,7 +213,7 @@ async function recogOnFrame(msg, tab) {
   if (res.read && tab) {
     const r = res.read, held = n === 1 && !msg.afterPre && sameCard(r, prev);
     if (n === 1) recogPrev[tab.id] = r;
-    if (n === 1 && msg.trigger !== "pre" && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
+    if (n === 1 && msg.trigger !== "pre" && msg.trigger !== "manual" && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
       setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
     }
   }

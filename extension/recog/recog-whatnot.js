@@ -50,9 +50,10 @@
       ok: g.ok, why: g.why || "", img: g.img || "", w: g.w || 0, h: g.h || 0, luma: g.luma, video: g.video, rect: g.rect }, extra);
     try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {}
   }
+  const MANUAL = {};   // lot key -> time of a "read now" during that lot: no automatic read after it
   function sendFrame(key, n) {
     const lot = lots.get(key);
-    if (!on || !lot || lot.ended) return;
+    if (!on || !lot || lot.ended || MANUAL[key]) return;
     post(key, n, { title: lot.title || "", sinceStart: Date.now() - key, trigger: "start", afterPre: !!PRE.at });
     REF = thumb() || REF;
   }
@@ -103,9 +104,17 @@
     try { chrome.runtime.sendMessage(Object.assign({ type: "cardcomp-auto-watch" }, WATCH, { hidden: document.hidden }), () => chrome.runtime.lastError); } catch (_) {}
   }, 2000);
   function readNow(trigger, t, vsRef) {
-    const key = Date.now();
     t = t || thumb();
-    PRE = { at: key, n: PRE.n + 1, last: key, thumb: t, lot: lastLot && lastLot.startedAt };
+    // "read now" while a lot is running: it is that lot's reading, and replaces any automatic one still to come
+    if (trigger === "manual" && lastLot && !lastLot.ended && (live(lastSt, lastLot) || lots.has(lastLot.startedAt))) {
+      const k = lastLot.startedAt; MANUAL[k] = Date.now(); lots.set(k, lastLot);
+      REF = t; moved = 0; still = 0;
+      post(k, 9, { title: lastLot.title || "", sinceStart: Date.now() - k, trigger });
+      status("read now", "you asked");
+      return;
+    }
+    const key = Date.now();
+    PRE = { at: key, n: PRE.n + 1, last: key, thumb: t, lot: lastLot && lastLot.startedAt, manual: trigger === "manual" };
     REF = t; moved = 0; still = 0;
     post(key, 1, { title: "", sinceStart: 0, trigger, diff: vsRef == null ? null : Math.round(vsRef) });
     status(trigger === "manual" ? "read now" : "reading", trigger === "manual" ? "you asked" : "new card held up");
@@ -142,9 +151,11 @@
     lots.set(lot.startedAt, lot);
     if (lots.size > 50) lots.delete(lots.keys().next().value);
     const now = thumb(), d = peak(now, PRE.thumb);
-    if (PRE.at && d < REUSE && Date.now() - PRE.at < 10000) {
+    const reuse = PRE.manual ? d < SAME && Date.now() - PRE.at < 60000 : d < REUSE && Date.now() - PRE.at < 10000;
+    if (PRE.at && reuse) {
       try { chrome.runtime.sendMessage({ type: "recog-adopt", from: PRE.at, to: lot.startedAt, title: lot.title || "", diff: Math.round(d) }, () => chrome.runtime.lastError); } catch (_) {}
       PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt };
+      MANUAL[lot.startedAt] = Date.now();   // reused: no automatic read for this lot (also blocks the 2nd-frame retry)
       return;
     }
     setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt }; }, 600);   // live is seen ~1 s after the timer starts (it must tick once)
