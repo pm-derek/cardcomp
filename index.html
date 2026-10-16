@@ -3014,7 +3014,8 @@ const SET_TWINS = {"SV: Scarlet & Violet Promo Cards":"Scarlet & Violet Black St
 for(const [a,b] of Object.entries(SET_TWINS)) SET_TWINS[b]=a;
 const CEL25_SETS = new Set(["Celebrations","Celebrations: Classic Collection","McDonald's 25th Anniversary Promos"]);
 // a main set name (or its code) also covers its Classic Collection reprints; naming the Classic Collection stays exact
-const SET_GROUP = {"Celebrations": CEL25_SETS, "30th Celebration": new Set(["30th Celebration","30th Celebration: Classic Collection"])};
+const SET_GROUP = {"Celebrations": CEL25_SETS, "30th Celebration": new Set(["30th Celebration","30th Celebration: Classic Collection"]),
+  "Shining Fates": new Set(["Shining Fates","Shining Fates Shiny Vault"]), "Hidden Fates": new Set(["Hidden Fates","Hidden Fates Shiny Vault"])};   // shinies live in the Shiny Vault subset
 const EREADER_SETS = new Set(["Expedition","Aquapolis","Skyridge",   // EN
   "Base Expansion Pack","Mysterious Mountains","Split Earth","Wind from the Sea","The Town on No Map",
   "Pokemon-e Starter Deck","McDonald's Pokémon-e Minimum Pack"]);   // JP Card e
@@ -3144,6 +3145,10 @@ function parse(raw){
   // "base 2" / "base2" / "bs2" mean Base Set 2, not Base Set card #2. "base 2/102" keeps meaning #2 of 102.
   { const re=/\b(base\s?2|bs\s?2)\b(?!\s*\/)/;
     if(!f.setName && !f.setIn && re.test(text)){ f.setName="Base Set 2"; text=text.replace(re," "); } }
+  // "30th" / "30th anniversary" / "30th celebration": the 30th Celebration set (+ its Classic Collection via
+  // SET_GROUP in EN, M6a in JP). "30th celebration classic collection" stays exact (SET_NICK below).
+  { const re=/\b30th(\s+(anniversary|celebrations?))?\b(?!\s*:?\s*classic)/;
+    if(!f.setName && !f.setIn && re.test(text)){ f.setName="30th Celebration"; text=text.replace(re," "); } }
   // 25th anniversary (2021): "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations"
   // all mean Celebrations + its Classic Collection + the McDonald's 25th promos (JP: the S8a family).
   // Singular "celebration" is left alone: that is the 30th. "celebrations classic collection" stays exact.
@@ -3268,7 +3273,7 @@ function parse(raw){
   if(LANG==="en" && f.setCode && !f.setName && SET_CODES[f.setCode]){ f.setName=SET_CODES[f.setCode]; f.setCode=null; }
   if(LANG==="en"){ const en=f.setName||(f.setCode?SET_CODES[f.setCode]:null), tw=en&&SET_TWINS[en];
     if(tw){ f.setIn=new Set([en,tw]); f.setInLabel=en; f.setName=null; f.setCode=null; }
-    else if(SET_GROUP[en]){ f.setIn=SET_GROUP[en]; f.setInLabel=en+" + Classic"; f.setName=null; f.setCode=null; } }   // main set: include its Classic Collection
+    else if(SET_GROUP[en]){ f.setIn=SET_GROUP[en]; f.setInLabel=en+(/Fates/.test(en)?" + Shiny Vault":" + Classic"); f.setName=null; f.setCode=null; } }   // main set: include its Classic Collection
   if(LANG==="jp"){   // in JP mode, translate a recognized EN set (name or numeric like "151") into its JP analog code(s)
     const en = f.setName || (f.setCode ? SET_CODES[f.setCode] : null);
     const jn = en && EN_TO_JP_NAMES[String(en).toLowerCase()];
@@ -3356,7 +3361,10 @@ function run(raw){
     if(f.setName && (r.s||"")!==f.setName) return false;
     if(f.setIn && !f.setIn.has(r.s||"")) return false;
     if(f.jpCodes && !f.jpCodes.includes((r.c||"").toLowerCase())) return false;
-    if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has)); if(!ok) return false; }
+    if(lv<1 && f.rarity){ const rr=r.r||""; const ok = f.rarity.anyOf ? f.rarity.anyOf.includes(rr) : (f.rarity.eq ? rr===f.rarity.eq : rr.includes(f.rarity.has));
+      // "shining" is also printed in the name: promo reprints (Shining Lugia SM82) carry rarity "Promo"
+      const named = f.rarity.has==="Shining" && /^shining\b/i.test(r.n||"");
+      if(!ok && !named) return false; }
     if(f.jp){ const rr=r.r||""; const toks=rr.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if(!(toks.includes(f.jp.code) || rr.trim().toLowerCase()===f.jp.full.toLowerCase())) return false; }
     if(f.printing){ if(!Object.keys(r.px||{}).some(k=>k.toLowerCase().includes(f.printing))) return false; }
     if(f.number && !numMatch(r.num, f.number, !!f.setSize)) return false;
