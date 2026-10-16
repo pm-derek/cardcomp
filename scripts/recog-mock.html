@@ -6,13 +6,20 @@
 <div id="chat">rewired: Zapdos please sir<br>jpdaddy12: $11 blue light special</div>
 <script>
 const mode = new URLSearchParams(location.search).get("mode") || "video";
-window.__sent = []; window.__listeners = [];
+window.__sent = []; window.__listeners = []; window.__runtime = []; window.__store = {}; window.__storeWatch = [];
 Object.defineProperty(window, "chrome", { configurable: true, writable: true, value: {
-  runtime: { onMessage: { addListener: (fn) => window.__listeners.push(fn) }, onInstalled: { addListener: () => {} } },
+  runtime: { onMessage: { addListener: (fn) => window.__listeners.push(fn) }, onInstalled: { addListener: () => {} }, lastError: null,
+    sendMessage: (msg, cb) => { window.__runtime.push(msg); const sender = { tab: { id: 1, windowId: 1, url: location.href } };
+      let out; for (const fn of window.__listeners) fn(msg, sender, (r) => { out = r; }); if (typeof cb === "function") setTimeout(() => cb(out), 0); return Promise.resolve(out); } },
+  storage: { local: {
+      get: (keys, cb) => { const o = {}; [].concat(keys).forEach((k) => { if (k in window.__store) o[k] = window.__store[k]; }); setTimeout(() => cb(o), 0); },
+      set: (obj, cb) => { const ch = {}; for (const k in obj) { ch[k] = { newValue: obj[k] }; window.__store[k] = obj[k]; } window.__storeWatch.forEach((f) => f(ch, "local")); if (cb) setTimeout(cb, 0); },
+      remove: (keys, cb) => { [].concat(keys).forEach((k) => delete window.__store[k]); if (cb) setTimeout(cb, 0); } },
+    onChanged: { addListener: (f) => window.__storeWatch.push(f) } },
   commands: { onCommand: { addListener: () => {} } },
   contextMenus: { create: () => {}, onClicked: { addListener: () => {} } },
   tabs: {
-    query: () => Promise.resolve([]),
+    query: (q, cb) => { if (typeof cb === "function") cb([]); return Promise.resolve([]); },
     captureVisibleTab: () => Promise.resolve(window.__shot),
     sendMessage: (id, msg) => { window.__sent.push(msg); return new Promise((res) => { let done = false;
       for (const fn of window.__listeners) fn(msg, {}, (r) => { done = true; res(r); }); if (!done) res(undefined); }); }

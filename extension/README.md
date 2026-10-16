@@ -151,17 +151,22 @@ accessibility service app). The clipboard copy stays the mobile path: copy, swit
 keyboard's clipboard chip.
 <!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
 
-## Recognition test (experiment)
+## Auto-recognition (experiment)
 
-Step 1 of docs/auto-recognition-handoff.md: can the extension grab a frame of the stream at all?
+Reads the card on stream at each lot with Claude and fills CardComp's search with the candidates, best guess
+marked (gold "✓ auto" when name and number match exactly, outlined "auto?" for a guess). It never opens a card
+and never bids. Plan and results: docs/auto-recognition-handoff.md.
 
 1. Reload the extension at chrome://extensions, then reload the Whatnot tab once.
-2. On a live stream press **Ctrl+Shift+Y** (Cmd+Shift+Y on a Mac), or right-click the page and choose
-   "Recognition test: grab a frame". Not Alt+Shift+R: Chrome uses that for Reading Mode. To change the key,
-   go to chrome://extensions/shortcuts ("Recognition test").
-3. A blue box bottom-left says how the frame was grabbed. 5 s later it tries again with no key press, which
-   says whether later lots can be captured on their own.
-4. Results: Options > "the recognition test page" (thumbnails, method, size, brightness). Export or delete there.
+2. Options: paste your Anthropic API key (console.anthropic.com), Save, Test.
+3. In the CardComp panel, under the lot strip: tap "auto off" to turn it on, pick the model (Haiku is cheapest).
+4. Watch a stream. About 1 s after each lot's timer starts, one frame is read (a second one 2 s later only
+   when the first is unsure). If you typed or tapped a result since the lot started, your search stays and
+   the line offers "show".
+5. Results, frames and costs: Options > "the recognition test page". The card you tap or open in a lot is the
+   truth; mark the other lots there.
 
-Nothing is sent anywhere; frames stay in this extension. Remove the whole experiment: `node scripts/strip-recog.js`.
+Capture check: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) or right-click > "Recognition test: grab a frame".
+Not Alt+Shift+R: Chrome uses that for Reading Mode. Frames stay in this extension (30 days); calls go only to
+api.anthropic.com. Remove the whole experiment: `node scripts/strip-recog.js`.
 <!-- RECOG-END -->

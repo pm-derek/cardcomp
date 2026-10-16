@@ -378,6 +378,7 @@ function lotTick() {
   }
   if (lot && st.sold && !lot.ended) endLot(st);
   lotLastState = st;
+  if (window.__recogTick) try { window.__recogTick(st, lot); } catch (_) {}   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
   const key = JSON.stringify(st);
   if (key !== lotLast) { lotLast = key; sendApp(Object.assign({ type: "cardcomp-lot" }, st)); }
 }

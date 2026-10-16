@@ -14,5 +14,13 @@ code{color:#f5b301}.dim{color:#8b97a5;font-size:13px}#st{margin-top:10px;min-hei
 <label>Whatnot username<br><input id="wn" type="text" placeholder="e.g. derekcards"></label>
 <button id="savewn">Save</button>
 <div id="stwn"></div>
-<h2 style="margin-top:28px">Recognition test</h2><p class="dim">Experiment. Press Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) or right-click &gt; "Recognition test: grab a frame" on a Whatnot stream, then see <a href="recog/debug.html" target="_blank" style="color:#f5b301">the recognition test page</a>.</p><!-- RECOG removed by scripts/strip-recog.js -->
+<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
+<h2 style="margin-top:28px">Auto-recognition (experiment)</h2>
+<p class="dim">Reads the card on stream at each lot with Claude and fills CardComp's search. Switch it on and pick the model in the CardComp panel ("auto off" under the lot strip). Your key stays in this browser and is sent only to api.anthropic.com. Billing: your Console API credits.</p>
+<label>Anthropic API key<br><input id="rkey" type="password" placeholder="sk-ant-..."></label>
+<button id="rsave">Save</button> <button id="rtest">Test</button> <button id="rclear">Remove</button>
+<div id="rst" style="margin-top:10px;min-height:1.5em"></div>
+<p class="dim">Results, frames and costs: <a href="recog/debug.html" target="_blank" style="color:#f5b301">the recognition test page</a>. Capture check: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) or right-click &gt; "Recognition test: grab a frame" on a stream.</p>
+<script src="recog/options-recog.js"></script>
+<!-- RECOG-END -->
 <script src="options.js"></script></body></html>

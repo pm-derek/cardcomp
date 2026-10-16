@@ -3043,6 +3043,7 @@ function finishLot(rec, from, to, vFrom){
   rec.bidsSent=mine.map(t=>{ const o=Object.assign({}, t); delete o.snap; return o; });
   if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
   recordLotStat(rec);
+  if(window.recogLotDone) try{ recogLotDone(rec); }catch(_){ }   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
   extPost({type:"cardcomp-log-save", rec});   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
   paintLot();
 }
@@ -4238,4 +4239,5 @@ $("#cartsum").onclick = ()=>{ const it=$("#cartitems"); it.style.display = (it.s
 boot();
 </script>
 <script src="recog/automatch.js"></script><!-- RECOG auto-recognition experiment, removed by scripts/strip-recog.js -->
+<script src="recog/auto-ui.js"></script><!-- RECOG -->
 </body></html>

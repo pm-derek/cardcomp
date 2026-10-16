@@ -182,11 +182,16 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 <!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
 ## Auto-recognition (experiment, removable)
 
-Plan and results: docs/auto-recognition-handoff.md. Everything lives in `recog/` (app: `autoMatch`, never called by
-manual search) and `extension/recog/` (capture check, Ctrl+Shift+Y or right-click, results page), plus lines tagged `RECOG` and
-blocks between RECOG-BEGIN / RECOG-END. `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js`
-runs fixtures (20 confirmed frames), a 258-search regression (identical with and without), the strip test and the
-capture tests on a mock Whatnot page. Rule: a strong suggestion is never the wrong card; no closest-by-name fallback.
+Plan, results, decisions: docs/auto-recognition-handoff.md. App side: `recog/automatch.js` (`autoMatch(read)`, never
+called by manual search) and `recog/auto-ui.js` (the "auto on/off" line under the lot strip, model picker, fills the
+search with candidates and marks the best guess, leaves the search alone if Derek typed or tapped a result since the
+lot started, reports the tapped/opened card at lot end via `recogLotDone`). Extension side: `extension/recog/`
+(`recog-whatnot.js` copies the `<video>` frame ~1 s after the lot timer starts; `recog-bg.js` calls the API with the
+key from Options, Haiku / Sonnet / Opus, 240 reads an hour cap, records every lot in IndexedDB; `debug.html` results
+page). Hooks in existing files are lines tagged `RECOG` or blocks between RECOG-BEGIN / RECOG-END.
+`node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js` runs fixtures (20 confirmed frames), a
+258-search regression, the strip test, capture tests and the auto flow on a mock Whatnot page with a mocked API.
+Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 
 <!-- RECOG-END -->

@@ -8,6 +8,8 @@
 //                manifest to the base branch, and the stripped app still boots and searches.
 // 4. capture:    the extension's capture code against a mock Whatnot page with a live <video>: video copy,
 //                screenshot fallback when the canvas is blocked, no video, the 5 s automatic retry, the results page.
+// 5. auto, extension side: lot timer -> frame -> API (mocked) -> CardComp message, second frame rules, errors, records.
+// 6. auto, CardComp side: the auto line, switch, filled results with the mark, typing respected, outcome reported.
 // Needs playwright (preinstalled in the cloud session; locally: npm i playwright && npx playwright install chromium).
 const fs = require("fs"), path = require("path"), http = require("http"), os = require("os"), { execSync } = require("child_process");
 let chromium; try { ({ chromium } = require("playwright")); } catch (_) { ({ chromium } = require("/opt/node22/lib/node_modules/playwright")); }
@@ -143,7 +145,7 @@ async function appPage(browser, base, blockRecog) {
     await page.evaluate((shot) => { window.__shot = shot; }, shot);
     await page.evaluate(() => recogGrab({ id: 1, windowId: 1, url: location.href }));
     await page.waitForTimeout(6500);
-    const recs = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 1); r.onsuccess = () => { const q = r.result.transaction("frames").objectStore("frames").getAll(); q.onsuccess = () => res(q.result); }; }));
+    const recs = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("frames").objectStore("frames").getAll(); q.onsuccess = () => res(q.result); }; }));
     const toasts = await page.evaluate(() => window.__sent.map((m) => m.type));
     await page.close();
     return { rec: recs[recs.length - 1], toasts, errs };
@@ -160,11 +162,117 @@ async function appPage(browser, base, blockRecog) {
   const dbg = await ctx.newPage();
   await dbg.goto(base + "/extension/recog/debug.html");
   await dbg.waitForTimeout(800);
-  const sumText = await dbg.textContent("#sum");
-  ok(/3 grabs · 2 worked \(video copy 1, screenshot 1\)/.test(sumText), "results page summary: " + sumText);
-  await dbg.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
+  const sumText = await dbg.textContent("#fsum");
+  ok(/3 grabs · 2 worked \(video copy 1, screenshot 1\)/.test(sumText), "results page, capture checks: " + sumText);
+  await dbg.close();
+
+  // ---------- 5. auto mode, extension side: lot timer -> frame -> API (mocked) -> CardComp message + lot record
+  console.log("5. auto mode: lot start -> frame -> model (mocked API) -> CardComp, recorded per lot");
+  let apiMode = "ok", apiCalls = [];
+  const READS = { first: { card_visible: true, name: "Kyurem ex", number: "157", total: "086", language: "en", rarity: "Ultra Rare full art", set: "", confidence: 0.9 } };
+  await ctx.route("https://api.anthropic.com/v1/messages", async (route) => {
+    const req = route.request(), cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "POST, OPTIONS" };
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    const body = JSON.parse(req.postData() || "{}"); apiCalls.push(body);
+    if (apiMode === "401") return route.fulfill({ status: 401, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) });
+    return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ model: body.model, stop_reason: "end_turn",
+      usage: { input_tokens: 2900, output_tokens: 120 }, content: [{ type: "text", text: JSON.stringify(READS.first) }] }) });
+  });
+  const mp = await ctx.newPage();
+  const merr = []; mp.on("pageerror", (e) => merr.push(e.message));
+  await mp.goto(base + "/__mock?mode=video");
+  await mp.waitForFunction(() => window.__mockReady === true);
+  await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
+  await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
+  const tick = (key) => mp.evaluate((key) => { const lot = { startedAt: key, title: "$1 START SINGLES #" + (key % 100), ended: false }; window.__lot = lot; window.__recogTick({ timer: "00:12" }, lot); }, key);
+  const toApp = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto"));
+  const lotRec = (key) => mp.evaluate((key) => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("lots").objectStore("lots").get(key); q.onsuccess = () => res(q.result); }; }), key);
+  // off: nothing happens
+  await tick(Date.now()); await mp.waitForTimeout(1500);
+  ok((await toApp()).length === 0 && apiCalls.length === 0, "switch off: no frame, no API call");
+  await mp.evaluate(() => chrome.storage.local.set({ recogOn: true, recogKey: "sk-ant-test", recogModel: "haiku" }));
+  const k1 = Date.now(); await tick(k1); await mp.waitForTimeout(2200);
+  let msgs = await toApp(), r1 = await lotRec(k1);
+  ok(msgs.length === 1 && msgs[0].key === k1 && msgs[0].read && msgs[0].read.name === "Kyurem ex" && msgs[0].model === "claude-haiku-5-5", "lot start: one reading sent to CardComp (" + (msgs[0] && msgs[0].read && msgs[0].read.name) + ")");
+  const c0 = apiCalls[0] || {};
+  ok(c0.model === "claude-haiku-5-5" && c0.output_config && c0.output_config.format && c0.output_config.effort === "low" && c0.messages[0].content[0].type === "image", "API request: Haiku, image first, structured output, low effort");
+  ok(r1 && r1.frames.length === 1 && r1.frames[0].w === 1280 && r1.frames[0].sinceStart >= 900 && r1.reads[0].cost > 0, `lot recorded: frame ${r1 && r1.frames[0].w}x${r1 && r1.frames[0].h} at ${r1 && r1.frames[0].sinceStart} ms, $${r1 && r1.reads[0].cost.toFixed(5)}`);
+  await tick(k1); await mp.waitForTimeout(1500);
+  ok(apiCalls.length === 1, "same lot ticking on: no second capture");
+  // next lot shows the same card: a second frame 2 s later (seller may still hold the sold card)
+  const k2 = Date.now(); await tick(k2); await mp.waitForTimeout(5000);
+  const r2 = await lotRec(k2);
+  ok(r2 && r2.reads.length === 2 && apiCalls.length === 3, "same card as the previous lot: second frame read (" + (r2 && r2.reads.length) + " reads)");
+  // sold before the delay: no capture
+  const k3 = Date.now(); await tick(k3); await mp.evaluate(() => { window.__lot.ended = true; }); await mp.waitForTimeout(1500);
+  ok(apiCalls.length === 3, "lot sold within the first second: no API call");
+  // API rejects the key: the error reaches CardComp, nothing breaks
+  apiMode = "401"; const k4 = Date.now(); await tick(k4); await mp.waitForTimeout(2000);
+  msgs = await toApp();
+  ok(msgs.some((m) => m.key === k4 && /key rejected/.test(m.error)), "bad key: CardComp told 'API key rejected'");
+  apiMode = "ok";
+  // CardComp reports its match and the lot outcome back
+  await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
+    send({ type: "cardcomp-auto-match", key: k, n: 1, kind: "number-miss", strength: null, suggestion: null, cards: [{ id: "sv10pt5-165", n: "Kyurem ex", s: "Black Bolt", num: "165", m: 68.9 }], note: "no #157", filled: true });
+    send({ type: "cardcomp-auto-outcome", key: k, outcome: { card: { id: "sv10pt5-165", n: "Kyurem ex", s: "Black Bolt", num: "165", label: "view" }, final: 3, me: false } }); }, k1);
+  await mp.waitForTimeout(400);
+  r1 = await lotRec(k1);
+  ok(r1.matches && r1.matches.length === 1 && r1.outcome && r1.outcome.card.id === "sv10pt5-165", "match and outcome saved on the lot");
+  ok(merr.length === 0, "no page errors (" + (merr[0] || "") + ")");
+  const dbg2 = await ctx.newPage();
+  await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
+  const sum2 = await dbg2.textContent("#sum");
+  ok(/3 lots read/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  await dbg2.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
   console.log("  results page screenshot: " + path.join(OUT, "recog-debug-page.png"));
+  await dbg2.close(); await mp.close();
   await ctx.close();
+
+  // ---------- 6. auto mode, CardComp side: the auto line, filling the search, not overwriting Derek's typing
+  console.log("6. auto mode in CardComp: line, switch, filled results, typing respected, outcome reported");
+  const ap = await appPage(browser, base, false);
+  await ap.setViewportSize({ width: 660, height: 900 });
+  await ap.evaluate(() => { window.__posted = []; window.addEventListener("message", (e) => { if (e.data && /^cardcomp-auto-/.test(e.data.type) && e.data.type !== "cardcomp-auto-state") window.__posted.push(e.data); }); });
+  const send = (m) => ap.evaluate((m) => window.postMessage(m, location.origin), m);
+  const posted = () => ap.evaluate(() => window.__posted);
+  ok(await ap.evaluate(() => !document.querySelector("#autoline") || getComputedStyle(document.querySelector("#autoline")).display === "none"), "no extension: no auto line (phone / plain tab unchanged)");
+  await send({ type: "cardcomp-ext-ready" }); await ap.waitForTimeout(200);
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-hello") && /auto off/.test(await ap.textContent("#autoline")), "extension present: line shows 'auto off' and asks for state");
+  await send({ type: "cardcomp-auto-state", on: true, model: "haiku", hasKey: true }); await ap.waitForTimeout(100);
+  ok(/auto on/.test(await ap.textContent("#autoline")) && await ap.$("#automodel"), "state on: switch and model picker");
+  let key = Date.now();
+  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
+  await ap.waitForTimeout(300);
+  let st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
+  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /Fomantis/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
+  let mp1 = (await posted()).filter((m) => m.type === "cardcomp-auto-match").pop();
+  ok(mp1 && mp1.kind === "exact" && mp1.strength === "strong" && mp1.filled === true, "match reported to the extension (exact, strong, shown)");
+  await ap.screenshot({ path: path.join(OUT, "recog-app-auto.png") });
+  // Derek types after the lot starts: the reading must not replace his search
+  key = Date.now(); await ap.fill("#q", "charizard"); await ap.waitForTimeout(400);
+  await send({ type: "cardcomp-auto", key: key - 1, n: 1, read: { card_visible: true, name: "Honchkrow V", number: "161", total: "172", language: "en", rarity: "full art", confidence: 0.8 }, model: "claude-haiku-5-5", ms: 900 });
+  await ap.waitForTimeout(300);
+  st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, line: document.querySelector("#autoline").textContent, show: !!document.querySelector("#autoshow") }));
+  ok(st.q === "charizard" && st.show && /Honchkrow/.test(st.line), "typed this lot: search left alone, 'show' offered");
+  await ap.click("#autoshow"); await ap.waitForTimeout(200);
+  ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "swsh9-162", "'show' fills it: Honchkrow V #162 first (read 161, one off)");
+  // the not-in-catalog case shows the note, no pricier sibling picked
+  key = Date.now() + 10;
+  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Kyurem ex", number: "157", total: "086", language: "en", rarity: "full art", confidence: 0.9 }, model: "claude-opus-5-5", ms: 4100 });
+  await ap.waitForTimeout(300);
+  st = await ap.evaluate(() => ({ badge: !!document.querySelector("#results .autobadge"), line: document.querySelector("#autoline").textContent }));
+  ok(!st.badge && /no #157/.test(st.line), "Kyurem ex 157 (not in catalog): note shown, nothing marked");
+  await send({ type: "cardcomp-auto", key: key + 1, n: 1, error: "API key rejected (Options page)" }); await ap.waitForTimeout(150);
+  ok(/key rejected/.test(await ap.textContent("#autoline")), "API error shown on the line");
+  await ap.evaluate((k) => window.recogLotDone({ startedAt: k, card: { id: "me5-85", n: "Fomantis", label: "tap", cond: "NM" }, final: 3, me: true, title: "#8" }), key);
+  await ap.waitForTimeout(150);
+  const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
+  ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true, "lot end: tapped card reported as the outcome");
+  await ap.click("#autosw"); await ap.waitForTimeout(100);
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
+  ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");
+  console.log("  app screenshot: " + path.join(OUT, "recog-app-auto.png"));
+  await ap.close();
 
   await browser.close(); srv.close();
   console.log(fails ? `\n${fails} check(s) FAILED` : "\nall checks passed");

@@ -280,3 +280,19 @@ Steps 1 and 2 built on `claude/screenshot-test-setup-4marhe`; `node scripts/reco
   total that does not fit the set downgrades a number match to weak (Haiku invented Ursaring 063/090).
 - Removal: `node scripts/strip-recog.js`; tested to restore index.html, bg.js, options.html, README, CLAUDE.md
   and the manifest byte for byte against main.
+
+## Build status: step 3 (2026-10-16)
+
+Built and checked (`node scripts/recog-check.js`, 53 checks, mock Whatnot page + mocked API); not yet run live.
+- Trigger: a lot's timer running (not Sold / Awaiting) -> one frame 1 s later at full resolution (1080x1920 on
+  Derek's test stream). Second frame 2 s later only if the read says no card, no number, confidence < 0.6, or the
+  same card as the previous lot. Sold within the first second: no call.
+- Call: straight from the extension to api.anthropic.com, structured output, effort low; fallbacks on for
+  Sonnet / Opus. Model picked in the panel. 240 reads an hour cap. Errors (bad key, no credit, timeout) show on
+  the line and never block bidding.
+- CardComp: "auto on/off" + model under the lot strip, only when the extension is present. Fills the search
+  with autoMatch's candidates in order, best guess marked; never overwrites a search Derek touched this lot.
+- Records: every lot (frames, reads, model, latency, cost, match, what Derek tapped / opened, final price) in the
+  extension's IndexedDB, 30 days, export / delete on the results page, review buttons for unlabeled lots.
+- Cost, measured token counts pending: Haiku about $0.001 a lot, Opus $0.02 to $0.03 (full-size frame ~2,700
+  image tokens). Max plan includes $100 a month of API credit.
