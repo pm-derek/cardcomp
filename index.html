@@ -2600,13 +2600,13 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
-let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[];   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
-  const tap=LAST_TAP && Date.now()-LAST_TAP.at<15*60000 ? LAST_TAP : null;
+  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent during this lot: lots are generic ("$2 start #43"), so an older tap is a different card
   const over=tap && d.cur!=null && d.cur>=tap.bid;
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
@@ -2632,11 +2632,14 @@ window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
     LOT=d;
-    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }   // new lot: typing replaces the old search
+    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; LOT_START=Date.now(); const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }   // new lot: typing replaces the old search
     paintLot();
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
-    const rec=d.rec, tap=LAST_TAP && rec.at-LAST_TAP.at<15*60000 ? LAST_TAP : null;
+    // card label only from a bid sent while this lot ran. Sellers rarely name the card, so this tap is the
+    // only record of what sold; a stale tap would label the lot with the previous card.
+    const rec=d.rec, tap=LAST_TAP && LAST_TAP.at>=(rec.startedAt||LOT_START)-3000 && LAST_TAP.at<=rec.at ? LAST_TAP : null;
+    LOT_START=Date.now();
     if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.bidsSent=TAPS_THIS_LOT.slice(); }
     TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
