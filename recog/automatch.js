@@ -18,12 +18,23 @@
 //   - rarity is a tie-break, never a filter, and a premium read (SIR / UR / full art) cannot pick a printing
 //     that costs 5x+ the cheapest other candidate (Garchomp UR $4 vs SIR $185; Jellicent UR vs SIR)
 (function () {
-  const MECH = new Set(["ex", "v", "vmax", "vstar", "gx", "break", "lv", "prime", "star", "legend", "tag"]);
-  const QUAL = /\b(prime|lv x|lvx|legend|star|break|holo|full art|alt art)\b/g;
-  const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const MECH = new Set(["ex", "v", "vmax", "vstar", "gx", "break", "lvx", "prime", "star", "legend", "tag"]);
+  const QUAL = /\b(prime|lvx|legend|star|break|holo|full art|alt art)\b/g;
+  const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\blv x\b/g, "lvx");   // LV.X / LVX / Lv. X are one token
   const depad = s => String(s == null ? "" : s).toLowerCase().trim().replace(/^0+(?=\d)/, "");
   const price = c => (typeof bestMarket === "function" ? bestMarket(c) : 0) || 0;
+  // A stamp on the card names its product line (Derek's first live test: every fugidust84 card carried the
+  // 30th Celebration Pikachu logo; Opus and Sonnet both reported it).
+  const STAMPS = [
+    [/30th/i, (c) => /30th/i.test(c.s)],
+    [/25th|celebrations/i, (c) => /celebrations|25th/i.test(c.s)],
+    [/prerelease/i, (c) => /prerelease/i.test(c.n)],
+    [/\bstaff\b/i, (c) => /\bstaff\b/i.test(c.n)],
+    [/pok[eé]mon center/i, (c) => /pok[eé]mon center/i.test(c.n + " " + c.s)],
+    [/black star|\bpromo\b/i, (c) => /promo/i.test(c.s + " " + c.r)]
+  ];
+  const stampTest = (stamp) => { for (const [re, f] of STAMPS) if (re.test(stamp || "")) return f; return null; };
 
   function cardTier(r) {
     r = String(r || "").toLowerCase();
@@ -79,61 +90,93 @@
     return { level: 0, cards: [] };
   }
 
-  function autoMatch(read) {
-    read = read || {};
+  // ctx (optional): { short: the frame's short edge in pixels, model: the model id that read it }. Small streams (720p) make numbers unreadable,
+  // and Haiku then invents plausible ones (live test: 7 of 7 numbers on a 720p stream were wrong).
+  function autoMatch(read, ctx) {
+    read = read || {}; ctx = ctx || {};
     const lang = String(read.language || "").toLowerCase() === "jp" ? "jp" : "en";
     const why = [];
     const nm = byName(read.name, lang);
     if (nm.level > 1) why.push("name matched loosely (level " + nm.level + ")");
     if (!nm.cards.length) return { kind: "none", strength: null, suggestion: null, cards: [], note: "no " + (read.name || "card") + " in the catalog (likely under $1.50)", why, lang };
 
-    const num = depad(read.number), total = parseInt(read.total, 10) || 0;
-    const rt = readTier(read.rarity), setQ = norm(read.set);
+    let num = depad(read.number);
+    const total = parseInt(read.total, 10) || 0, lowRes = ctx.short > 0 && ctx.short < 1000;
+    const totalOK = c => total && (SET_SIZE[c.s] || []).includes(total);
+    // Off a small stream, a number whose total contradicts the catalog is a guess: ignore it. Either no set this
+    // card is in has that many cards, or the card(s) with that number sit in a set of another size (Mew ex 232/191
+    // read on a 720p stream: Paldean Fates #232 exists, but Paldean Fates has 91 cards).
+    if (num && total && lowRes) {
+      const sized = (c) => (SET_SIZE[c.s] || []).length > 0, withNum = nm.cards.filter(c => depad(c.num) === num);
+      const noSet = nm.cards.some(sized) && !nm.cards.some(totalOK);
+      const clashes = withNum.length && withNum.every(c => sized(c) && !totalOK(c));
+      if (noSet || clashes) { why.push("number " + read.number + "/" + read.total + " ignored: the catalog has no such " + nm.cards[0].n.replace(/\s+\d.*$/, "")); num = ""; }
+    }
+    // Set guesses: Sonnet / Opus name the set well; Haiku's guesses were wrong often enough to pick a $1,300 Lugia.
+    const trustSet = !/haiku/i.test(ctx.model || "");
+    const rt = readTier(read.rarity), setQ = trustSet ? norm(read.set) : "", stampF = stampTest(read.stamp);
+    const rq = norm(read.rarity);
     const isNum = c => num && depad(c.num) === num;
     const isNear = c => num && /^\d+$/.test(num) && /^\d+$/.test(depad(c.num)) && Math.abs(+depad(c.num) - +num) === 1;
-    const totalOK = c => total && (SET_SIZE[c.s] || []).includes(total);
     const tierOK = c => rt && cardTier(c.r) === rt;
-    const setOK = c => setQ && setQ.length > 2 && (norm(c.s).includes(setQ) || setQ.includes(norm(c.s)));
-    const score = c => (isNum(c) ? 100 : 0) + (isNear(c) ? 50 : 0) + (tierOK(c) ? 10 : 0) + (totalOK(c) ? 4 : 0) + (setOK(c) ? 2 : 0);
+    const rarityOK = c => { const r = norm(c.r); return rq && r && r.length > 3 && (rq.includes(r) || r === rq); };
+    const setExact = c => setQ.length > 2 && norm(c.s) === setQ;
+    const setNear = c => setQ.length > 2 && (norm(c.s).includes(setQ) || setQ.includes(norm(c.s)));
+    const stampOK = c => !!(stampF && stampF(c));
+    const score = c => (isNum(c) ? 100 : 0) + (isNear(c) ? 50 : 0) + (stampOK(c) ? 30 : 0) + (setExact(c) ? 20 : setNear(c) ? 8 : 0) +
+      (rarityOK(c) ? 12 : 0) + (tierOK(c) ? 10 : 0) + (totalOK(c) ? 4 : 0);
     const cards = nm.cards.slice().sort((a, b) => (score(b) - score(a)) || ((b.y || 0) - (a.y || 0)) || ((b.o || 0) - (a.o || 0))).slice(0, 16);
     const out = (kind, strength, sug, note) => ({ kind, strength, suggestion: sug ? sug.id : null, cards, note: note || "", why, lang });
     const nameSure = nm.level <= 2;
+    // Narrow a pool by the clues in order (stamp, set, exact rarity, rarity tier); each step only if it keeps someone.
+    const narrow = (pool) => {
+      const steps = [["stamp", stampF ? stampOK : null], ["set", setQ.length > 2 ? setExact : null], ["set", setQ.length > 2 ? setNear : null], ["rarity", rq ? rarityOK : null], ["tier", rt ? tierOK : null]];
+      let by = ""; const used = new Set();
+      for (const [label, f] of steps) {
+        if (!f || pool.length <= 1) continue;
+        const p = pool.filter(f);
+        if (p.length && p.length < pool.length) { pool = p; by = label; used.add(label); }
+      }
+      return { pool, by, used };
+    };
 
     if (num) {
       let ex = nm.cards.filter(isNum);
       if (ex.length > 1 && total) { const t = ex.filter(totalOK); if (t.length) ex = t; }
+      if (ex.length > 1) { const n = narrow(ex); if (n.pool.length === 1) { why.push("tie on number broken by " + n.by); return out("exact", "weak", n.pool[0]); } }
       if (ex.length === 1) {
         const sz = SET_SIZE[ex[0].s] || [];
         const clash = total && sz.length && !sz.includes(total);   // "063/090" but that set has 76 cards: a misread
         if (clash) why.push("set total " + total + " does not fit " + ex[0].s + " (" + sz.join("/") + ")");
-        return out("exact", nameSure && !clash ? "strong" : "weak", ex[0]);
+        if (lowRes) why.push("small stream (" + ctx.short + "p): number not trusted for a strong pick");
+        return out("exact", nameSure && !clash && !lowRes ? "strong" : "weak", ex[0]);
       }
-      if (ex.length > 1) {
-        const t = rt ? ex.filter(tierOK) : [];
-        if (t.length === 1) { why.push("tie on number broken by rarity"); return out("exact", "weak", t[0]); }
-        return out("ambiguous", null, null, ex.length + " printings with #" + read.number + ": pick one");
-      }
+      if (ex.length > 1) return out("ambiguous", null, null, ex.length + " printings with #" + read.number + ": pick one");
       const near = nm.cards.filter(isNear);
-      if (near.length === 1) { why.push("number off by one: read " + read.number + ", catalog " + near[0].num); return out("near", "weak", near[0]); }
-      return out("number-miss", null, null, "no #" + read.number + " for " + nm.cards[0].n.replace(/\s+\d.*$/, "") + " in the catalog (likely under $1.50, or misread)");
+      if (near.length === 1 && !lowRes) { why.push("number off by one: read " + read.number + ", catalog " + near[0].num); return out("near", "weak", near[0]); }
+      if (!lowRes) return out("number-miss", null, null, "no #" + read.number + " for " + nm.cards[0].n.replace(/\s+\d.*$/, "") + " in the catalog (likely under $1.50, or misread)");
+      why.push("number " + read.number + " not in the catalog, read off a small stream: matched on the other clues");
     }
     if (nm.cards.length === 1) return out("unique", "weak", nm.cards[0], "no number read");
-    if (rt) {
-      const t = nm.cards.filter(tierOK);
-      if (t.length === 1) {
-        const others = nm.cards.filter(c => c !== t[0]).map(price).filter(p => p > 0);
+    const n = narrow(nm.cards);
+    if (n.pool.length === 1) {
+      const pick = n.pool[0];
+      // Without a stamp backing it, a rarity or set read must not pick a printing 5x the cheapest one
+      // (a premium rarity read, or any set guess).
+      if (!n.used.has("stamp")) {
+        const others = nm.cards.filter(c => c !== pick).map(price).filter(p => p > 0);
         const cheapest = others.length ? Math.min(...others) : 0;
-        if (rt === "premium" && cheapest > 0 && price(t[0]) >= 5 * cheapest) {
-          why.push("premium read would pick a printing " + Math.round(price(t[0]) / cheapest) + "x the cheapest: no suggestion");
+        if ((rt === "premium" || n.used.has("set")) && cheapest > 0 && price(pick) >= 5 * cheapest) {
+          why.push((n.used.has("set") ? "set" : "premium") + " read would pick a printing " + Math.round(price(pick) / cheapest) + "x the cheapest: no suggestion");
           return out("ambiguous", null, null, "several printings, no number read: pick one");
         }
-        why.push("rarity '" + read.rarity + "' leaves one printing");
-        return out("unique", "weak", t[0], "no number read");
       }
+      why.push(n.by + " leaves one printing");
+      return out("unique", "weak", pick, "no number read");
     }
-    return out("ambiguous", null, null, nm.cards.length + " printings, no number read: pick one");
+    return out("ambiguous", null, null, (n.pool.length < nm.cards.length ? n.pool.length + " of " : "") + nm.cards.length + " printings, no number read: pick one");
   }
 
   window.autoMatch = autoMatch;
-  window.__recog = { norm, cardTier, readTier, byName };
+  window.__recog = { norm, cardTier, readTier, byName, stampTest };
 })();

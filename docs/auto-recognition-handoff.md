@@ -296,3 +296,46 @@ Built and checked (`node scripts/recog-check.js`, 53 checks, mock Whatnot page +
   extension's IndexedDB, 30 days, export / delete on the results page, review buttons for unlabeled lots.
 - Cost, measured token counts pending: Haiku about $0.001 a lot, Opus $0.02 to $0.03 (full-size frame ~2,700
   image tokens). Max plan includes $100 a month of API credit.
+
+## Pre-start reads (Derek, 2026-10-16: "cards show up before the timer starts", short / sudden-death timers)
+
+Between lots (no timer running, Sold, Awaiting next item, not started), `recog-whatnot.js` takes a 24x42 grayscale
+thumbnail of the video every 0.7 s (local, no API call). A big change (mean difference > 14 of 255) followed by two
+still samples (< 5) means a new card is being held up: that full frame is read at once, unless it still looks like the
+last card read (< 10), which is how a sold card the seller keeps holding is skipped. At most 4 such reads per gap, 3 s
+apart. When the timer starts and the picture has not changed since that read, the reading is reused for the lot
+(`recog-adopt`, no second call); otherwise the usual read ~1 s after the start. CardComp shows "before start: read ...".
+Thresholds are guesses from a mock: each record stores the change value (`diff`) so they can be tuned from real lots.
+The watcher pauses when the Whatnot tab is hidden, and needs the video copy to work (it does on Derek's test stream).
+
+## First live test (Derek, 2026-10-16, Haiku): 23 lots, 3 sellers
+
+Export scored against Derek's review buttons and the cards he tapped / opened (`docs/recog-reads/live-2026-10-16.json`;
+frames kept out of the repo). Same frames then read blind by Sonnet and Opus (`live-sonnet.jsonl`, `live-opus.jsonl`).
+Right card picked = strong or "auto?" suggestion was the card; of the 17 lots with a known card:
+
+| reads | strong right | strong wrong | guess right | guess wrong | listed, no pick | not listed |
+|---|---|---|---|---|---|---|
+| Haiku as streamed, old rules | 3 | 1 (replay) | 1 | 2 | 8 | 2 |
+| Haiku, new rules | 4 | 0 | 0 | 2 | 10 | 1 |
+| Sonnet, new rules | 4 | 0 | 8 | 0 | 5 | 0 |
+| Opus, new rules | 4 | 0 | 8 | 0 | 5 | 0 |
+
+What the live test showed:
+- Stream resolution decides whether numbers exist: calipokehouse streams 1080x1920 and every number Haiku read was
+  right; fugidust84 / pokegamez stream 720x1280 and all 7 numbers Haiku read there were invented (some match real
+  cards in other sets: Pikachu ex 238/191 is a real Surging Sparks card, it was an Ascended Heroes one). Sonnet and
+  Opus left those blank.
+- Haiku misnamed Ancient Mew (Mewtwo) and guessed sets badly (Lugia as Neo Genesis, a $1,300 card). Sonnet / Opus got
+  every name, and both reported the 30th Celebration Pikachu stamp on every fugidust84 card.
+- Latency (Haiku): 1.0 to 2.7 s a read. One "Failed to fetch".
+
+Rule changes from it (recog/automatch.js, checks in section 1b):
+- `stamp` asked for and used: 30th / 25th anniversary logos, Prerelease, Staff, Pokemon Center, Black Star promo.
+- Off a stream under 1000 px on the short side, a number never gives a strong pick, and is ignored when its set total
+  contradicts the catalog (Mew ex "232/191": Paldean Fates #232 exists but that set has 91 cards).
+- Set guesses narrow the list only for Sonnet / Opus reads; a set or premium-rarity pick 5x the cheapest printing
+  is dropped unless a stamp backs it.
+- LV.X / LVX / Lv. X are one token (Rhyperior LV.X DP29 is "Rhyperior LVX DP29" in the catalog).
+- One retry on a network failure. Default model for a fresh install: Sonnet.
+Cost per read: Haiku ~$0.0002, Sonnet ~$0.005, Opus ~$0.01 (about 2,100 input tokens for a 720x1280 frame).

@@ -1,6 +1,7 @@
 // RECOG experiment, page half (docs/auto-recognition-handoff.md). Removed by scripts/strip-recog.js.
 // Finds the stream's <video> and copies its current frame:
-//   - auto mode (switch in the CardComp panel): ~1 s after a lot's timer starts, full resolution, to recog-bg.js
+//   - auto mode (switch in the CardComp panel): before the timer, when a new card holds still (scene watcher);
+//     else ~1 s after the lot's timer starts. Full resolution, to recog-bg.js
 //   - capture check: on the shortcut / right-click, then shows the result in a toast
 // whatnot.js calls window.__recogTick(state, lot) on every lot read (one line tagged RECOG there); content
 // scripts of one extension share a window, and without this file the call is skipped.
@@ -42,23 +43,75 @@
   } catch (_) {}
   const lots = new Map();   // lot.startedAt -> lot (whatnot.js's live object: .ended flips when it sells)
   const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+  const seller = () => (typeof sellerName === "function" ? (() => { try { return sellerName(); } catch (_) { return ""; } })() : "");
+  function post(key, n, extra) {
+    const g = grab(1920);
+    const msg = Object.assign({ type: "recog-frame", key, n, capAt: Date.now(), url: location.href, seller: seller(),
+      ok: g.ok, why: g.why || "", img: g.img || "", w: g.w || 0, h: g.h || 0, luma: g.luma, video: g.video, rect: g.rect }, extra);
+    try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {}
+  }
   function sendFrame(key, n) {
     const lot = lots.get(key);
     if (!on || !lot || lot.ended) return;
-    const g = grab(1920);
-    const msg = { type: "recog-frame", key, n, title: lot.title || "", url: location.href, sinceStart: Date.now() - key,
-      seller: (typeof sellerName === "function" ? (() => { try { return sellerName(); } catch (_) { return ""; } })() : ""),
-      ok: g.ok, why: g.why || "", img: g.img || "", w: g.w || 0, h: g.h || 0, luma: g.luma, video: g.video, rect: g.rect };
-    try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {}
+    post(key, n, { title: lot.title || "", sinceStart: Date.now() - key, trigger: "start", afterPre: !!PRE.at });
+    REF = thumb() || REF;
   }
-  // A lot goes live when its timer is running; one frame ~1 s later, while the seller holds the card up.
+
+  // ---------- scene watcher: read a card shown before the timer starts (Derek, 2026-10: short / sudden-death
+  // timers leave no time). Between lots, a 24x42 grayscale thumbnail of the video every 0.7 s (no API call).
+  // When the picture changes and then holds still ~1.5 s, and it does not look like the last card read, that
+  // frame is read. At timer start, if nothing changed since that read, the reading is reused for the lot.
+  const TW = 24, TH = 42, TICK_MS = 700;
+  const CHANGE = 14, STILL = 5, SAME = 10;   // mean abs gray difference, 0-255 (tune from the "diff" in each record)
+  const PRE_MAX = 4, PRE_GAP_MS = 3000;      // pre-start reads per gap between lots, and the minimum spacing
+  let tc = null;
+  function thumb() {
+    const v = streamVideo(); if (!v) return null;
+    try {
+      if (!tc) { tc = document.createElement("canvas"); tc.width = TW; tc.height = TH; }
+      const g = tc.getContext("2d", { willReadFrequently: true }); g.drawImage(v, 0, 0, TW, TH);
+      const d = g.getImageData(0, 0, TW, TH).data, out = new Uint8Array(TW * TH);
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) out[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+      return out;
+    } catch (_) { return null; }   // cross-origin stream: no watcher, lot-start reads still work by screenshot
+  }
+  const diff = (a, b) => { if (!a || !b) return 255; let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+  let lastSt = null, lastLot = null, prevT = null, moved = false, still = 0, REF = null, PRE = { at: 0, n: 0, last: 0, thumb: null };
+  const live = (st, lot) => !!(st && lot && !lot.ended && !st.ended && !st.sold && !st.waiting && (secs(st.timer) || 0) > 0);
+  setInterval(() => {
+    if (!on || document.hidden || live(lastSt, lastLot)) { prevT = null; still = 0; return; }
+    const t = thumb(); if (!t) return;
+    const step = diff(t, prevT); prevT = t;
+    if (step > CHANGE) { moved = true; still = 0; return; }
+    if (step < STILL) still++; else still = 0;
+    if (still < 2) return;
+    const vsRef = diff(t, REF);
+    if (!moved && REF) return;                       // nothing new since the last read
+    moved = false;
+    if (vsRef < SAME) return;                        // the same card as last read (seller still holding the sold card)
+    if (PRE.n >= PRE_MAX || Date.now() - PRE.last < PRE_GAP_MS) return;
+    const key = Date.now();
+    PRE = { at: key, n: PRE.n + 1, last: key, thumb: t };
+    REF = t;
+    post(key, 1, { title: "", sinceStart: 0, trigger: "pre", diff: Math.round(vsRef) });
+  }, TICK_MS);
+
+  // A lot goes live when its timer is running. Already read before the start and the picture has not changed:
+  // reuse that reading. Else one frame ~1 s later, while the seller holds the card up.
   window.__recogTick = (st, lot) => {
-    if (!on || !lot || lots.has(lot.startedAt)) return;
-    const t = secs(st.timer);
-    if (t == null || t <= 0 || st.ended || st.sold || st.waiting || lot.ended) return;
+    const wasLive = live(lastSt, lastLot);
+    lastSt = st; lastLot = lot;
+    if (wasLive && !live(st, lot)) PRE = { at: 0, n: 0, last: PRE.last, thumb: null };   // lot over: a new gap begins
+    if (!on || !lot || lots.has(lot.startedAt) || !live(st, lot)) return;
     lots.set(lot.startedAt, lot);
     if (lots.size > 50) lots.delete(lots.keys().next().value);
-    setTimeout(() => sendFrame(lot.startedAt, 1), 1000);
+    const now = thumb(), d = diff(now, PRE.thumb);
+    if (PRE.at && d < SAME) {
+      try { chrome.runtime.sendMessage({ type: "recog-adopt", from: PRE.at, to: lot.startedAt, title: lot.title || "", diff: Math.round(d) }, () => chrome.runtime.lastError); } catch (_) {}
+      PRE = { at: 0, n: 0, last: PRE.last, thumb: null };
+      return;
+    }
+    setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null }; }, 1000);
   };
 
   // ---------- capture check toast

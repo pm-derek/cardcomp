@@ -23,4 +23,4 @@ window.addEventListener("message", (e) => {
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
 chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state)?$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt)?$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
