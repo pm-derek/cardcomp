@@ -162,7 +162,7 @@ const LOT_RX = {
   ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
   joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
-  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|^sold$|^bid\b|^custom|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max/i
+  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|won the auction|^you won|^\S+\s+is$|^sold$|^qty\.|^bid\b|^custom|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max/i
 };
 // Room: who has been seen (joined in chat, or led a lot) and when. Sent with every lot record.
 const members = new Map();   // user -> {first, last, joins, leads, chats}
@@ -289,6 +289,7 @@ function readLot() {
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
     else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
+    else if (/^winning!?$/i.test(t) && (m = /^(\S+)\s+is$/i.exec(prev)) && userLike(m[1])) st.lead = m[1];   // zenzoogie: "samiam1271 is" + "Winning!"
     else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
     else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = /^max bid added:?\s*\$([\d,]+)/i.exec(t))) st.placedMax = +m[1].replace(/,/g, "");   // what Derek actually set, even if he edited the box by hand
