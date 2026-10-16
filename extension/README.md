@@ -56,10 +56,20 @@ GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission
 Test shows how many entries the store holds. Without a token, live reads still work for the session; they
 just are not saved.
 
+After the first read on a freshly opened TCGplayer page the extension switches you back to the Whatnot tab
+(the TCGplayer tab stays open behind). If nothing could be read within 8 seconds, the open card says so
+under its grid and you stay on TCGplayer.
+
 ## Your own bid
 
-Under the condition grid: `your bid $ [ 14 ] send`. It is prefilled with the NM margin bid. Change it to
-15, press Enter or send, and that number goes to Whatnot (and the clipboard) like any tapped bid.
+Under the bid table: `your bid $ −1 [ 14 ] +1 send`. It starts at the NM margin bid and then follows
+whatever bid you last tapped (LP, flat, profit...). −1 / +1 step it by a dollar; Enter or send puts that
+number into Whatnot (and the clipboard) like any tapped bid.
+
+## Footer status
+
+With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
+means tapping a bid will only copy; `store: no token` means click-outs are not being saved (see Options).
 
 ## What it does and does not do
 

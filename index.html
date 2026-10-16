@@ -73,6 +73,8 @@
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
   .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:6px 9px;font-size:12.5px;align-items:center}
+  body.framed .condgrid{grid-template-columns:auto auto auto auto 1fr}   /* in the extension side panel: no cart column, the stream is live */
+  body.framed .condgrid .cadd,body.framed .condgrid .hadd{display:none}
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
@@ -173,12 +175,6 @@
 <div class="zoom" id="zoom"><img src="" alt=""></div>
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
-  <div class="sub" style="margin:1px 0 6px">scan-to-comp <span style="font-size:9px;letter-spacing:1px;color:var(--faint)">· cloud-connected ✓</span></div>
-  <div id="gametoggle" style="display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap">
-    <button class="tgl" data-game="pkmn">Pokémon</button>
-    <button class="tgl" data-game="lorcana">Lorcana</button>
-    <button class="tgl" data-game="onepiece">One Piece</button>
-  </div>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
@@ -217,6 +213,11 @@
         <button id="qclear" title="clear" style="position:absolute;right:38px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--faint);font-size:18px;cursor:pointer;line-height:1;display:none">✕</button>
         <button id="resetbtn" title="clear all filters (mode + era), keep the search text" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;line-height:1">⟳</button>
       </div>
+      <select id="gamesel" title="game" style="flex:none;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:6px 4px;max-width:92px">
+        <option value="pkmn">Pokémon</option>
+        <option value="lorcana">Lorcana</option>
+        <option value="onepiece">One Piece</option>
+      </select>
       <div id="langtoggle" style="display:flex;gap:4px;flex:none">
         <button class="tgl" data-lang="en">EN</button>
         <button class="tgl" data-lang="jp">JP</button>
@@ -256,6 +257,7 @@
   <div id="stale" style="display:none"></div>
   <div id="read"></div>
   <div id="status"></div>
+  <div id="wnstat" style="display:none;font-size:11px;color:var(--faint);margin:2px 0 4px"></div>
   <div id="results"></div>
 </div>
 <div id="cart" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--panel);border-top:1px solid var(--gold);padding:10px 16px;max-width:680px;margin:0 auto">
@@ -2311,8 +2313,7 @@ const GAMES = new Set(["pkmn","lorcana","onepiece"]);
 function setGame(game){
   GAME = GAMES.has(game) ? game : "pkmn";
   try{ localStorage.setItem("cardcomp_game", GAME); }catch(e){}
-  document.querySelectorAll("#gametoggle button").forEach(b=>{ const on=b.dataset.game===GAME;
-    b.style.borderColor=on?"var(--gold)":"var(--line)"; b.style.background=on?"rgba(245,179,1,.10)":"var(--panel)"; b.style.color=on?"var(--ink)":"var(--dim)"; });
+  const gs=$("#gamesel"); if(gs){ gs.value=GAME; gs.style.color=GAME==="pkmn"?"var(--dim)":"var(--gold)"; }   // one small select in the search row; gold when off Pokémon so it is noticed
   const lt=$("#langtoggle"); if(lt) lt.style.display = GAME==="pkmn" ? "flex" : "none";
   const fa=$("#fatoggle"); if(fa) fa.textContent = GAME==="lorcana" ? "\u2726 Enchanted+" : GAME==="onepiece" ? "\u2726 Chase (SR+)" : "\u2726 Full Art only";
   const er=$("#erarow"); if(er) er.style.display = GAME==="pkmn" ? "flex" : "none";   // era only meaningful for pkmn (other games are all 2022+)
@@ -2346,6 +2347,7 @@ async function boot(){
   try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale();
+  if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
   loadLive(); setInterval(loadLive, 5*60*1000);   // verified condition prices from the live branch; re-read every 5 min while open
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
   const jp=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="jp").length;
@@ -2535,6 +2537,7 @@ function copyAmt(val, el){
   const flash=()=>show("copied $"+s);
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
   else copyFallback(s,flash);
+  document.querySelectorAll(".ovrin").forEach(i=>{ if(document.activeElement!==i) i.value=s; });   // "your bid" follows the last tap, so +1 starts from it
   sendToWhatnot(s, el, show);
 }
 // Desktop: the "CardComp to Whatnot" Chrome extension (extension/) listens for this message and types the
@@ -2567,6 +2570,18 @@ window.addEventListener("message", e=>{   // extension handshake: relabel the bi
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
   if(!(fromSelf||fromPanel)) return;
   WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
+  if(!WN_STAT_TIMER){ askStatus(); WN_STAT_TIMER=setInterval(askStatus, 4000); }
+});
+// footer status while the extension is present: is a Whatnot tab open, is the verified-price store set up
+let WN_STAT_TIMER=null;
+function askStatus(){ const m={type:"cardcomp-status"}; try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } } }
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-status-ack") return;
+  const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
+  if(!(fromSelf||fromPanel)) return;
+  const el=$("#wnstat"); if(!el) return;
+  el.style.display="block";
+  el.innerHTML=(d.whatnot?`<span style="color:var(--green)">Whatnot ✓</span>`:`<span style="color:var(--gold)">no Whatnot tab</span>`)+" · "+(d.store?`<span style="color:var(--green)">store ✓</span>`:`<span style="color:var(--gold)">store: no token (extension Options)</span>`);
 });
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 // price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
@@ -2608,13 +2623,28 @@ function liveFor(pid, cond, nm){   // -> {price, days, src, m, nm} or null; sess
   return {price, days, src:e.src, m:e.m, nm:e.nm};
 }
 function liveAge(days){ return days<1 ? "today" : Math.round(days)+"d"; }
+function liveTag(r){   // collapsed row: this card has a verified condition price (freshest age); tag line, never the bid column
+  if(!r || !r.px) return "";
+  let best=null;
+  for(const k in r.px){ const p=r.px[k].p||r.pid; if(!p) continue;
+    for(const cond of CONDS){ const e=LIVE[p+"|"+cond]||LIVE_STORE[p+"|"+cond]; if(!e||!(e.at>0)) continue; const d=(Date.now()-e.at)/86400000; if(d<=LIVE_MAX_DAYS && (best==null||d<best)) best=d; } }
+  return best==null ? "" : ` · <span style="color:${best<=7?"var(--gold)":"var(--faint)"}">✓ verified ${liveAge(best)}</span>`;
+}
+let LIVE_NOTE_TIMER=null;
+function liveNote(msg){   // one line under the open card's grid: what the TCGplayer reader did
+  document.querySelectorAll(".livenote").forEach(el=>{ el.textContent=msg; el.style.display=msg?"block":"none"; });
+  clearTimeout(LIVE_NOTE_TIMER); if(msg) LIVE_NOTE_TIMER=setTimeout(()=>liveNote(""), 20000);
+}
 function pidIndex(){   // TCGplayer product id -> the card + printing it prices (folded printings carry their own id)
   if(!PID_INDEX){ PID_INDEX={}; for(const c of CARDS){ if(!c.px) continue; for(const k in c.px){ const p=c.px[k].p||c.pid; if(p && !PID_INDEX[p]) PID_INDEX[p]={card:c, key:k}; } } }
   return PID_INDEX;
 }
 function applyLive(d){
-  if(!d || !d.pid || !TCG_COND[d.cond]) return;
+  if(!d || !d.pid) return;
+  if(d.none){ liveNote(`no ${TCG_COND[d.cond]||""} price read on TCGplayer, bid uses the catalog estimate. Send Derek's helper a screenshot of that page.`); return; }
+  if(!TCG_COND[d.cond]) return;
   const price=(d.market>0?d.market:null) ?? (d.low>0?d.low:null); if(!(price>0)) return;
+  liveNote(`${d.cond} verified on TCGplayer: $${price.toFixed(2)} (${d.market>0?"market":"lowest listing"})`);
   const hit=pidIndex()[String(d.pid)], v=hit&&hit.card.px[hit.key], nm=v ? ((v.m!=null?v.m:v.l)||0) : 0;
   const key=d.pid+"|"+d.cond, rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
   LIVE[key]=rec;
@@ -2633,9 +2663,9 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:inherit">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
-  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
+  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
 let PRICE_INDEX=null, PRICE_UPDATED="", _indexLoad=null;
 function loadIndex(){
@@ -2677,14 +2707,20 @@ function renderPrices(host, data, prices, src){
   const fallbackUrl=(data.tcgplayer&&data.tcgplayer.url)||"";
   const card=data.card||null;
   if(card && card.sealed){ return renderSealed(host, prices, card, pid); }
-  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div><div class="condgrid"></div>
-    <div class="ovr" style="display:flex;align-items:center;gap:6px;margin-top:9px"><span class="blab" style="color:var(--faint);font-size:10px">your bid $</span><input class="ovrin" type="text" inputmode="numeric" pattern="[0-9]*" style="width:58px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:14px;padding:6px 8px"><button class="ovrsend" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:7px 10px">send</button></div>
+  const OVR_BTN="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:7px 10px";
+  host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
+    <div class="ovr" style="display:flex;align-items:center;gap:6px;margin:8px 0 9px"><span class="blab" style="color:var(--faint);font-size:10px">your bid $</span><button class="ovrdn" style="${OVR_BTN};padding:7px 9px">−1</button><input class="ovrin" type="text" inputmode="numeric" pattern="[0-9]*" style="width:52px;text-align:center;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:14px;padding:6px 6px"><button class="ovrup" style="${OVR_BTN};padding:7px 9px">+1</button><button class="ovrsend" style="${OVR_BTN}">send</button></div>
+    <div class="condgrid"></div>
+    <div class="livenote" style="display:none;font-size:11px;color:var(--gold);margin-top:7px"></div>
     <div class="tcglink" style="margin:9px 0 2px"></div>`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
-  // your bid: type any number (14 said, going 15) and send it to Whatnot / clipboard like a tapped bid
+  // your bid: follows the last bid tapped (copyAmt fills it), −1 / +1 step it, Enter or send puts it into Whatnot / clipboard
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
   const ovrSend=()=>{ if(!(parseFloat(ovrIn.value)>0)) return; copyAmt(ovrIn.value, ovrBtn); };
   ovrBtn.onclick=(e)=>{ e.stopPropagation(); ovrSend(); };
+  const step=(d)=>{ const v=Math.max(1, (parseInt(ovrIn.value,10)||0)+d); ovrIn.value=String(v); };
+  host.querySelector(".ovrdn").onclick=(e)=>{ e.stopPropagation(); step(-1); };
+  host.querySelector(".ovrup").onclick=(e)=>{ e.stopPropagation(); step(1); };
   ["click","keydown","keyup","keypress"].forEach(ev=>ovrIn.addEventListener(ev, e=>e.stopPropagation()));
   ovrIn.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); ovrSend(); } });
   const draw=()=>{
@@ -2723,7 +2759,7 @@ function renderPrices(host, data, prices, src){
     const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
-    if(document.activeElement!==ovrIn) ovrIn.value=bid>=1?String(Math.floor(bid)):"";   // prefill with the NM margin bid; keep what Derek typed
+    if(!ovrIn.value && bid>=1) ovrIn.value=String(Math.floor(bid));   // starts at the NM margin bid; after that it follows taps and typing
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
   };
@@ -3508,7 +3544,7 @@ function render(res, literal, newestFirst){
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
             ? `<b>${r.s}</b><span class="xtra"> · 📦 ${r.kind||"sealed"}</span>`
-            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}</div>
+            : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}${liveTag(r)}</div>
         </div>
         ${bidHTML}
         <div class="rails">
@@ -3696,7 +3732,7 @@ $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
 document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
-document.querySelectorAll("#gametoggle button").forEach(b=>b.onclick=()=>setGame(b.dataset.game));
+{ const gs=$("#gamesel"); if(gs) gs.onchange=()=>setGame(gs.value); }
 const MODE_SEL = {bulk:"#bulktoggle", val25:"#val25toggle", val50:"#val50toggle", fa:"#fatoggle", promo:"#promotoggle", sealed:"#sealedtoggle"};
 const ERA_SEL  = {vintage:"#eravintage", mid:"#eramid", modern:"#eramodern"};
 const paintPill=(el,on)=>{ if(!el)return; el.style.borderColor=on?"var(--gold)":"var(--line)"; el.style.color=on?"var(--ink)":"var(--dim)"; el.style.background=on?"rgba(245,179,1,.10)":"var(--panel2)"; };

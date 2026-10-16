@@ -4,6 +4,10 @@ window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
   if (d.type === "cardcomp-live-save") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
+  if (d.type === "cardcomp-status") {
+    chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
+    return;
+  }
   if (d.type !== "cardcomp-bid") return;
   chrome.runtime.sendMessage(d, (r) => {
     const err = chrome.runtime.lastError;
