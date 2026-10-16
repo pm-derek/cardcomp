@@ -56,7 +56,8 @@ GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission
 Test shows how many entries the store holds. Without a token, live reads still work for the session; they
 just are not saved.
 
-After the first read on a freshly opened TCGplayer page the extension switches you back to the Whatnot tab
+Click-outs open in a background tab (one tab, reused), so you stay on the stream. If you open one in the
+foreground anyway, after the first read the extension switches you back to the Whatnot tab
 (the TCGplayer tab stays open behind). If nothing could be read within 8 seconds, the open card says so
 under its grid and you stay on TCGplayer.
 
@@ -105,7 +106,20 @@ aggressive bidders are) and your purchase ledger (what you paid, per card, per s
 - The strip's last line says what the current lot will be logged as: "logging: Jynx NM (viewed)", or
   "not labeled". After "Sold" it reads "next lot ...".
 - Bids under $1 floor to $0. Nothing is copied or sent ("under $1"), but the tap still labels the lot.
-- Set your Whatnot username in Options so lots you win are logged as yours.
+- Your Whatnot username is learned the first time "You won" and "yourname won!" show together.
+- If you edit the max by hand in Whatnot, the log uses what Whatnot shows ("Max bid added $13").
+
+### Priced out
+
+If the current lot's next bid is already above the max you tap, Custom bid is not opened. The chip reads
+"under next $15", "your bid" is set to $15, and the strip shows "priced out: next bid $15 [bid $15]" with
+what you would net at $15. Tap the button to bid the minimum, or pass.
+
+### Stream stats
+
+Tap "stats" in the strip. For the stream you are in (or any stream you have watched, all time): where lots
+close as a % of market, where you win and lose, your margin on wins vs your target, profit left on the
+table, a dot chart of every labeled lot, and a soft / even / hot verdict for whether to stay.
 
 ## Footer status
 
