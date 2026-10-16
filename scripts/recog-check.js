@@ -84,6 +84,8 @@ async function appPage(browser, base, blockRecog) {
   ok(op[19].suggestion !== "sv10-232", "Garchomp read as full art: never the $185 SIR");
   ok(op[15].suggestion === "me2pt5-223" && op[16].suggestion === "me4-89", "IR reads with no number pick the one IR printing (Numel, Frogadier)");
   ok(byModel.sonnet.find((r) => r.shot === 19).suggestion !== "sv10-232", "Sonnet's SIR read on the Garchomp UR: no $185 SIR suggestion (price-spread guard)");
+  const zh = await app.evaluate(() => autoMatch({ name: "Pikachu ex", number: "238", total: "191", language: "zh", rarity: "Special Illustration Rare" }));
+  ok(zh.kind === "foreign" && !zh.suggestion && /Chinese/.test(zh.note) && zh.cards.length > 0, "Chinese reading: never matched as the English card (no suggestion, English listed for reference)");
   ok(app.errors.length === 0, "no page errors (" + (app.errors[0] || "") + ")");
 
   // ---------- 1b. Derek's first live test (2026-10-16): 23 lots, 3 sellers, Haiku live + Sonnet / Opus on the same frames
@@ -218,6 +220,7 @@ async function appPage(browser, base, blockRecog) {
     const req = route.request(), cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "POST, OPTIONS" };
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
     const body = JSON.parse(req.postData() || "{}"); apiCalls.push(body);
+    if (apiMode === "nothink" && body.thinking) return route.fulfill({ status: 400, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "thinking.type: between_tools is not supported for this model" } }) });
     if (apiMode === "401") return route.fulfill({ status: 401, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) });
     return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ model: body.model, stop_reason: "end_turn",
       usage: { input_tokens: 2900, output_tokens: 120 }, content: [{ type: "text", text: JSON.stringify(READS.first) }] }) });
@@ -242,6 +245,8 @@ async function appPage(browser, base, blockRecog) {
   ok(msgs.length === 1 && msgs[0].key === k1 && msgs[0].read && msgs[0].read.name === "Kyurem ex" && msgs[0].model === "claude-haiku-5-5", "lot start: one reading sent to CardComp (" + (msgs[0] && msgs[0].read && msgs[0].read.name) + ")");
   const c0 = apiCalls[0] || {};
   ok(c0.model === "claude-haiku-5-5" && c0.output_config && c0.output_config.format && c0.output_config.effort === "low" && c0.messages[0].content[0].type === "image", "API request: Haiku, image first, structured output, low effort");
+  ok(c0.thinking && c0.thinking.type === "disabled" && !c0.fallbacks, "API request: Haiku thinking off, no fallback option (faster)");
+  ok(/zh/.test(JSON.stringify(c0.output_config.format.schema.properties.language.enum)) && /stamp/.test(JSON.stringify(c0.output_config.format.schema.required)), "API request: asks for the stamp and allows Chinese / Korean");
   ok(r1 && r1.frames.length === 1 && r1.frames[0].w === 1280 && r1.frames[0].sinceStart >= 900 && r1.reads[0].cost > 0, `lot recorded: frame ${r1 && r1.frames[0].w}x${r1 && r1.frames[0].h} at ${r1 && r1.frames[0].sinceStart} ms, $${r1 && r1.reads[0].cost.toFixed(5)}`);
   await tick(k1); await mp.waitForTimeout(1500);
   ok(apiCalls.length === 1, "same lot ticking on: no second capture");
@@ -272,6 +277,22 @@ async function appPage(browser, base, blockRecog) {
   msgs = await toApp();
   ok(msgs.some((m) => m.key === k5 && /key rejected/.test(m.error)), "bad key: CardComp told 'API key rejected'");
   apiMode = "ok";
+  // far camera: a small card swapped for another in the same spot (missed live by the old whole-frame check)
+  await sold(); await scene(3); await mp.waitForTimeout(3600);
+  let before = apiCalls.length;
+  await scene(4); await mp.waitForTimeout(3600);
+  const pre2 = (await toApp()).filter((m) => m.pre);
+  ok(apiCalls.length === before + 1 && pre2.length >= 2, "far camera: a small card swapped in the same spot is seen as a new card and read");
+  // Sonnet: thinking switched off with between_tools; an option the API rejects is dropped and never sent again
+  await mp.evaluate(() => chrome.storage.local.set({ recogModel: "sonnet" }));
+  apiMode = "nothink"; before = apiCalls.length;
+  await scene(3); await mp.waitForTimeout(3600);
+  const sc = apiCalls.slice(before);
+  ok(sc.length === 2 && sc[0].model === "claude-sonnet-5-5" && sc[0].thinking && sc[0].thinking.type === "between_tools" && !sc[1].thinking, "Sonnet: thinking off (between_tools); rejected once, retried without");
+  apiMode = "ok"; before = apiCalls.length;
+  await scene(4); await mp.waitForTimeout(3600);
+  ok(apiCalls.length === before + 1 && !apiCalls[apiCalls.length - 1].thinking, "a rejected option is not sent again (no extra round trip per read)");
+  await mp.evaluate(() => chrome.storage.local.set({ recogModel: "haiku" }));
   // CardComp reports its match and the lot outcome back
   await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
     send({ type: "cardcomp-auto-match", key: k, n: 1, kind: "number-miss", strength: null, suggestion: null, cards: [{ id: "sv10pt5-165", n: "Kyurem ex", s: "Black Bolt", num: "165", m: 68.9 }], note: "no #157", filled: true });
@@ -283,7 +304,7 @@ async function appPage(browser, base, blockRecog) {
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
   const sum2 = await dbg2.textContent("#sum");
-  ok(/4 lots read/.test(sum2) && /Read before the timer: 1 lots \(1 reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  ok(/\d+ lots read/.test(sum2) && /Read before the timer: \d+ lots \(1 reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
   await dbg2.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
   console.log("  results page screenshot: " + path.join(OUT, "recog-debug-page.png"));
   await dbg2.close(); await mp.close();
@@ -317,8 +338,8 @@ async function appPage(browser, base, blockRecog) {
   ok(st.q === "charizard" && st.show && /Honchkrow/.test(st.line), "typed this lot: search left alone, 'show' offered");
   await ap.click("#autoshow"); await ap.waitForTimeout(200);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "swsh9-162", "'show' fills it: Honchkrow V #162 first (read 161, one off)");
-  // the not-in-catalog case shows the note, no pricier sibling picked
-  key = Date.now() + 10;
+  // the not-in-catalog case shows the note, no pricier sibling picked (1.6 s after the typing above, so not "touched")
+  await ap.waitForTimeout(1600); key = Date.now() + 10;
   await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Kyurem ex", number: "157", total: "086", language: "en", rarity: "full art", confidence: 0.9 }, model: "claude-opus-5-5", ms: 4100 });
   await ap.waitForTimeout(300);
   st = await ap.evaluate(() => ({ badge: !!document.querySelector("#results .autobadge"), line: document.querySelector("#autoline").textContent }));
@@ -344,6 +365,17 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto", key: lotKey, capAt: later, n: 1, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 900 });
   await ap.waitForTimeout(250);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me2pt5-242", "a newer frame wins even when its lot key is older than a pre-start read");
+  // a tap on the previous card's result must not block the next card's reading (lot created earlier than the tap)
+  const oldLot = Date.now() - 30000; await ap.evaluate(() => { const c = document.querySelector("#results .card"); if (c) c.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); });
+  await ap.waitForTimeout(1700); const capNow = Date.now();
+  await send({ type: "cardcomp-auto", key: oldLot, capAt: capNow, n: 1, read: { card_visible: true, name: "Frogadier", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me4-89", "a tap on the previous card does not block the next card (Frogadier IR filled)");
+  // Chinese card: English printings for reference, nothing marked, warning in red
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, status: document.querySelector("#status").textContent, color: document.querySelector("#status").style.color, badge: !!document.querySelector("#results .autobadge"), n: document.querySelectorAll("#results .card").length }));
+  ok(/Chinese card/.test(st.line) && /Chinese card/.test(st.status) && /red/.test(st.color) && !st.badge && st.n > 0, "Chinese card: red warning, English printings listed for reference, nothing marked as the card");
   await ap.click("#autosw"); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");

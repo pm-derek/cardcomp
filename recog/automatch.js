@@ -94,7 +94,16 @@
   // and Haiku then invents plausible ones (live test: 7 of 7 numbers on a 720p stream were wrong).
   function autoMatch(read, ctx) {
     read = read || {}; ctx = ctx || {};
-    const lang = String(read.language || "").toLowerCase() === "jp" ? "jp" : "en";
+    const rl = String(read.language || "").toLowerCase();
+    // Chinese / Korean / other: the catalog is English and Japanese only (TCGplayer lists neither Chinese nor Korean).
+    // Show the English printings for reference, never as the card: no suggestion, a loud note.
+    const foreign = /^(zh|ko|other|chinese|korean)/.test(rl) ? (/^(zh|chinese)/.test(rl) ? "Chinese" : /^(ko|korean)/.test(rl) ? "Korean" : "Non-English") : "";
+    if (foreign) {
+      const en = autoMatch(Object.assign({}, read, { language: "en" }), ctx);
+      return Object.assign(en, { kind: "foreign", foreign, strength: null, suggestion: null,
+        note: foreign + " card: no " + foreign + " prices in CardComp. English printings below are for reference only, " + foreign + " usually sells for much less" });
+    }
+    const lang = rl === "jp" ? "jp" : "en";
     const why = [];
     const nm = byName(read.name, lang);
     if (nm.level > 1) why.push("name matched loosely (level " + nm.level + ")");

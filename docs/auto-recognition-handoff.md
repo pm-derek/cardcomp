@@ -339,3 +339,20 @@ Rule changes from it (recog/automatch.js, checks in section 1b):
 - LV.X / LVX / Lv. X are one token (Rhyperior LV.X DP29 is "Rhyperior LVX DP29" in the catalog).
 - One retry on a network failure. Default model for a fresh install: Sonnet.
 Cost per read: Haiku ~$0.0002, Sonnet ~$0.005, Opus ~$0.01 (about 2,100 input tokens for a 720x1280 frame).
+
+## Second live session (Derek, 2026-10-16): "slower", "sometimes does not react", Chinese cards
+
+Causes found in the code (no export needed to see them):
+- Pre-start change check compared a 24x42 thumbnail of the whole frame by average difference. On a 720p portrait
+  stream a card is a small part of that, so a new card in the same sleeve / hand read as "no change", and at timer
+  start the lot reused the previous card's reading. Now: 32x40 of the middle of the frame, and "new card?" is judged
+  on the 15% most-changed pixels (stillness still on the average). Reuse only when the reading is under 10 s old and
+  that peak difference is under 30. Mock now has a far-camera card swap (a whole-frame average missed it).
+- "Touched" was measured from the lot object's start, which can be well before its card is shown; a tap on the
+  previous card's result blocked the new reading. Now measured from the frame's capture time (minus 1.5 s).
+- Speed: thinking switched off (Haiku `disabled`, Sonnet 5.5 `between_tools`; Opus 5.5 cannot, low effort), the
+  server-side fallback beta dropped, and any option the API rejects is remembered per model so it never costs a
+  second round trip again.
+Chinese cards: TCGplayer (and so the catalog) has English and Japanese only. The prompt now tells Japanese (kana) from
+Chinese (no kana, Simplified or Traditional) and Korean (Hangul); a Chinese / Korean reading gets kind `foreign`: no
+suggestion, English printings listed for reference, a red "Chinese card: no Chinese prices" note on the line and status.

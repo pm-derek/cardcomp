@@ -162,7 +162,8 @@ and never bids. Plan and results: docs/auto-recognition-handoff.md.
 3. In the CardComp panel, under the lot strip: tap "auto off" to turn it on, pick the model (Haiku is cheapest).
 4. Watch a stream. A card held up before the timer is read as soon as it holds still for about 1.5 s
    (shown as "before start"); otherwise one frame about 1 s after the timer starts (a second one 2 s later only
-   when the first is unsure). A sold card the seller keeps holding is not read again. If you typed or tapped a result since the lot started, your search stays and
+   when the first is unsure). A sold card the seller keeps holding is not read again. A Chinese or Korean card
+   shows a red warning: CardComp has no prices for them, the English printings are listed for reference only. If you typed or tapped a result since the lot started, your search stays and
    the line offers "show".
 5. Results, frames and costs: Options > "the recognition test page". The card you tap or open in a lot is the
    truth; mark the other lots there.

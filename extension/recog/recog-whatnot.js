@@ -58,34 +58,45 @@
   }
 
   // ---------- scene watcher: read a card shown before the timer starts (Derek, 2026-10: short / sudden-death
-  // timers leave no time). Between lots, a 24x42 grayscale thumbnail of the video every 0.7 s (no API call).
+  // timers leave no time). Between lots, a 32x40 grayscale thumbnail of the middle of the video every 0.7 s (no API call).
   // When the picture changes and then holds still ~1.5 s, and it does not look like the last card read, that
   // frame is read. At timer start, if nothing changed since that read, the reading is reused for the lot.
-  const TW = 24, TH = 42, TICK_MS = 700;
-  const CHANGE = 14, STILL = 5, SAME = 10;   // mean abs gray difference, 0-255 (tune from the "diff" in each record)
+  // The middle of the frame (where a card is held up), not the whole picture: on a 720p stream a card is a small
+  // part of the frame, and a whole-frame thumbnail saw a new card in the same sleeve as "no change" (Derek, live).
+  const TW = 32, TH = 40, TICK_MS = 700, CX = 0.2, CY = 0.15, CW = 0.6, CH = 0.75;
+  // Two measures, 0-255: "mean" = average difference (is the picture still?), "peak" = average of the 15% most
+  // changed pixels (did the card change?). A small card swapped in the same spot moves the mean by a few points but
+  // the peak by 80+. Tune from the "diff" stored on each pre-start read.
+  const CHANGE = 14, CHANGE_PEAK = 70, STILL = 5, SAME = 40, REUSE = 30;
   const PRE_MAX = 4, PRE_GAP_MS = 3000;      // pre-start reads per gap between lots, and the minimum spacing
   let tc = null;
   function thumb() {
     const v = streamVideo(); if (!v) return null;
     try {
       if (!tc) { tc = document.createElement("canvas"); tc.width = TW; tc.height = TH; }
-      const g = tc.getContext("2d", { willReadFrequently: true }); g.drawImage(v, 0, 0, TW, TH);
+      const g = tc.getContext("2d", { willReadFrequently: true }); g.drawImage(v, v.videoWidth * CX, v.videoHeight * CY, v.videoWidth * CW, v.videoHeight * CH, 0, 0, TW, TH);
       const d = g.getImageData(0, 0, TW, TH).data, out = new Uint8Array(TW * TH);
       for (let i = 0, j = 0; i < d.length; i += 4, j++) out[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
       return out;
     } catch (_) { return null; }   // cross-origin stream: no watcher, lot-start reads still work by screenshot
   }
   const diff = (a, b) => { if (!a || !b) return 255; let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+  const peak = (a, b) => {
+    if (!a || !b) return 255;
+    const d = new Uint8Array(a.length); for (let i = 0; i < a.length; i++) d[i] = Math.abs(a[i] - b[i]);
+    d.sort(); const k = Math.max(1, Math.round(d.length * 0.15)); let s = 0; for (let i = d.length - k; i < d.length; i++) s += d[i];
+    return s / k;
+  };
   let lastSt = null, lastLot = null, prevT = null, moved = false, still = 0, REF = null, PRE = { at: 0, n: 0, last: 0, thumb: null };
   const live = (st, lot) => !!(st && lot && !lot.ended && !st.ended && !st.sold && !st.waiting && (secs(st.timer) || 0) > 0);
   setInterval(() => {
     if (!on || document.hidden || live(lastSt, lastLot)) { prevT = null; still = 0; return; }
     const t = thumb(); if (!t) return;
-    const step = diff(t, prevT); prevT = t;
-    if (step > CHANGE) { moved = true; still = 0; return; }
+    const step = diff(t, prevT), stepPeak = peak(t, prevT); prevT = t;
+    if (step > CHANGE || stepPeak > CHANGE_PEAK) { moved = true; still = 0; return; }
     if (step < STILL) still++; else still = 0;
     if (still < 2) return;
-    const vsRef = diff(t, REF);
+    const vsRef = peak(t, REF);
     if (!moved && REF) return;                       // nothing new since the last read
     moved = false;
     if (vsRef < SAME) return;                        // the same card as last read (seller still holding the sold card)
@@ -105,8 +116,8 @@
     if (!on || !lot || lots.has(lot.startedAt) || !live(st, lot)) return;
     lots.set(lot.startedAt, lot);
     if (lots.size > 50) lots.delete(lots.keys().next().value);
-    const now = thumb(), d = diff(now, PRE.thumb);
-    if (PRE.at && d < SAME) {
+    const now = thumb(), d = peak(now, PRE.thumb);
+    if (PRE.at && d < REUSE && Date.now() - PRE.at < 10000) {
       try { chrome.runtime.sendMessage({ type: "recog-adopt", from: PRE.at, to: lot.startedAt, title: lot.title || "", diff: Math.round(d) }, () => chrome.runtime.lastError); } catch (_) {}
       PRE = { at: 0, n: 0, last: PRE.last, thumb: null };
       return;
