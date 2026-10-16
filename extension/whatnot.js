@@ -127,7 +127,7 @@ const LOT_RX = {
   ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
   joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
-  skip: /^condition|shipping|bids?$|^\$|^\d{1,2}:\d{2}$|winning|^bid\b|^custom/i
+  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|^sold$|^bid\b|^custom|^follow$/i
 };
 // Room: who has been seen (joined in chat, or led a lot) and when. Sent with every lot record.
 const members = new Map();   // user -> {first, last, joins, leads}
@@ -137,40 +137,64 @@ function seen(user, how) {
   m.last = Date.now(); m[how]++; members.set(user, m);
 }
 function roomSnapshot() { const cut = Date.now() - 30 * 60000; const out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, min: Math.round((Date.now() - m.first) / 60000) }; return out; }
-const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && visible(el));
+// text leaves: any size counts ("kal", "32" are narrower than the 20 px input heuristic in visible())
+const textShown = (el) => { const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0) return false; const cs = getComputedStyle(el); return cs.visibility !== "hidden" && cs.display !== "none"; };
+const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && textShown(el));
+const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "");   // Whatnot usernames: no spaces
 function sellerName() {
   const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
   if (a) { const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); if (m) return decodeURIComponent(m[1]); }
   return (document.title || "").replace(/\s*[|·-]\s*whatnot.*$/i, "").trim();
 }
+// Layout read from live screenshots (2026-10): the lot row is
+//   [thumb] "$1 START SINGLES 🔥 #76" / "Near Mint · Card" / "1 Bid" / "Shipping is $0.78 + Taxes"   [ "$1" / "00:07" or "Sold" ]
+// with "darks_tcg" + "is Winning!" (or "daybreakfm" + "won!") above it, a "darks_tcg won the auction!" popup
+// on the video, and "Bid: $2" / "Awaiting next item" below. Titles often start with "$", so only a bare "$1"
+// counts as a price, and the lot row is the smallest ancestor of "N Bid" that holds a bare price.
+let ME = "";   // Derek's Whatnot username (extension Options), so "derek won!" counts as a win
+try { chrome.storage.local.get("wnUser", (r) => { ME = String((r && r.wnUser) || "").trim().toLowerCase(); }); } catch (_) {}
+const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
+const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG" };
 function readLot() {
   const all = leaves(document.body);
-  const st = { title: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", seller: sellerName(), url: location.href, viewers: null, giveaway: null };
+  const st = { title: "", sub: "", cond: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", ended: false, waiting: false, seller: sellerName(), url: location.href, viewers: null, giveaway: null };
   const bidsEl = all.find((el) => LOT_RX.bids.test(el.textContent.trim()));
+  const bareMoney = (el) => LOT_RX.money.test(el.textContent.trim()) && !el.closest("button,[role=button]");
   let card = null;
-  if (bidsEl) { let el = bidsEl.parentElement; for (let i = 0; i < 8 && el; i++, el = el.parentElement) { const t = el.textContent || ""; if (/\$\s?\d/.test(t) && t.length < 600) { card = el; break; } } }
+  if (bidsEl) { let el = bidsEl.parentElement; for (let i = 0; i < 8 && el; i++, el = el.parentElement) { if ((el.textContent || "").length > 800) break; if (leaves(el).some(bareMoney)) { card = el; break; } } }
+  if (!card && bidsEl) card = bidsEl.parentElement && bidsEl.parentElement.parentElement;   // price column not found: still read the text block
+  const texts = [];
   for (const el of (card ? leaves(card) : [])) {
     const t = el.textContent.trim(); let m;
     if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
-    else if ((m = LOT_RX.money.exec(t))) { if (st.cur == null) st.cur = parseFloat(m[1].replace(/,/g, "")); }
+    else if (bareMoney(el)) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
     else if (LOT_RX.timer.test(t)) st.timer = t;
     else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
-    else if (!st.title && t.length > 2 && t.length < 120 && !LOT_RX.skip.test(t)) st.title = t;
+    else if (/^sold$/i.test(t)) st.ended = true;
+    else if (t.length > 1 && t.length < 120 && !LOT_RX.skip.test(t) && !el.closest("button,[role=button]")) texts.push(t);
   }
+  st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
+  st.cond = COND_TXT[(st.sub.split("·")[0] || "").trim().toLowerCase()] || "";
+  let wonBy = "";
   for (let i = 0; i < all.length; i++) {
     const t = all[i].textContent.trim(); let m;
+    const prev = i > 0 ? all[i - 1].textContent.trim() : "";
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
-    else if (LOT_RX.winTail.test(t) && i > 0) st.lead = all[i - 1].textContent.trim();
+    else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
+    else if (/^won!?$/i.test(t) && userLike(prev)) wonBy = prev;              // "daybreakfm" + "won!"
+    else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
-    else if (LOT_RX.meWon.test(t)) { st.sold = "me"; st.me = true; }
-    else if ((m = LOT_RX.sold.exec(t))) st.sold = m[1] || m[2];
+    else if (LOT_RX.meWon.test(t)) { wonBy = "me"; st.me = true; }
+    else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
     else if ((m = LOT_RX.joined.exec(t))) { if (!joinedSeen.has(all[i])) { joinedSeen.add(all[i]); seen(m[1], "joins"); } }
     else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
     else if (st.viewers == null && LOT_RX.viewers.test(t) && !(card && card.contains(all[i]))) {   // viewer count: a bare number in the top band of the page
       const r = all[i].getBoundingClientRect(); if (r.top < 220 && r.top >= 0) st.viewers = +t;
     }
   }
+  if (isMe(st.lead)) st.me = true;
+  if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
   return st;
 }
 const joinedSeen = new WeakSet();
@@ -181,8 +205,9 @@ function endLot(st) {
   lot.ended = true;
   if (st.cur == null && st.bids == null) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }   // never saw a price: tell the app to reset, log nothing
   sendApp({ type: "cardcomp-lot-end", rec: {
-    v: 3, title: lot.title, start: lot.start, final: st.cur, bids: st.bids,
-    winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"),
+    v: 3, title: lot.title, sub: st.sub || lot.sub, sellerCond: st.cond || lot.cond, start: lot.start, final: st.cur, bids: st.bids,
+    winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),
+    sold: !!st.ended,                                     // saw "Sold" / "won!" (false: the lot rolled over without an end screen)
     iLed: lot.iLed,                                       // Derek was the leader at some point: proof he actually bid, not just tapped
     leaders: [...lot.leaders], hist: lot.hist,            // hist: every lead change {t: s since lot start, u: user, a: amount}
     ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
@@ -200,9 +225,10 @@ function lotTick() {
     (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
   if ((st.title && (!lot || st.title !== lot.title)) || rolled) {
     if (lot && lotLastState) endLot(lotLastState);
-    lot = { title: st.title, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false };
+    lot = { title: st.title, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
   }
   if (lot) {
+    if (st.lead) lot.lastLead = st.lead;
     if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
     if (tSec != null) lot.lastSec = tSec;
     if (st.me) lot.iLed = true;

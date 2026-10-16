@@ -100,6 +100,12 @@ aggressive bidders are) and your purchase ledger (what you paid, per card, per s
 - Two cards in one lot: add both to the cart and tap the cart's max bid total. The lot is labeled with both
   cards and each one's share of the bid.
 - Whether you actually placed the bid is shown by whether you were ever the leader during the lot.
+- Just collecting data, no bid: open the card. A lot with no tap is labeled with the last card you opened
+  since the previous lot ended, at the condition the seller shows ("Near Mint · Card").
+- The strip's last line says what the current lot will be logged as: "logging: Jynx NM (viewed)", or
+  "not labeled". After "Sold" it reads "next lot ...".
+- Bids under $1 floor to $0. Nothing is copied or sent ("under $1"), but the tap still labels the lot.
+- Set your Whatnot username in Options so lots you win are logged as yours.
 
 ## Footer status
 

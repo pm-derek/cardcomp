@@ -2534,6 +2534,9 @@ function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
   const show=(msg)=>{ if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color="var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },900); };
   const flash=()=>show("copied $"+s);
+  // Whatnot's minimum bid is $1: a sub-$1 max floors to 0, so nothing is copied or sent, but the tap still
+  // labels the lot with this card (data-collection taps on bulk cards)
+  if(s==="0"){ show("under $1"); sendToWhatnot(s, el, show, true); return; }
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
   else copyFallback(s,flash);
   document.querySelectorAll(".ovrin").forEach(i=>{ if(document.activeElement!==i) i.value=s; });   // "your bid" follows the last tap, so +1 starts from it
@@ -2553,7 +2556,8 @@ function cardSnap(r, cond, printing, rowMkt, name){
     cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
     d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0) };
 }
-function sendToWhatnot(s, el, show){
+let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
+function sendToWhatnot(s, el, show, labelOnly){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
   try{
     const ds=(el&&el.dataset)||{};
@@ -2571,6 +2575,7 @@ function sendToWhatnot(s, el, show){
     TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     paintLot();
   }catch(_){ }
+  if(labelOnly) return;
   const msg={type:"cardcomp-bid", amount:+s, name};
   WN_PENDING={s, show, at:Date.now()};
   try{ window.postMessage(msg, location.origin); }catch(_){ }
@@ -2614,12 +2619,23 @@ window.addEventListener("message", e=>{
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
 let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
+function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
+  const v=LAST_VIEW; if(!v || v.at<from || v.at>to) return null;
+  const r=CARDS.find(x=>x.id===v.id); if(!r || !r.px) return null;
+  const pk=v.el && v.el.querySelector(".pchip.on");
+  let k=pk ? pk.dataset.k : ""; if(!k || !r.px[k]){ let best=-1; for(const p in r.px){ const m=(r.px[p].m!=null?r.px[p].m:r.px[p].l)||0; if(m>best){ best=m; k=p; } } }
+  const cond=r.sealed ? "sealed" : (sellerCond||"NM"), nm=(r.px[k].m!=null?r.px[k].m:r.px[k].l)||0;
+  const s=cardSnap(r, cond, k, r.sealed ? nm : nm*condMult(cond, r.y, nm));
+  s.label="view"; s.viewAt=v.at; s.condFrom=sellerCond?"seller":"assumed NM";
+  return s;
+}
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
-  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent during this lot: lots are generic ("$2 start #43"), so an older tap is a different card
-  const over=tap && d.cur!=null && d.cur>=tap.bid;
+  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent since the previous lot ended: lots are generic ("$2 start #43"), so an older tap is a different card
+  const view=!tap && LAST_VIEW && LAST_VIEW.at>=LOT_START ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
+  const over=tap && tap.bid>=1 && d.cur!=null && d.cur>=tap.bid && !d.ended;
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
   const parts=[];
@@ -2628,17 +2644,25 @@ function paintLot(){
   if(d.timer) parts.push(`<b>${d.timer}</b>`);
   if(d.bids!=null) parts.push(`${d.bids} bids`);
   if(d.ship!=null) parts.push(`ship $${d.ship.toFixed(2)}`);
-  if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
-  if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
+  if(d.ended){ const w=d.sold==="me"||d.me ? `<span style="color:var(--green)">you won</span>` : `sold${d.sold&&d.sold!=="?"?" to "+escH(d.sold).slice(0,14):""}`; parts.push(w); }
+  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
+  if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
+  else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
-  const title=d.title ? `<div style="margin-top:3px"><span class="lotchip" style="cursor:pointer;color:var(--blue);font-size:11.5px" title="search this">on stream: ${escH(d.title).slice(0,60)}</span></div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title;
-  const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=lotQuery(d.title); run(q.value); } };
+  // what this lot will be logged as: the card you tapped a bid on, else the card you opened, else nothing
+  const pre=d.ended ? "next lot " : "";   // after "Sold", what you open or tap belongs to the next lot
+  const lab = tap ? `<span style="color:var(--green)">${pre}logging: ${escH(tap.n).slice(0,28)} ${tap.cond||""}</span>`
+            : view ? `<span style="color:var(--green)">${pre}logging: ${escH(view.n).slice(0,28)} ${(!d.ended&&d.cond)||"NM?"} (viewed)</span>`
+            : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
+  const nm=d.title ? lotQuery(d.title) : "";
+  const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
+  const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
 }
-function lotQuery(title){   // the card name hiding in a lot title, else the title minus the seller's boilerplate
+function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
   for(let n=3;n>=1;n--) for(let i=0;i+n<=words.length;i++){ const s=words.slice(i,i+n).join(" "); try{ if(isBaseName(s)) return s; }catch(_){ } }
-  return words.filter(w=>!/^(no|cancel|start|dollar|lot|the|a|an|of|and|\$?\d+|#\d+)$/.test(w)).join(" ");
+  return "";
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
@@ -2658,7 +2682,8 @@ window.addEventListener("message", e=>{
     const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at ? LAST_TAP : null;
     LOT_START=Date.now();
     if(rec.empty){ TAPS_THIS_LOT=[]; paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
-    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; }
+    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; }
+    else { const v=viewLabel(from, rec.at, rec.sellerCond); if(v) rec.card=v; }   // no bid: the card Derek opened during the lot, at the seller's stated condition
     rec.bidsSent=TAPS_THIS_LOT.filter(t=>t.t>=from);
     TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
@@ -3643,7 +3668,7 @@ function render(res, literal, newestFirst){
     // Opening a tile expanded it in place, so a card in the second row put the bid table below the
     // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
     // Anchoring on the card's top is height-independent, so it works before the detail has painted.
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.
