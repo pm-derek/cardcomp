@@ -2630,7 +2630,7 @@ function cardSnap(r, cond, printing, rowMkt, name){
   const pr=r&&printing&&r.px&&r.px[printing], sp=r?speedOf(r, rowMkt, cond):null;
   return { id:r?r.id:"", n:r?r.n:(name||""), s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
     cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
-    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0) };
+    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0, printing) };
 }
 let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
 function sendToWhatnot(s, el, show, labelOnly){
@@ -3080,8 +3080,14 @@ const LIVE_URL="https://raw.githubusercontent.com/pm-derek/cardcomp/live/live.js
 async function loadLive(){
   try{ const r=await fetch(LIVE_URL+"?t="+Date.now(),{cache:"no-store"}); if(r.ok){ LIVE_STORE=(await r.json())||{}; if(LIVE_REDRAW) LIVE_REDRAW(); } }catch(_){ }
 }
-function liveFor(pid, cond, nm){   // -> {price, days, src, m, nm} or null; session read beats the store
-  const e=LIVE[pid+"|"+cond]||LIVE_STORE[pid+"|"+cond]; if(!e || !(e.at>0)) return null;
+// One TCGplayer product can carry several printings (Dark Gyarados 84606: 1st Edition Holofoil and Unlimited
+// Holofoil, picked by ?Printing=). A read keyed by product + condition alone was divided by the wrong printing's
+// NM (MP $33.82 / 1st Ed NM $222.18 x Unlimited NM $73.29 showed $11.15). Shared products key by printing too;
+// their old product+condition entries are ambiguous and ignored.
+const tcgPrint=k=>(k||"").replace(/^(Shadowless|Master Ball|Pok[eé] Ball) /,"");
+function liveKey(pid, k, cond){ const all=pidIndex()[pid]; return all && all.length>1 ? `${pid}|${tcgPrint(k)}|${cond}` : `${pid}|${cond}`; }
+function liveFor(pid, cond, nm, k){   // -> {price, days, src, m, nm} or null; session read beats the store
+  const lk=liveKey(pid, k, cond), e=LIVE[lk]||LIVE_STORE[lk]; if(!e || !(e.at>0)) return null;
   const days=(Date.now()-e.at)/86400000; if(days>LIVE_MAX_DAYS) return null;
   const price=(nm>0 && e.r>0) ? nm*e.r : e.m; if(!(price>0)) return null;
   return {price, days, src:e.src, m:e.m, nm:e.nm};
@@ -3091,7 +3097,7 @@ function liveTag(r){   // collapsed row: this card has a verified condition pric
   if(!r || !r.px) return "";
   let best=null;
   for(const k in r.px){ const p=r.px[k].p||r.pid; if(!p) continue;
-    for(const cond of CONDS){ const e=LIVE[p+"|"+cond]||LIVE_STORE[p+"|"+cond]; if(!e||!(e.at>0)) continue; const d=(Date.now()-e.at)/86400000; if(d<=LIVE_MAX_DAYS && (best==null||d<best)) best=d; } }
+    for(const cond of CONDS){ const lk=liveKey(p, k, cond), e=LIVE[lk]||LIVE_STORE[lk]; if(!e||!(e.at>0)) continue; const d=(Date.now()-e.at)/86400000; if(d<=LIVE_MAX_DAYS && (best==null||d<best)) best=d; } }
   return best==null ? "" : ` · <span style="color:${best<=7?"var(--gold)":"var(--faint)"}">✓ verified ${liveAge(best)}</span>`;
 }
 let LIVE_NOTE_TIMER=null;
@@ -3099,8 +3105,8 @@ function liveNote(msg){   // one line under the open card's grid: what the TCGpl
   document.querySelectorAll(".livenote").forEach(el=>{ el.textContent=msg; el.style.display=msg?"block":"none"; });
   clearTimeout(LIVE_NOTE_TIMER); if(msg) LIVE_NOTE_TIMER=setTimeout(()=>liveNote(""), 20000);
 }
-function pidIndex(){   // TCGplayer product id -> the card + printing it prices (folded printings carry their own id)
-  if(!PID_INDEX){ PID_INDEX={}; for(const c of CARDS){ if(!c.px) continue; for(const k in c.px){ const p=c.px[k].p||c.pid; if(p && !PID_INDEX[p]) PID_INDEX[p]={card:c, key:k}; } } }
+function pidIndex(){   // TCGplayer product id -> every card + printing it prices (folded printings carry their own id)
+  if(!PID_INDEX){ PID_INDEX={}; for(const c of CARDS){ if(!c.px) continue; for(const k in c.px){ const p=c.px[k].p||c.pid; if(p) (PID_INDEX[p]=PID_INDEX[p]||[]).push({card:c, key:k}); } } }
   return PID_INDEX;
 }
 function applyLive(d){
@@ -3109,8 +3115,11 @@ function applyLive(d){
   if(!TCG_COND[d.cond]) return;
   const price=(d.market>0?d.market:null) ?? (d.low>0?d.low:null); if(!(price>0)) return;
   liveNote(`${d.cond} verified on TCGplayer: $${price.toFixed(2)} (${d.market>0?"market":"lowest listing"})`);
-  const hit=pidIndex()[String(d.pid)], v=hit&&hit.card.px[hit.key], nm=v ? ((v.m!=null?v.m:v.l)||0) : 0;
-  const key=d.pid+"|"+d.cond, rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
+  const all=pidIndex()[String(d.pid)]||[];
+  const hit=all.length>1 ? all.find(h=>tcgPrint(h.key)===(d.printing||"")) : all[0];   // shared product: the printing in the URL
+  if(all.length>1 && !hit) return;   // cannot tell which printing this read is for: do not store a ratio against the wrong NM
+  const v=hit&&hit.card.px[hit.key], nm=v ? ((v.m!=null?v.m:v.l)||0) : 0;
+  const key=hit ? liveKey(String(d.pid), hit.key, d.cond) : d.pid+"|"+d.cond, rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
   LIVE[key]=rec;
   const msg={type:"cardcomp-live-save", key, rec};   // the extension writes it to the live branch (desktop only; silent without a token)
   extPost(msg);
@@ -3120,7 +3129,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
   pid=(pr&&pr.p)||pid;
   const rows=CONDS.map(cond=>{
-    const lv=liveFor(pid, cond, base);
+    const lv=liveFor(pid, cond, base, key);
     const atc=lv ? lv.price : base*condMult(cond, year, base);
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
