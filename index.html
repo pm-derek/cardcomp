@@ -3144,6 +3144,10 @@ function parse(raw){
   // "base 2" / "base2" / "bs2" mean Base Set 2, not Base Set card #2. "base 2/102" keeps meaning #2 of 102.
   { const re=/\b(base\s?2|bs\s?2)\b(?!\s*\/)/;
     if(!f.setName && !f.setIn && re.test(text)){ f.setName="Base Set 2"; text=text.replace(re," "); } }
+  // "30th" / "30th anniversary" / "30th celebration": the 30th Celebration set (+ its Classic Collection via
+  // SET_GROUP in EN, M6a in JP). "30th celebration classic collection" stays exact (SET_NICK below).
+  { const re=/\b30th(\s+(anniversary|celebrations?))?\b(?!\s*:?\s*classic)/;
+    if(!f.setName && !f.setIn && re.test(text)){ f.setName="30th Celebration"; text=text.replace(re," "); } }
   // 25th anniversary (2021): "25th", "25th celebration(s)", "25th anniversary", "cel25", plural "celebrations"
   // all mean Celebrations + its Classic Collection + the McDonald's 25th promos (JP: the S8a family).
   // Singular "celebration" is left alone: that is the 30th. "celebrations classic collection" stays exact.
