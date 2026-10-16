@@ -3,7 +3,7 @@ const cc = document.getElementById("cc");
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
-  if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
+  if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
   if (d.type === "cardcomp-status") {
     chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
     return;

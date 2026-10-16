@@ -29,6 +29,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     });
     return true;
   }
+  if (msg.type === "cardcomp-open-bg") {   // LP ↗ / market link: open behind the stream, reuse one CardComp-owned TCGplayer tab
+    if (!/^https:\/\/www\.tcgplayer\.com\/product\//.test(msg.url || "")) { reply({ ok: false }); return; }
+    const create = () => chrome.tabs.create({ url: msg.url, active: false }).then((t) => chrome.storage.session.set({ tcgTab: t.id }));
+    chrome.storage.session.get("tcgTab", (r) => {
+      if (r && r.tcgTab != null) chrome.tabs.update(r.tcgTab, { url: msg.url, active: false }).catch(create);
+      else create();
+    });
+    reply({ ok: true });
+    return;
+  }
   if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
   if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }          // app -> GitHub log-YYYY-MM.json
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }

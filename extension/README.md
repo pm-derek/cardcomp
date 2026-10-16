@@ -56,7 +56,8 @@ GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission
 Test shows how many entries the store holds. Without a token, live reads still work for the session; they
 just are not saved.
 
-After the first read on a freshly opened TCGplayer page the extension switches you back to the Whatnot tab
+Click-outs open in a background tab (one tab, reused), so you stay on the stream. If you open one in the
+foreground anyway, after the first read the extension switches you back to the Whatnot tab
 (the TCGplayer tab stays open behind). If nothing could be read within 8 seconds, the open card says so
 under its grid and you stay on TCGplayer.
 

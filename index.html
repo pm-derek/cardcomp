@@ -2651,6 +2651,18 @@ window.addEventListener("message", e=>{   // extension handshake: relabel the bi
   WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
   if(!WN_STAT_TIMER){ askStatus(); WN_STAT_TIMER=setInterval(askStatus, 4000); }
 });
+// With the extension: TCGplayer links (LP ↗, market price, "view on TCGplayer") open in a background tab so
+// focus stays on the Whatnot stream; the extension reads the price there and it lands on the row. Without the
+// extension, or with a modifier key / middle click, links open normally.
+document.addEventListener("click", e=>{
+  if(!WN_EXT || e.defaultPrevented || e.button!==0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a=e.target && e.target.closest ? e.target.closest('a[href^="https://www.tcgplayer.com/product/"]') : null; if(!a) return;
+  e.preventDefault();
+  const m={type:"cardcomp-open-bg", url:a.href};
+  try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
+  const cond=(a.href.match(/Condition=([^&]+)/)||[])[1];
+  liveNote(`reading ${cond?decodeURIComponent(cond):"price"} on TCGplayer in a background tab…`);
+}, true);
 // footer status while the extension is present: is a Whatnot tab open, is the verified-price store set up
 let WN_STAT_TIMER=null;
 function askStatus(){ const m={type:"cardcomp-status"}; try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } } }
