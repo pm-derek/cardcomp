@@ -24,17 +24,30 @@
     .replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\blv x\b/g, "lvx");   // LV.X / LVX / Lv. X are one token
   const depad = s => String(s == null ? "" : s).toLowerCase().trim().replace(/^0+(?=\d)/, "");
   const price = c => (typeof bestMarket === "function" ? bestMarket(c) : 0) || 0;
-  // A stamp on the card names its product line (Derek's first live test: every fugidust84 card carried the
-  // 30th Celebration Pikachu logo; Opus and Sonnet both reported it).
-  const STAMPS = [
-    [/30th/i, (c) => /30th/i.test(c.s)],
-    [/25th|celebrations/i, (c) => /celebrations|25th/i.test(c.s)],
-    [/prerelease/i, (c) => /prerelease/i.test(c.n)],
-    [/\bstaff\b/i, (c) => /\bstaff\b/i.test(c.n)],
-    [/pok[eé]mon center/i, (c) => /pok[eé]mon center/i.test(c.n + " " + c.s)],
-    [/black star|\bpromo\b/i, (c) => /promo/i.test(c.s + " " + c.r)]
-  ];
-  const stampTest = (stamp) => { for (const [re, f] of STAMPS) if (re.test(stamp || "")) return f; return null; };
+  // A stamp on the card names its product line. Tests in order: the first one that matches a candidate wins.
+  //   anniversary logos: 30th -> 30th Celebration (+ Classic Collection), 25th -> Celebrations; either one falls back to
+  //     any anniversary reprint (the model has called the 30th logo "25th": Shining Celebi, live session 2)
+  //   a set-logo stamp ("Prismatic Evolutions", "Journey Together", "Mega Evolution"): TCGplayer lists those stamped
+  //     promos as their own products, "Flareon ex 014 131 Prismatic Evolutions Stamp" (154 in the catalog)
+  //   Prerelease / Staff / Pokemon Center / Black Star promo marks
+  const ANNIV = (c) => /celebration|30th|25th|classic collection/i.test(c.s);
+  const STAMP_STOP = new Set(["logo", "stamp", "stamped", "mark", "set", "symbol", "the", "a", "an", "on", "card", "small", "pikachu", "pokemon", "promo", "anniversary", "edition"]);
+  function stampTests(stamp) {
+    const t = String(stamp || ""), out = [];
+    if (!t.trim()) return out;
+    if (/30th/i.test(t)) out.push((c) => /30th/i.test(c.s));
+    if (/25th|celebrations/i.test(t)) out.push((c) => /celebrations|25th/i.test(c.s));
+    if (/anniversary|30th|25th|celebration/i.test(t)) out.push(ANNIV);
+    const words = norm(t).split(" ").filter((w) => w.length > 2 && !STAMP_STOP.has(w) && !/^\d+(st|th)?$/.test(w));
+    if (words.length) out.push((c) => /\bstamp(ed)?\b/i.test(c.n) && words.some((w) => norm(c.n).split(" ").includes(w)));
+    if (/prerelease/i.test(t)) out.push((c) => /prerelease/i.test(c.n));
+    if (/\bstaff\b/i.test(t)) out.push((c) => /\bstaff\b/i.test(c.n));
+    if (/pok[eé]mon center/i.test(t)) out.push((c) => /pok[eé]mon center/i.test(c.n + " " + c.s));
+    if (/black star|\bpromo\b/i.test(t)) out.push((c) => /promo/i.test(c.s + " " + c.r));
+    if (/stamp/i.test(t)) out.push((c) => /\bstamp(ed)?\b/i.test(c.n));   // "a stamp" of some kind: any stamped product
+    return out;
+  }
+  const stampTest = (stamp) => { const ts = stampTests(stamp); return ts.length ? (c) => ts.some((f) => f(c)) : null; };
 
   function cardTier(r) {
     r = String(r || "").toLowerCase();
@@ -111,7 +124,8 @@
 
     let num = depad(read.number);
     const total = parseInt(read.total, 10) || 0, lowRes = ctx.short > 0 && ctx.short < 1000;
-    const totalOK = c => total && (SET_SIZE[c.s] || []).includes(total);
+    // total fits: the set's printed size, or a standalone product that carries it in its name ("Flareon ex 014 131 ...")
+    const totalOK = c => total && ((SET_SIZE[c.s] || []).includes(total) || new RegExp("\\b0*\\d+ 0*" + total + "\\b").test(norm(c.n)));
     // Off a small stream, a number whose total contradicts the catalog is a guess: ignore it. Either no set this
     // card is in has that many cards, or the card(s) with that number sit in a set of another size (Mew ex 232/191
     // read on a 720p stream: Paldean Fates #232 exists, but Paldean Fates has 91 cards).
@@ -123,7 +137,7 @@
     }
     // Set guesses: Sonnet / Opus name the set well; Haiku's guesses were wrong often enough to pick a $1,300 Lugia.
     const trustSet = !/haiku/i.test(ctx.model || "");
-    const rt = readTier(read.rarity), setQ = trustSet ? norm(read.set) : "", stampF = stampTest(read.stamp);
+    const rt = readTier(read.rarity), setQ = trustSet ? norm(read.set) : "", stampTs = stampTests(read.stamp), stampF = stampTs.length ? (c) => stampTs.some((f) => f(c)) : null;
     const rq = norm(read.rarity);
     const isNum = c => num && depad(c.num) === num;
     const isNear = c => num && /^\d+$/.test(num) && /^\d+$/.test(depad(c.num)) && Math.abs(+depad(c.num) - +num) === 1;
@@ -132,15 +146,23 @@
     const setExact = c => setQ.length > 2 && norm(c.s) === setQ;
     const setNear = c => setQ.length > 2 && (norm(c.s).includes(setQ) || setQ.includes(norm(c.s)));
     const stampOK = c => !!(stampF && stampF(c));
-    const score = c => (isNum(c) ? 100 : 0) + (isNear(c) ? 50 : 0) + (stampOK(c) ? 30 : 0) + (setExact(c) ? 20 : setNear(c) ? 8 : 0) +
+    const stampRank = c => { for (let i = 0; i < stampTs.length; i++) if (stampTs[i](c)) return stampTs.length - i; return 0; };
+    const score = c => (isNum(c) ? 100 : 0) + (isNear(c) ? 50 : 0) + (stampOK(c) ? 30 + stampRank(c) : 0) + (setExact(c) ? 20 : setNear(c) ? 8 : 0) +
       (rarityOK(c) ? 12 : 0) + (tierOK(c) ? 10 : 0) + (totalOK(c) ? 4 : 0);
     const cards = nm.cards.slice().sort((a, b) => (score(b) - score(a)) || ((b.y || 0) - (a.y || 0)) || ((b.o || 0) - (a.o || 0))).slice(0, 16);
     const out = (kind, strength, sug, note) => ({ kind, strength, suggestion: sug ? sug.id : null, cards, note: note || "", why, lang });
     const nameSure = nm.level <= 2;
     // Narrow a pool by the clues in order (stamp, set, exact rarity, rarity tier); each step only if it keeps someone.
     const narrow = (pool) => {
-      const steps = [["stamp", stampF ? stampOK : null], ["set", setQ.length > 2 ? setExact : null], ["set", setQ.length > 2 ? setNear : null], ["rarity", rq ? rarityOK : null], ["tier", rt ? tierOK : null]];
+      const pool0 = pool;
+      for (const f of stampTs) {   // the most specific stamp test that keeps someone
+        if (pool.length <= 1) break;
+        const p = pool.filter(f);
+        if (p.length) { if (p.length < pool.length) { pool = p; } break; }
+      }
+      const steps = [["set", setQ.length > 2 ? setExact : null], ["set", setQ.length > 2 ? setNear : null], ["rarity", rq ? rarityOK : null], ["tier", rt ? tierOK : null]];
       let by = ""; const used = new Set();
+      if (stampTs.length && pool.length < pool0.length) { by = "stamp"; used.add("stamp"); }
       for (const [label, f] of steps) {
         if (!f || pool.length <= 1) continue;
         const p = pool.filter(f);

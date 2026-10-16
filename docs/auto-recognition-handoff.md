@@ -365,3 +365,19 @@ starts, which paused the watcher for exactly that window; now live = the timer v
 moving hand. (3) The 4-reads-per-gap cap only reset when a lot went live, so a seller whose timer is never read was
 capped for the whole stream; it now resets on every new lot. Added: "read now" on the auto line (Ctrl+Shift+Y on the
 Whatnot tab while auto is on), always fills even over typing, and a status readout of what the watcher is doing.
+
+## Second live session (lots 24-56 of the export, mostly Sonnet): stamps
+
+Review meanings from here on (Derek): right = auto correct; listed = auto wrong but the card was in the list;
+wrong = the card was not in the list; no card = nothing on screen. Session 1's buttons used earlier meanings.
+Fixture: `docs/recog-reads/live-2026-10-16b.json` (19 lots with a known card).
+- Sonnet as streamed: 2.0 s median per read, p90 2.5 s; 56 lots cost $0.20 in total.
+- All 5 wrong picks were stamped cards. TCGplayer lists stamped promos as their own products ("Flareon ex 014 131
+  Prismatic Evolutions Stamp", 154 in the catalog), and an anniversary logo means a Classic Collection reprint that
+  keeps its original number (Shining Celebi 106/105 is Neo Destiny and the 30th Celebration Classic Collection).
+- Fixes: a set-logo stamp matches the stamped product by name; anniversary stamps fall back to any anniversary
+  reprint when the 25th / 30th guess is wrong; a product whose name carries "NNN TTT" counts as fitting the total;
+  the prompt says where stamps hide and to look inside a seller's marker circle. Result: 12 right, 1 wrong (was 8 / 5);
+  the one left is a Flareon whose stamp the model never mentioned.
+- Two lots had "no frame: 1 video element(s), none showing a picture" (dustyjsmith79, safamtb): the stream's
+  video had no picture at that moment; read now or the next lot covers it.

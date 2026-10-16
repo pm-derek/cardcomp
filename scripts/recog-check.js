@@ -3,6 +3,7 @@
 //   node scripts/recog-check.js
 // 1. fixtures:   autoMatch on the 20 confirmed frames as read by Opus / Haiku / Sonnet (docs/recog-reads).
 //    1b: Derek's first live test, 23 lots: Haiku as streamed, Sonnet / Opus on the same frames.
+//    1c: his second session, 33 lots, mostly Sonnet as streamed (stamped promos, anniversary reprints).
 //                Hard rule: a strong suggestion is never the wrong card.
 // 2. regression: manual search gives identical results with and without recog/automatch.js loaded.
 // 3. strip:      in a temp copy, scripts/strip-recog.js restores every touched file to main as it was before the
@@ -120,6 +121,26 @@ async function appPage(browser, base, blockRecog) {
     }
   }
   console.table(liveRows);
+
+  // ---------- 1c. second live session (lots 24-56), mostly Sonnet as streamed: stamped promos
+  console.log("1c. second live session: stamped promos, anniversary reprints");
+  const live2 = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/recog-reads/live-2026-10-16b.json"), "utf8")).lots;
+  const sess2 = await app.evaluate((live2) => {
+    const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
+    return live2.map((l) => {
+      const short = l.frames[0] ? Math.min(...l.frames[0].split("x").map(Number)) : 0;
+      const reads = l.reads.filter((r) => r.name && r.card_visible !== false);
+      let best = null;
+      for (const r of reads) { const m = autoMatch(r, { short, model: r.model || "" }); if (!best || (RANK[m.kind] || 0) >= (RANK[best.kind] || 0)) best = m; }
+      return { shot: l.shot, truth: l.truth && l.truth.ids, sug: best && best.suggestion, strength: best && best.strength, ids: best ? best.cards.map((c) => c.id) : [] };
+    });
+  }, live2);
+  const t2 = sess2.filter((r) => r.truth), by2 = Object.fromEntries(sess2.map((r) => [r.shot, r]));
+  const right2 = t2.filter((r) => r.sug && r.truth.includes(r.sug)).length, wrong2 = t2.filter((r) => r.sug && !r.truth.includes(r.sug)).length;
+  ok(!t2.some((r) => r.strength === "strong" && !r.truth.includes(r.sug)), "session 2: no strong suggestion is the wrong card");
+  ok(right2 >= 12 && wrong2 <= 1 && t2.every((r) => r.ids.some((id) => r.truth.includes(id))), `session 2: ${right2} of ${t2.length} picked right, ${wrong2} wrong (was 8 and 5), every right card listed`);
+  ok(by2[37].sug === "tc:654703" && by2[53].sug === "tc:623594" && by2[56].sug === "tc:618107", "stamp names the stamped product (Bulbasaur Mega Evolution, N's Reshiram Journey Together, Leafeon Prismatic Evolutions)");
+  ok(by2[34].sug === "me55c-106", "anniversary stamp read as 25th still finds the 30th Celebration Classic Collection Shining Celebi, not Neo Destiny");
 
   // ---------- 2. regression ----------
   console.log("2. regression: manual search unchanged");

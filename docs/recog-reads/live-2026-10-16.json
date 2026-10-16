@@ -1,10 +1,10 @@
 {
- "note": "Derek first live test, Haiku 5.5, 3 sellers. Frames kept out of the repo (chat usernames).",
+ "note": "Derek first live test, Haiku 5.5, 3 sellers. Frames kept out of the repo (chat usernames). Review buttons here use the EARLIER meanings (Derek did not rescore them); truth ids come from taps / opens and the frames, not from those buttons.",
  "lots": [
   {
    "shot": 1,
    "seller": "pokegamez",
-   "title": "RAW HEAT 🥵 #4",
+   "title": "RAW HEAT \ud83e\udd75 #4",
    "frames": [
     "720x1280",
     "720x1280"
@@ -46,7 +46,7 @@
   {
    "shot": 2,
    "seller": "pokegamez",
-   "title": "RAW HEAT 🥵 #5",
+   "title": "RAW HEAT \ud83e\udd75 #5",
    "frames": [
     "720x1280",
     "720x1280"
@@ -82,7 +82,7 @@
   {
    "shot": 3,
    "seller": "pokegamez",
-   "title": "RAW HEAT 🥵 #6",
+   "title": "RAW HEAT \ud83e\udd75 #6",
    "frames": [
     "720x1280",
     "720x1280"

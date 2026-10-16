@@ -93,7 +93,7 @@ const RECOG_ASK = `Return the card held in front:
 - total: the digits after the slash (e.g. 182), "" if none or unreadable
 - language: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
 - rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
-- stamp: any small logo stamped on the card, e.g. a Pikachu 30th or 25th anniversary logo, Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark; "" if none
+- stamp: look closely for a stamp, a small logo printed on the art or text box, often in a corner: a set logo on a stamped promo reprint (e.g. "Prismatic Evolutions", "Journey Together", "Mega Evolution"), a Pikachu anniversary logo (read whether it says 25th or 30th), Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark. Sellers often circle a stamp or other detail with a marker: look inside any hand-drawn circle. Name what the stamp says; "" if there is none
 - set: the set if you can tell, else ""
 - confidence: 0 to 1 that the name is right`;
 const RECOG_SCHEMA = {
