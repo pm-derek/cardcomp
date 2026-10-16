@@ -72,6 +72,35 @@
   .bidtbl .pc{font-size:10.5px;color:var(--dim);line-height:1.2}
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
+  /* stream stats panel (under the sticky search row, opened from "stats" in the lot strip) */
+  #lotstats{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 12px 10px;margin:0 0 10px;font-size:12.5px}
+  #lotstats .lshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+  #lotstats .lshead b{font-size:13.5px;color:var(--ink)}
+  #lotstats .lssel{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 6px;max-width:170px}
+  #lotstats .lschips{margin-left:auto;display:flex;gap:4px}
+  #lotstats .lschips span{cursor:pointer;padding:5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);font-size:11.5px}
+  #lotstats .lschips span.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
+  #lotstats .lsverdict{display:flex;gap:9px;align-items:flex-start;border-left:3px solid;border-radius:6px;background:var(--panel2);padding:8px 10px;margin-bottom:10px;line-height:1.4;color:var(--dim)}
+  #lotstats .lsverdict b{color:var(--ink)}
+  #lotstats .lsicon{font-weight:800;font-size:14px;line-height:1.2}
+  #lotstats .lstiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+  #lotstats .lst{background:var(--panel2);border-radius:9px;padding:8px 9px;min-width:0}
+  #lotstats .lsl{font-size:10.5px;color:var(--faint)}
+  #lotstats .lsv{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:22px;color:var(--ink);line-height:1.15;margin:2px 0}
+  #lotstats .lss{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+  #lotstats .lslegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-bottom:2px}
+  #lotstats .lslegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px;box-sizing:border-box}
+  #lotstats .lsmuted{color:var(--faint)}
+  #lotstats .lsax{fill:var(--faint);font-size:10px}
+  #lotstats .lsref{fill:var(--dim);font-size:10px}
+  #lotstats .lsdot{cursor:pointer}
+  #lotstats .lstip{position:absolute;z-index:5;width:190px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11.5px;line-height:1.45;color:var(--dim);pointer-events:none}
+  #lotstats .lstip b{color:var(--ink)}
+  #lotstats .lsx{font-size:11px;color:var(--faint);margin:4px 0 6px}
+  #lotstats .lstab{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+  #lotstats .lstab th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;padding:4px 4px;border-bottom:1px solid var(--line)}
+  #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
+  @media (max-width:440px){ #lotstats .lstiles{grid-template-columns:repeat(2,1fr)} #lotstats .lstab th:nth-child(4),#lotstats .lstab td:nth-child(4){display:none} }
   /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
      every tap target is at least ~40px tall (phone thumb, side panel mouse) */
   .condgrid{display:grid;grid-template-columns:auto auto minmax(92px,1fr) auto auto auto;gap:7px 10px;font-size:13.5px;align-items:center}
@@ -235,6 +264,7 @@
     </div>
     <div id="sug" class="sug"></div>
   </div>
+  <div id="lotstats" style="display:none"></div>
   <!-- outside the sticky row on purpose: pinning these cost ~44px of a ~315px split-screen viewport,
        and an opened card carries its own good/ok/bad strip, so flagging is still one tap away -->
   <div class="flagstrip idle" id="flagstrip">
@@ -274,6 +304,7 @@
   <div id="cartitems" style="display:none;max-height:40vh;overflow:auto;margin-bottom:8px"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
     <span id="cartsum" style="font-size:13px;cursor:pointer">🛒 0</span>
+    <b id="cartsend" class="cpy" data-cart="1" title="tap: the whole cart's max bid goes into Whatnot" style="margin-left:auto;font-size:16px;color:var(--gold);border:1px solid var(--gold);border-radius:9px;padding:9px 14px;cursor:pointer;white-space:nowrap"></b>
     <button id="cartclear" style="font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer">clear cart</button>
   </div>
 </div>
@@ -2572,7 +2603,9 @@ function sendToWhatnot(s, el, show, labelOnly){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
   try{
     const ds=(el&&el.dataset)||{};
-    if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
+    if(ds.keep && LAST_TAP){   // strip nudge ("bid $15"): same card as the max it raises
+      LAST_TAP=Object.assign(cardFields(LAST_TAP), { bid:+s, at:Date.now() }); name=LAST_TAP.n||"";
+    } else if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
       const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
         return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin).toFixed(2)}); });
       name=`${cards.length} cards`;
@@ -2597,7 +2630,10 @@ window.addEventListener("message", e=>{
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
   if(!(fromSelf||fromPanel)) return;
   const p=WN_PENDING; if(!p || Date.now()-p.at>3000) return;
-  if(!d.ok && d.why==="under" && d.min){ p.show("under next $"+d.min, "var(--red)"); WN_PENDING=null; return; }   // filled, but below the lowest bid Whatnot takes: pass
+  if(!d.ok && d.why==="under" && d.min){   // priced out: nothing opened in Whatnot; put the minimum in "your bid" so one tap on send bids it
+    p.show("under next $"+d.min, "var(--red)"); WN_PENDING=null;
+    document.querySelectorAll(".ovrin").forEach(i=>{ i.value=String(d.min); i.style.borderColor="var(--red)"; setTimeout(()=>{ i.style.borderColor=""; }, 4000); });
+    LOT_UNDER={min:d.min, at:Date.now()}; paintLot(); return; }   // filled, but below the lowest bid Whatnot takes: pass
   if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null;
     const last=TAPS_THIS_LOT[TAPS_THIS_LOT.length-1]; if(last && String(last.bid)===String(p.s)) last.filled=true;   // landed in the Custom bid box, not just copied
     if(LAST_TAP && String(LAST_TAP.bid)===String(p.s)) LAST_TAP.filled=true; }
@@ -2629,7 +2665,7 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
-let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
   const v=LAST_VIEW; if(!v || v.at<from || v.at>to) return null;
@@ -2660,7 +2696,19 @@ function paintLot(){
   else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
+  if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
   if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
+  parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}</span>`);
+  // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
+  // with what that price would net so the nudge is a decision, not a reflex
+  let nudge="";
+  const pricedOut=!d.ended && !d.me && tap && tap.bid>=1 && d.next!=null && (over || (LOT_UNDER && LOT_UNDER.at>=LOT_START));
+  if(pricedOut){
+    const mkt=tap.condMarket||tap.market||0, net=mkt>0 ? netProceeds(listSale(mkt))-d.next : null;
+    nudge=`<div style="margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="color:var(--red)">priced out: next bid $${d.next}</span>`+
+      `<button class="lotnudge" data-bid="${d.next}" data-keep="1" style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:7px 12px;cursor:pointer">bid $${d.next}</button>`+
+      (net!=null?`<span style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)} at $${d.next}</span>`:"")+`</div>`;
+  }
   // what this lot will be logged as: the card you tapped a bid on, else the card you opened, else nothing
   const pre=d.ended ? "next lot " : "";   // after "Sold", what you open or tap belongs to the next lot
   const lab = tap ? `<span style="color:var(--green)">${pre}logging: ${escH(tap.n).slice(0,28)} ${tap.cond||""}</span>`
@@ -2668,8 +2716,117 @@ function paintLot(){
             : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
   const nm=d.title ? lotQuery(d.title) : "";
   const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
   const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
+  const nb=el.querySelector(".lotnudge"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); copyAmt(nb.dataset.bid, nb); };
+  const sb=el.querySelector(".lotstatbtn"); if(sb) sb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=!LOTSTATS_OPEN; paintLot(); paintLotStats(); };
+}
+function cardFields(t){ const o=Object.assign({}, t); delete o.bid; delete o.at; delete o.filled; return o; }   // a nudge keeps the card the max was for
+// ---- Stream stats: one slim row per finished lot, kept in this browser (120 days, 4000 rows) ----
+// Labeled lots (a card tapped or opened) carry the condition market, so each sale becomes a % of market.
+const LOTS_KEY="cardcomp_lots";
+function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
+function recordLotStat(rec){
+  try{
+    const c=rec.card||null, multi=c&&c.multi&&c.cards;
+    const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
+    const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
+    const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
+      n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
+      mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null };
+    const cut=Date.now()-120*86400000;
+    const rows=loadLots().filter(r=>r.at>=cut); rows.push(row);
+    localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
+  }catch(_){ }
+  if(LOTSTATS_OPEN) paintLotStats();
+}
+const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
+function lotStats(seller, scope){
+  let rows=loadLots().filter(r=>r.s===seller).sort((a,b)=>a.at-b.at);
+  if(scope==="stream"){   // this sitting: walk back from the latest lot while gaps stay under 45 min
+    let i=rows.length-1; while(i>0 && rows[i].at-rows[i-1].at<45*60000) i--; rows=rows.slice(Math.max(0,i));
+  }
+  const lab=rows.filter(r=>r.m>0 && r.f>0), pct=r=>r.f/r.m, net=r=>(r.np!=null?r.np-r.f:null);
+  const mine=r=>Math.max(r.mx||0, r.pm||0);
+  const wins=lab.filter(r=>r.me), bidLost=lab.filter(r=>!r.me && mine(r)>0);
+  const winNet=wins.reduce((s,r)=>s+(net(r)||0),0), winCost=wins.reduce((s,r)=>s+r.f,0);
+  const under=bidLost.filter(r=>r.f<=mine(r) && net(r)>0), above=bidLost.filter(r=>r.f>mine(r) && net(r)>0);   // under: you'd have taken it at that price; above: profitable, but past your margin target
+  const mf=getNum("tgtmargin",10)/100;
+  const withMax=lab.filter(r=>r.mx>0);
+  const maxPct=withMax.length>=3 ? med(withMax.map(r=>r.mx/r.m)) : med(lab.filter(r=>r.np>0).map(r=>r.np/(1+mf)/r.m));
+  return { rows, seen:rows.length, lab, n:lab.length, sold:med(lab.map(pct)), wins, winPct:med(wins.map(pct)), winNet, winMargin:winCost>0?winNet/winCost:null,
+    lostPct:med(bidLost.map(pct)), bidLost, under, above, underSum:under.reduce((s,r)=>s+net(r),0), aboveSum:above.reduce((s,r)=>s+net(r),0),
+    maxPct, target:mf, roomMargin:med(lab.filter(r=>r.np!=null).map(r=>net(r)/r.f)) };
+}
+let LOTSTATS_SELLER="", LOTSTATS_SCOPE="stream";
+function paintLotStats(){
+  const el=$("#lotstats"); if(!el) return;
+  if(!LOTSTATS_OPEN){ el.style.display="none"; return; }
+  const all=loadLots(), sellers=[...new Set(all.slice().reverse().map(r=>r.s))];
+  const seller=LOTSTATS_SELLER || (LOT&&LOT.seller) || sellers[0] || "";
+  el.style.display="block";
+  if(!seller){ el.innerHTML=`<div class="lsx">No finished lots yet. Stats fill in as lots end on a Whatnot tab.</div>`; return; }
+  const S=lotStats(seller, LOTSTATS_SCOPE), P=v=>v==null?"–":Math.round(v*100)+"%", D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2);
+  // verdict: where this room closes vs where your max sits (status = icon + label, never color alone)
+  let vc="var(--faint)", vi="…", vt=`Need 5 labeled lots for a read (${S.n} so far). Open or tap the card each lot.`;
+  if(S.n>=5 && S.sold!=null && S.maxPct!=null){
+    const d=(S.sold-S.maxPct)*100;
+    if(d<=-5){ vc="var(--green)"; vi="✓"; vt=`<b>Soft room.</b> Lots close at ${P(S.sold)} of market, under your ~${P(S.maxPct)} max. Worth staying.`; }
+    else if(d<=5){ vc="var(--gold)"; vi="~"; vt=`<b>Even room.</b> Lots close at ${P(S.sold)}, right at your ~${P(S.maxPct)} max. Wins will be thin.`; }
+    else { vc="var(--red)"; vi="✕"; vt=`<b>Hot room.</b> Lots close at ${P(S.sold)}, above your ~${P(S.maxPct)} max. You will mostly lose here.`; }
+  }
+  const tile=(label,val,sub)=>`<div class="lst"><div class="lsl">${label}</div><div class="lsv">${val}</div><div class="lss">${sub}</div></div>`;
+  const tiles=
+    tile("Selling at", P(S.sold), `of market · ${S.n} lot${S.n===1?"":"s"}`)+
+    tile("You win at", P(S.winPct), `${S.wins.length} win${S.wins.length===1?"":"s"}${S.lostPct!=null?` · lose at ${P(S.lostPct)}`:""}`)+
+    tile("Your margin", S.winMargin==null?"–":P(S.winMargin), `${S.wins.length?D(S.winNet)+" net · ":""}target ${P(S.target)}`)+
+    tile("Left on table", S.under.length+S.above.length?D(S.underSum+S.aboveSum):"$0", `${S.under.length} under your max · ${S.above.length} past it`);
+  el.innerHTML=`
+    <div class="lshead"><b>Stream stats</b>
+      <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
+      <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span></div>
+    <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
+    <div class="lstiles">${tiles}</div>
+    <div class="lschart"></div>
+    <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
+    ${lotTable(S)}`;
+  el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
+  el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
+  lotDotStrip(el.querySelector(".lschart"), S);
+}
+// Dot strip: every labeled lot at its sale price as % of market. Emphasis form: your wins filled green,
+// lots you bid on and lost filled gray, the rest hollow gray. Reference lines: 100% market, your usual max.
+function lotDotStrip(host, S){
+  if(!S.n){ host.innerHTML=""; return; }
+  const W=Math.max(260, host.clientWidth||520), H=86, padL=14, padR=20, y0=18, y1=60;
+  const ps=S.lab.map(r=>r.f/r.m);
+  const hi=Math.min(2, Math.max(1.25, Math.ceil((Math.max(...ps)+0.05)*4)/4));   // domain hugs the data, always shows 100% (market)
+  const lo=Math.min(0.5, Math.max(0, Math.floor((Math.min(...ps)-0.05)*4)/4));
+  const x=p=>padL+((Math.min(Math.max(p,lo),hi)-lo)/(hi-lo))*(W-padL-padR);
+  const WIN="#33a876", OTHER="#6b7685", SURF="var(--panel)";
+  const mine=r=>Math.max(r.mx||0, r.pm||0)>0;
+  const rows=S.lab.slice(-120);
+  // simple beeswarm: place each dot in the lowest lane (of 4) not crowded within 9px
+  const lanes=[[],[],[],[]], ly=i=>y0+8+i*((y1-y0-8)/3);
+  const dots=rows.map(r=>{ const cx=x(r.f/r.m); let L=0; for(;L<4;L++){ if(!lanes[L].some(v=>Math.abs(v-cx)<9)) break; } L=Math.min(L,3); lanes[L].push(cx); return {r,cx,cy:ly(L)}; });
+  const ticks=[0,0.25,0.5,0.75,1,1.25,1.5,1.75,2].filter(g=>g>=lo && g<=hi && (hi-lo<=1 || g*4%2===0));
+  const grid=ticks.map(g=>`<line x1="${x(g)}" x2="${x(g)}" y1="${y0}" y2="${y1+4}" stroke="var(--line)" stroke-width="1"/><text x="${x(g)}" y="${H-6}" text-anchor="${g===lo?"start":g===hi?"end":"middle"}" class="lsax">${Math.round(g*100)}%${g===1?" mkt":""}</text>`).join("");
+  const ref=S.maxPct!=null?`<line x1="${x(S.maxPct)}" x2="${x(S.maxPct)}" y1="${y0-6}" y2="${y1+4}" stroke="var(--gold)" stroke-width="2"/><text x="${x(S.maxPct)}" y="${y0-9}" text-anchor="${x(S.maxPct)>W-90?"end":"middle"}" class="lsref">your max ~${Math.round(S.maxPct*100)}%</text>`:"";
+  const marks=dots.map((d,i)=>{ const won=d.r.me, bid=mine(d.r);
+    const fill=won?WIN:(bid?OTHER:"none"), stroke=won?WIN:OTHER;
+    return `<g class="lsdot" data-i="${i}"><circle cx="${d.cx}" cy="${d.cy}" r="10" fill="transparent"/><circle cx="${d.cx}" cy="${d.cy}" r="5" fill="${fill}" stroke="${fill==="none"?stroke:SURF}" stroke-width="2"/></g>`; }).join("");
+  host.innerHTML=`<div class="lslegend"><span><i style="background:${WIN}"></i>you won</span><span><i style="background:${OTHER}"></i>you bid, lost</span><span><i style="border:2px solid ${OTHER}"></i>others</span><span class="lsmuted">sale price as % of market</span></div>
+    <div style="position:relative"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Lot sale prices as percent of market">${grid}${ref}${marks}</svg><div class="lstip" style="display:none"></div></div>`;
+  const tip=host.querySelector(".lstip");
+  host.querySelectorAll(".lsdot").forEach(g=>{ const d=dots[+g.dataset.i], r=d.r, n=r.np!=null?r.np-r.f:null;
+    const show=()=>{ tip.innerHTML=`<b>${escH(r.n||"card")}</b> ${escH(r.c||"")}<br>sold $${r.f} · ${Math.round(r.f/r.m*100)}% of $${r.m.toFixed(2)}<br>${r.me?"you won":"won by "+escH(r.w||"?")}${n!=null?` · ${n>=0?"+":"−"}$${Math.abs(n).toFixed(2)} at that price`:""}${Math.max(r.mx||0,r.pm||0)?` · your max $${Math.max(r.mx||0,r.pm||0)}`:""}`;
+      tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
+    g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
+}
+function lotTable(S){   // the table view: last labeled lots, newest first
+  const rows=S.lab.slice(-12).reverse(); if(!rows.length) return "";
+  return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null;
+    return `<tr><td>${escH((r.n||"").slice(0,26))} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${Math.round(r.f/r.m*100)}%</td><td>${r.me?"<b>you</b>":escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
@@ -2699,7 +2856,8 @@ window.addEventListener("message", e=>{
     rec.bidsSent=TAPS_THIS_LOT.filter(t=>t.t>=from);
     TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
-    const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM.json (needs the token)
+    recordLotStat(rec);
+    const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
     try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
     paintLot();
   }
@@ -2979,7 +3137,9 @@ function renderCart(){
   // the total is tappable like any bid: copies, goes into Whatnot, and labels the lot with every card in the cart
   $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b class="cpy carttot" data-bid="${totBid.toFixed(2)}" data-cart="1" title="${cpTitle()}" style="color:var(--gold);font-size:15px;cursor:pointer;text-decoration:underline dotted">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
   { const t=$("#cartitems").querySelector(".carttot"); if(t) t.onclick=(e)=>{ e.stopPropagation(); copyAmt(t.dataset.bid, t); }; }
-  $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
+  $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} <span style="color:var(--faint);font-size:11px">· tap to view</span>`;
+  // the cart's max bid sits in the bar itself: one tap sends it, no need to open the list first
+  const cs=$("#cartsend"); if(cs){ cs.dataset.bid=totBid.toFixed(2); cs.textContent="bid $"+Math.floor(totBid); cs._t0=null; cs.onclick=(e)=>{ e.stopPropagation(); copyAmt(cs.dataset.bid, cs); }; }
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
 }

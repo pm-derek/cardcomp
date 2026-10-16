@@ -15,6 +15,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const amt = String(Math.max(0, Math.floor(Number(msg.amount) || 0)));
   if (amt === "0") { reply({ ok: false, why: "no amount" }); return; }
   pending = { amt, name: msg.name || "", at: Date.now() };
+  // Already priced out (the live lot's next bid is above this max): don't open Custom bid at all
+  const min0 = minBid();
+  if (min0 != null && +amt < min0) {
+    toast(`Pass: your max $${amt}${pending.name ? " for " + pending.name : ""} is under the next bid $${min0}.`, "bad");
+    pending = null;
+    reply({ ok: false, why: "under", min: min0 });
+    return;
+  }
   take(pending).then((how) => {
     // Under the minimum (Custom bid shows "$2 $3 $4 $5" and "Enter an amount of $2 or more"): the box is
     // filled so Derek sees it, but Whatnot will refuse it, so say pass instead of "place the bid".
@@ -229,6 +237,7 @@ function readLot() {
     else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
     else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
     else if (/^awaiting next item$/i.test(t)) st.waiting = true;
+    else if ((m = /^max bid added:?\s*\$([\d,]+)/i.exec(t))) st.placedMax = +m[1].replace(/,/g, "");   // what Derek actually set, even if he edited the box by hand
     else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
     else if (LOT_RX.meWon.test(t)) { meWon = true; st.me = true; }           // "You won" popup in the middle of the video
     else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
@@ -257,6 +266,7 @@ function endLot(st) {
     winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),
     sold: !!st.ended,                                     // saw "Sold" / "won!" (false: the lot rolled over without an end screen)
     iLed: lot.iLed,                                       // Derek was the leader at some point: proof he actually bid, not just tapped
+    placedMax: lot.placedMax != null ? lot.placedMax : null,   // from "Max bid added $13": the max really set in Whatnot (may differ from what CardComp sent)
     leaders: [...lot.leaders], hist: lot.hist,            // hist: every lead change {t: s since lot start, u: user, a: amount}
     ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
     room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
@@ -281,6 +291,7 @@ function lotTick() {
     if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
     if (tSec != null) lot.lastSec = tSec;
     if (st.me) lot.iLed = true;
+    if (st.placedMax != null) lot.placedMax = st.placedMax;
   }
   if (lot && st.lead) {
     lot.leaders.add(st.lead);
