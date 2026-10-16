@@ -145,3 +145,60 @@ What the harness already told us (mock frames, real data.json):
 - Image cost: one visual token per 28x28 patch. A 1280x720 frame is ~1,150 tokens; cropped to the middle
   half and downscaled to 640x720 it is ~600. Haiku 5.5 and Sonnet 5.5 both take `output_config.format`
   (structured outputs, no beta header); the script falls back to plain-JSON text if a model rejects it.
+
+## Results: 20 real Whatnot screenshots read by Claude (2026-10-16)
+
+Derek pasted 20 frames from 4 sellers into the session; Claude (Opus 5.5) read each blind, Derek gave the
+truth, and each reading was searched in the real app headless. Per-shot detail: `docs/recog-shots-2026-10-16.csv`.
+The images themselves stay out of this public repo (they show chat usernames). This is a ceiling: Haiku /
+Sonnet still need the API run (`scripts/recog-test.js`) before picking a model.
+
+| | count |
+|---|---|
+| name right | 20 / 20 (incl. 2 JP, 1 vintage behind a wall of other cards) |
+| number exact | 5 / 20 (one more off by one digit) |
+| number unreadable | 14 / 20 (motion blur, or camera a few feet back: zenzoogie 0 / 10) |
+| card not in catalog (under $1.50 floor) | 6 / 20 |
+| app showed a WRONG card on the reading | 7 / 20 |
+| right card first, of the 14 in catalog | 10 (12 with the rules below; Mew ex and Snorunt stay ambiguous) |
+
+Every wrong card came from one of two app behaviours, not from misreading:
+- Under-floor card, name search lands on a pricier sibling: Radiant Heatran (Prize Pack $21), Jellicent ex
+  (SIR $25), Cynthia's Garchomp ex (SIR $185 for a UR).
+- Number given but no exact match, so `run()` falls back to "closest by name", a different Pokemon with that
+  number: Mewtwo ex, Beedrill V, Sinistcha ex.
+
+Other findings:
+- During "Sold" / "Awaiting next item" every seller already shows the NEXT lot's card (9 of 20 frames). A frame
+  labels the lot whose timer is running; Sold-time frames belong to the next lot.
+- Name + rarity read (IR, SIR, full art) pinned 7 cards with no number. The model should return rarity.
+- Number legibility depends on the seller's camera, not the model: close cameras (munchingcards) gave clean
+  numbers, far ones none. Grab frames when the card is largest, not only when it is still.
+
+## Two use cases (Derek, 2026-10-16)
+
+1. **Scouting**: several streams open, the extension labels lots by itself and shows each seller's
+   sell % of market, so Derek can pick where to buy. Unattended, so only high-confidence labels count.
+2. **Live buying**: Derek is on one stream, sees the auto result next to the card and validates every one
+   by eye ("obviously bulk but the result is not bulk" means wrong card, no tap). Speed matters, a miss is cheap
+   because a human checks.
+
+Match rules for an auto query (both use cases; the difference is only what happens on low confidence):
+- Exact: name + number exact (or within one digit) + set total consistent. Open it.
+- Unique: name + rarity resolves to one card. Open it, marked "no number".
+- Ambiguous: several printings (Mew ex 21, Scrafty 2, Snorunt 2). Live: show them as chips, no open.
+  Scouting: skip the lot.
+- Not in catalog: name found but no printing matches number / rarity, or no hit. Show "not in catalog,
+  likely under $1.50". Never the closest-by-name fallback, never a pricier sibling. Scouting: count it as
+  bulk (sold price only, no % of market).
+- Price-spread guard: when the candidates for a name span more than ~5x (Garchomp UR vs SIR), require the
+  number before opening, whatever the use case.
+
+Scouting extra constraints, to test before building: `captureVisibleTab` only sees the visible tab, so several
+streams need a `<video>`-to-canvas grab in `whatnot.js` (cross-origin taint untested) or one window per stream.
+Chrome may stop painting video in hidden tabs. Cost at Haiku prices is small even for 4 streams
+(about 400 lots an hour, about $0.10 an hour at one frame per lot).
+
+Build order: (1) the match rules in `index.html` as an `auto` query path, testable now with the CSV readings
+as fixtures; (2) API run of Haiku / Sonnet on the same 20 frames; (3) capture + trigger in the extension for
+live buying; (4) scouting across streams, after confirming background capture works.
