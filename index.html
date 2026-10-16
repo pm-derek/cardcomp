@@ -102,6 +102,11 @@
   #lotstats .lstab{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
   #lotstats .lstab th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;padding:4px 4px;border-bottom:1px solid var(--line)}
   #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
+  #lotstats .lshaul{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;background:var(--panel2);border-radius:9px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--dim)}
+  #lotstats .lshaul b{color:var(--ink);font-size:14px}
+  #lotstats .lstab tr.me td{background:rgba(51,168,118,.12);color:var(--ink);font-weight:600}
+  #lotstats .lstab tr.me td:first-child{box-shadow:inset 3px 0 0 #33a876}
+  #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
   #lotstats .lsclear button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
   #lotstats .lsclear button:hover{border-color:var(--red);color:var(--ink)}
@@ -2709,6 +2714,7 @@ function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
+  if(d.seller && VERDICT.seller!==d.seller) refreshVerdict(d.seller);   // this stream's read + haul, before anything below uses them
   // only a bid sent (or a card opened) since the previous lot ended, and within 5 min: lots are generic
   // ("$2 start #43"), so an older tap is a different card
   const fresh=x=>x && x.at>=LOT_START && Date.now()-x.at<LABEL_MAX_MS;
@@ -2728,8 +2734,9 @@ function paintLot(){
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
-  if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
-  if(d.seller && VERDICT.seller!==d.seller) refreshVerdict(d.seller);
+  const H=VERDICT.haul;   // this stream, from the stats store: "won 3 · $24 · +$4.20"
+  if(H && H.n) parts.push(`<span style="color:var(--ink)">won ${H.n} · $${Math.round(H.spent)}${H.n>H.unl?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}</span>`);
+  else if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won 0</span>`);
   parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
   // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
   // with what that price would net so the nudge is a decision, not a reflex
@@ -2804,10 +2811,21 @@ function lotStats(seller, scope){
 }
 let LOTSTATS_SELLER="", LOTSTATS_SCOPE="stream";
 let VERDICT={seller:"", txt:"", col:""};   // strip summary: "hot 77%" for this stream, so the sheet rarely needs opening
+// Your haul over a set of lots: wins, spent, market value of the labeled wins, net if listed at market.
+// Unlabeled wins count toward spent but have no market, so net covers labeled wins only (said in the UI).
+function haul(rows){
+  const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
+  const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f,0);
+  const net=priced.reduce((a,r)=>a+(r.np-r.f),0), mkt=priced.reduce((a,r)=>a+r.m,0);
+  return { n:wins.length, spent, net, mkt, margin:pSpent>0?net/pSpent:null, unl:wins.length-priced.length };
+}
+function streamRows(seller){ return lotStats(seller, "stream").rows; }
+function todayRows(){ const m=new Date(); m.setHours(0,0,0,0); return loadLots().filter(r=>r.at>=m.getTime()); }
 function refreshVerdict(seller){
-  VERDICT={seller, txt:"", col:""};
+  VERDICT={seller, txt:"", col:"", haul:null};
+  try{ VERDICT.haul=haul(streamRows(seller)); }catch(_){ }
   try{ const S=lotStats(seller, "stream"); if(S.n>=5 && S.sold!=null && S.maxPct!=null){ const d=(S.sold-S.maxPct)*100, p=Math.round(S.sold*100)+"%";
-    VERDICT = d<=-5 ? {seller, txt:"soft "+p, col:"var(--green)"} : d<=5 ? {seller, txt:"even "+p, col:"var(--gold)"} : {seller, txt:"hot "+p, col:"var(--red)"}; } }catch(_){ }
+    Object.assign(VERDICT, d<=-5 ? {txt:"soft "+p, col:"var(--green)"} : d<=5 ? {txt:"even "+p, col:"var(--gold)"} : {txt:"hot "+p, col:"var(--red)"}); } }catch(_){ }
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && LOTSTATS_OPEN){ LOTSTATS_OPEN=false; paintLot(); paintLotStats(); } });
 function paintLotStats(){
@@ -2837,6 +2855,7 @@ function paintLotStats(){
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
       <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
+    ${haulHTML(haul(S.rows), "This stream")}${haulHTML(haul(todayRows()), "Today, all streams")}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
@@ -2913,10 +2932,17 @@ function lotDotStrip(host, S){
       tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
     g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
 }
-function lotTable(S){   // the table view: last labeled lots, newest first
-  const rows=S.lab.slice(-12).reverse(); if(!rows.length) return "";
+function haulHTML(H, label){
+  const D=v=>(v<0?"−":"+")+"$"+Math.abs(v).toFixed(2);
+  if(!H.n) return `<div class="lshaul"><span class="lsl">${label}</span><span class="lsmuted">no wins yet</span></div>`;
+  return `<div class="lshaul"><span class="lsl">${label}</span><b>${H.n} won</b><span>$${H.spent.toFixed(0)} spent</span>`+
+    (H.n>H.unl ? `<span>$${H.mkt.toFixed(0)} market</span><b style="color:${H.net>=0?"var(--green)":"var(--red)"}">${D(H.net)} net${H.margin!=null?` (${Math.round(H.margin*100)}%)`:""}</b>` : "")+
+    (H.unl ? `<span class="lsmuted">${H.unl} win${H.unl===1?"":"s"} without a card, not in net</span>` : "")+`</div>`;
+}
+function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
+  const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null;
-    return `<tr><td>${escH((r.n||"").slice(0,26))} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${Math.round(r.f/r.m*100)}%</td><td>${r.me?"<b>you</b>":escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
