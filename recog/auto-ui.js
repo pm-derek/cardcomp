@@ -11,7 +11,7 @@
   const post = (m) => { try { if (window.parent !== window) window.parent.postMessage(m, "*"); else window.postMessage(m, location.origin); } catch (_) {} };
   const fromExt = (e) => (e.source === window && e.origin === location.origin) || (window.parent !== window && e.source === window.parent);
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
-  const RANK = { exact: 5, near: 4, unique: 3, ambiguous: 2, "number-miss": 1, none: 0 };
+  const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
   let EXT = false, STATE = { on: false, model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null;
   const AUTO = {};   // lot key (whatnot startedAt) -> { best: {m, r, d} }
   const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
@@ -51,6 +51,7 @@
     let what;
     if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
+    else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
     else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
     return `${d.pre ? "before start: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
@@ -63,7 +64,12 @@
     try { if (typeof PRINT_HINT !== "undefined") PRINT_HINT = ""; } catch (_) {}
     render(m.cards.map((c, i) => Object.assign({}, c, { score: 1000 - i })), false, false);
     const rd = $("#read"); if (rd) rd.textContent = "";
-    const st = $("#status"); if (st) st.textContent = m.cards.length ? (m.note || (m.cards.length + " match" + (m.cards.length > 1 ? "es" : ""))) + " · auto" : (m.note || "no match") + " · auto";
+    const st = $("#status");
+    if (st) {
+      st.textContent = (m.kind === "foreign" ? "⚠ " : "") + (m.cards.length ? (m.note || (m.cards.length + " match" + (m.cards.length > 1 ? "es" : ""))) : (m.note || "no match")) + " · auto";
+      st.style.color = m.kind === "foreign" ? "var(--red)" : "";   // run() rewrites the text on the next manual search; the color is reset here and there
+      if (m.kind === "foreign") { const q = $("#q"); if (q) q.addEventListener("input", () => { st.style.color = ""; }, { once: true }); }
+    }
     if (m.suggestion) {
       const el = document.querySelector(`#results .card[data-id="${CSS.escape(m.suggestion)}"]`);
       if (el) {
@@ -95,7 +101,10 @@
       return;
     }
     a.best = { m, r, d };
-    const touched = TOUCH > d.key;   // Derek typed or clicked a result since this lot started: leave his search alone
+    // Derek typed or tapped a result for THIS card (within 1.5 s before the frame, or while it was being read):
+    // leave his search alone. Measured from the frame, not the lot: the lot can exist well before its card is shown,
+    // and a tap on the previous card then blocked the new one (live test).
+    const touched = TOUCH > (d.capAt || d.key) - 1500;
     if (!touched) fill(m, r);
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");

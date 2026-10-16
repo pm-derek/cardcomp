@@ -30,10 +30,14 @@ if (mode === "novideo") { window.__mockReady = true; }
 else {
   const src = document.createElement("canvas"); src.width = 1280; src.height = 720;
   const g = src.getContext("2d"); let f = 0;
-  window.__scene = 0;   // 0: Kyurem ex held up, 1: a different card, 2: empty table
-  const SC = [["#3a6ea5", "#f3e9c6", "Kyurem ex", "157/086", 500], ["#7a2e2e", "#c9e4f5", "Cetitan ex", "210/182", 200], ["#2e5a2e", null, "", "", 0]];
-  const draw = () => { const [bg, card, nm, num, x] = SC[window.__scene]; g.fillStyle = bg; g.fillRect(0, 0, 1280, 720);
-    if (card) { g.fillStyle = card; g.fillRect(x, 120 + (f++ % 4), 280, 400); g.fillStyle = "#111"; g.font = "bold 26px sans-serif"; g.fillText(nm, x + 20, 165); g.font = "16px sans-serif"; g.fillText(num, x + 20, 500); } };
+  // 0: Kyurem ex held up, 1: a different card, 2: empty table, 3 and 4: a far camera (card ~18% of the width, as on a 720p
+  // portrait stream) showing two
+  // different cards in the same spot, the case a whole-frame comparison missed live
+  window.__scene = 0;
+  const SC = [["#3a6ea5", "#f3e9c6", "Kyurem ex", "157/086", 500, 120, 280, 400], ["#7a2e2e", "#c9e4f5", "Cetitan ex", "210/182", 200, 120, 280, 400], ["#2e5a2e", null, "", "", 0, 0, 0, 0],
+    ["#555555", "#f3e9c6", "Numel", "223", 530, 220, 230, 320], ["#555555", "#2b2140", "Gengar ex", "154", 530, 220, 230, 320]];
+  const draw = () => { const [bg, card, nm, num, x, y, w, h] = SC[window.__scene]; g.fillStyle = bg; g.fillRect(0, 0, 1280, 720);
+    if (card) { g.fillStyle = card; g.fillRect(x, y + (f++ % 4), w, h); g.fillStyle = "#888"; g.font = "bold " + Math.round(w / 11) + "px sans-serif"; g.fillText(nm, x + w / 14, y + h / 9); g.fillText(num, x + w / 14, y + h - 10); } };
   draw(); setInterval(draw, 100);
   const v = document.createElement("video"); v.id = "v"; v.muted = true; v.autoplay = true; v.playsInline = true;
   v.srcObject = src.captureStream(10); document.body.appendChild(v);

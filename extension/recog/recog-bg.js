@@ -91,7 +91,7 @@ const RECOG_ASK = `Return the card held in front:
 - name: the card name as printed, in English (for a Japanese card, the English name of that Pokemon or trainer card), with prefixes and suffixes such as Radiant, Shining, Mega, Team Rocket's, Cynthia's, ex, EX, GX, V, VMAX, VSTAR, LV.X, Prime
 - number: the collector number at the bottom (digits or code before the slash, e.g. 233, SV049, TG12), "" if unreadable
 - total: the digits after the slash (e.g. 182), "" if none or unreadable
-- language: en, jp or other
+- language: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
 - rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
 - stamp: any small logo stamped on the card, e.g. a Pikachu 30th or 25th anniversary logo, Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark; "" if none
 - set: the set if you can tell, else ""
@@ -101,7 +101,7 @@ const RECOG_SCHEMA = {
   required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "set", "confidence"],
   properties: {
     card_visible: { type: "boolean" }, name: { type: "string" }, number: { type: "string" }, total: { type: "string" },
-    language: { type: "string", enum: ["en", "jp", "other"] }, rarity: { type: "string" }, stamp: { type: "string" }, set: { type: "string" }, confidence: { type: "number" }
+    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" }, set: { type: "string" }, confidence: { type: "number" }
   }
 };
 function recogErr(status, txt) {
@@ -112,9 +112,13 @@ function recogErr(status, txt) {
   if (status === 400 && /credit|balance/i.test(txt)) return "out of API credit";
   return "API error " + status + ": " + String(txt || "").slice(0, 120);
 }
+const RECOG_DROP = {};
 async function recogRead(img, modelKey, apiKey) {
   const model = RECOG_MODELS[modelKey] || RECOG_MODELS.haiku;
-  let useFormat = true, useEffort = true, useFallback = model !== RECOG_MODELS.haiku, netRetried = false;
+  const drop = RECOG_DROP[model] = RECOG_DROP[model] || {};   // options this model rejected once: never sent again
+  let useFormat = !drop.format, useEffort = !drop.effort, netRetried = false;
+  // Thinking off: Haiku takes "disabled", Sonnet 5.5 "between_tools"; Opus 5.5 cannot turn it off (low effort instead).
+  let think = drop.thinking ? null : model === RECOG_MODELS.haiku ? { type: "disabled" } : model === RECOG_MODELS.sonnet ? { type: "between_tools" } : null;
   const data = String(img).replace(/^data:image\/\w+;base64,/, "");
   const t0 = Date.now();
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -130,7 +134,7 @@ async function recogRead(img, modelKey, apiKey) {
     if (useFormat) oc.format = { type: "json_schema", schema: RECOG_SCHEMA };
     if (Object.keys(oc).length) body.output_config = oc;
     const headers = { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
-    if (useFallback) { headers["anthropic-beta"] = "server-side-fallback-2026-07-01"; body.fallbacks = "default"; }   // a declined read retries on another model
+    if (think) body.thinking = think;
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 25000);
     let r, txt;
     try { r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body), signal: ctl.signal }); txt = await r.text(); }
@@ -140,9 +144,9 @@ async function recogRead(img, modelKey, apiKey) {
     }
     finally { clearTimeout(tm); }
     if (r.status === 400) {   // an option this model does not take: drop it and retry once each
-      if (useFallback && /fallback/i.test(txt)) { useFallback = false; continue; }
-      if (useEffort && /effort/i.test(txt)) { useEffort = false; continue; }
-      if (useFormat && /output_config|format|schema/i.test(txt)) { useFormat = false; continue; }
+      if (think && /thinking|between_tools|disabled/i.test(txt)) { think = null; drop.thinking = true; continue; }
+      if (useEffort && /effort/i.test(txt)) { useEffort = false; drop.effort = true; continue; }
+      if (useFormat && /output_config|format|schema/i.test(txt)) { useFormat = false; drop.format = true; continue; }
     }
     if ((r.status === 529 || r.status === 503) && attempt < 1) { await new Promise((s) => setTimeout(s, 800)); continue; }
     const ms = Date.now() - t0;
