@@ -2,7 +2,9 @@
 const cc = document.getElementById("cc");
 window.addEventListener("message", (e) => {
   const d = e.data;
-  if (!d || d.type !== "cardcomp-bid" || e.source !== cc.contentWindow) return;
+  if (!d || e.source !== cc.contentWindow) return;
+  if (d.type === "cardcomp-live-save") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
+  if (d.type !== "cardcomp-bid") return;
   chrome.runtime.sendMessage(d, (r) => {
     const err = chrome.runtime.lastError;
     cc.contentWindow.postMessage({ type: "cardcomp-bid-ack", ok: !!(r && r.ok) && !err, why: err ? err.message : (r && r.why) }, "*");

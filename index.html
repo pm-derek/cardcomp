@@ -2346,6 +2346,7 @@ async function boot(){
   try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale();
+  loadLive(); setInterval(loadLive, 5*60*1000);   // verified condition prices from the live branch; re-read every 5 min while open
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
   const jp=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="jp").length;
   const lor=CARDS.filter(c=>(c.game||"pkmn")==="lorcana").length;
@@ -2589,26 +2590,50 @@ function thinFlag(pr){   // flag a bid built on shaky price data
   if(l!=null && l < m*0.5) return "wide spread";                    // volatile / thin liquidity
   return "";
 }
-// Live TCGplayer prices: the extension reads the market price / lowest listing of the condition page Derek
-// opened from a row and posts it back. Keyed by the printing's own product id + condition, kept for the session.
-const LIVE={}; let LIVE_REDRAW=null;
+// Verified condition prices. Desktop: the extension reads the market price / lowest listing of the TCGplayer
+// condition page Derek opened from a row and posts it back (session map LIVE), and the app asks the extension
+// to save it to live.json on the repo's "live" branch. Every device reads that file (LIVE_STORE), so the phone
+// sees what desktop verified. Keyed by the printing's own product id + condition.
+// Entry { r: live/NM ratio at the time, m: live $, nm: NM $ then, src: "market"|"low", at: ms }. The ratio is
+// applied to today's NM, so a 3-week-old read still moves with the market instead of freezing a dollar figure.
+const LIVE={}; let LIVE_STORE={}, LIVE_REDRAW=null, PID_INDEX=null;
+const LIVE_URL="https://raw.githubusercontent.com/pm-derek/cardcomp/live/live.json", LIVE_MAX_DAYS=60;
+async function loadLive(){
+  try{ const r=await fetch(LIVE_URL+"?t="+Date.now(),{cache:"no-store"}); if(r.ok){ LIVE_STORE=(await r.json())||{}; if(LIVE_REDRAW) LIVE_REDRAW(); } }catch(_){ }
+}
+function liveFor(pid, cond, nm){   // -> {price, days, src, m, nm} or null; session read beats the store
+  const e=LIVE[pid+"|"+cond]||LIVE_STORE[pid+"|"+cond]; if(!e || !(e.at>0)) return null;
+  const days=(Date.now()-e.at)/86400000; if(days>LIVE_MAX_DAYS) return null;
+  const price=(nm>0 && e.r>0) ? nm*e.r : e.m; if(!(price>0)) return null;
+  return {price, days, src:e.src, m:e.m, nm:e.nm};
+}
+function liveAge(days){ return days<1 ? "today" : Math.round(days)+"d"; }
+function pidIndex(){   // TCGplayer product id -> the card + printing it prices (folded printings carry their own id)
+  if(!PID_INDEX){ PID_INDEX={}; for(const c of CARDS){ if(!c.px) continue; for(const k in c.px){ const p=c.px[k].p||c.pid; if(p && !PID_INDEX[p]) PID_INDEX[p]={card:c, key:k}; } } }
+  return PID_INDEX;
+}
 function applyLive(d){
   if(!d || !d.pid || !TCG_COND[d.cond]) return;
   const price=(d.market>0?d.market:null) ?? (d.low>0?d.low:null); if(!(price>0)) return;
-  LIVE[d.pid+"|"+d.cond]={price, src:d.market>0?"market":"low", at:Date.now()};
+  const hit=pidIndex()[String(d.pid)], v=hit&&hit.card.px[hit.key], nm=v ? ((v.m!=null?v.m:v.l)||0) : 0;
+  const key=d.pid+"|"+d.cond, rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
+  LIVE[key]=rec;
+  const msg={type:"cardcomp-live-save", key, rec};   // the extension writes it to the live branch (desktop only; silent without a token)
+  try{ window.postMessage(msg, location.origin); }catch(_){ }
+  if(window.parent!==window){ try{ window.parent.postMessage(msg, "*"); }catch(_){ } }
   if(LIVE_REDRAW) LIVE_REDRAW();
 }
 function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
   pid=(pr&&pr.p)||pid;
   const rows=CONDS.map(cond=>{
-    const lv=LIVE[pid+"|"+cond];
+    const lv=liveFor(pid, cond, base);
     const atc=lv ? lv.price : base*condMult(cond, year, base);
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`live TCGplayer ${lv.src} for ${cond}, read ${Math.round((Date.now()-lv.at)/60000)} min ago`:`see ${cond} listings on TCGplayer`}" style="color:inherit">$${atc.toFixed(2)}${lv?'<sup style="color:var(--gold);font-size:8px"> live</sup>':''}</a>`:`${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:inherit">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h"></span>${rows}`;
 }

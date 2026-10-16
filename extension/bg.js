@@ -1,5 +1,6 @@
 // Relay: CardComp (tab or side panel) -> the Whatnot tab you are watching.
 // Toolbar button opens CardComp in the side panel next to the Whatnot stream.
+importScripts("store.js");
 if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 }
@@ -12,6 +13,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     reply({ ok: true });
     return;
   }
+  if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
+  if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
     if (!tabs.length) { reply({ ok: false, why: "no Whatnot tab" }); return; }

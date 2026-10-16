@@ -3,6 +3,7 @@
 window.addEventListener("message", (e) => {
   if (e.source !== window || e.origin !== location.origin) return;
   const d = e.data;
+  if (d && d.type === "cardcomp-live-save") { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }
   if (!d || d.type !== "cardcomp-bid") return;
   try {
     chrome.runtime.sendMessage(d, (r) => {

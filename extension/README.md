@@ -37,9 +37,24 @@ always yours.
 
 Tap a condition's `LP ↗` (or its market price) in CardComp. The TCGplayer listing page opens in a tab; the
 extension reads that condition's market price (lowest listing if no market) and sends it back. The row's
-market gets a gold `live` mark, its max bid is recomputed from the live number, and the chip is ready to
-tap. Changing the condition filter on the TCGplayer page updates the matching row too. Live numbers last
-until you reload CardComp.
+market gets a `✓ today` mark, its max bid is recomputed from the live number, and the chip is ready to
+tap. Changing the condition filter on the TCGplayer page updates the matching row too.
+
+## Verified prices on every device
+
+Each live read is saved to `live.json` on the `live` branch of pm-derek/cardcomp (one small commit, batched
+20 s; no Pages build, since Pages only builds `main`). CardComp on any device, the phone included, reads
+that file on load and every 5 minutes. A verified row shows `✓ 3d` (gold within a week, dim after) and the
+hover text says what was read and when. Reads older than 60 days are ignored.
+
+What is stored is the ratio of the live price to the NM market at the time, plus the raw numbers. The ratio
+is applied to today's NM, so a three-week-old LP read still moves with the market instead of freezing a
+dollar figure.
+
+Setup, once, on the desktop that does the clicking: right-click the extension icon > Options, and paste a
+GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission: Contents, read and write).
+Test shows how many entries the store holds. Without a token, live reads still work for the session; they
+just are not saved.
 
 ## Your own bid
 
