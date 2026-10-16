@@ -104,6 +104,10 @@
   #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
   #lotstats .lstab tr.me td{background:rgba(51,168,118,.12);color:var(--ink);font-weight:600}
   #lotstats .lstab tr.me td:first-child{box-shadow:inset 3px 0 0 #33a876}
+  #lotstats .lstab tbody tr{cursor:pointer}
+  #lotstats .lstab tr.pick td{background:rgba(255,107,107,.08)}
+  #lotstats .lstab td.lsdel{width:1%;padding:0 2px;text-align:right}
+  #lotstats .lsdelb{background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 9px;cursor:pointer;white-space:nowrap}
   #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
   #lotstats .lsclear button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
@@ -2903,7 +2907,7 @@ function paintLotStats(){
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
     ${lotTable(S)}
     ${clearRowHTML()}`;
-  wireClear(el);
+  wireClear(el); wireLotTable(el);
   const xb=el.querySelector(".lsclose"); if(xb) xb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=false; paintLot(); paintLotStats(); };
   el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
@@ -2974,10 +2978,26 @@ function lotDotStrip(host, S){
       tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
     g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
 }
+let LOT_PICK=null;   // stats table: the row tapped to show its ✕ (one-off removal, Derek 2026-10)
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
-  return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null;
-    return `<tr class="${r.me?"me":""}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
+  return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null, pick=LOT_PICK!=null && LOT_PICK===r.at;
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td><td class="lsdel">${pick?`<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button>`:""}</td></tr>`; }).join("")}</tbody></table>`;
+}
+function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
+  el.querySelectorAll(".lstab tbody tr").forEach(tr=>tr.onclick=(e)=>{
+    e.stopPropagation(); const at=+tr.dataset.at;
+    if(e.target.closest(".lsdelb")){ removeLot(at); return; }
+    LOT_PICK = LOT_PICK===at ? null : at; paintLotStats();
+  });
+}
+function removeLot(at){
+  try{ localStorage.setItem(LOTS_KEY, JSON.stringify(loadLots().filter(r=>r.at!==at))); }catch(_){ }
+  LOT_PICK=null;
+  CLEAR_NOTE=`Removed 1 lot from this browser.${WN_EXT?"":" GitHub log: open CardComp in the extension side panel to remove it there too."}`;
+  if(WN_EXT) extPost({type:"cardcomp-log-prune", since:at, before:at+1});   // the log row has the same at (ms)
+  try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
+  paintLot(); paintLotStats();
 }
 function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
