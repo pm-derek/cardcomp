@@ -104,3 +104,44 @@ Latency target: under ~3 s from card held still to card opened (Haiku ~1-2 s).
 - One PR per round; Derek merges (or says "merge").
 - Test against mocks in headless Chromium (Playwright is preinstalled; `/opt/pw-browsers/chromium-1194`), since
   whatnot.com is not reachable from the cloud session.
+
+## Screenshot test: how to run (built 2026-10-16, not yet run on real frames)
+
+`scripts/recog-test.js` is the first step above, ready to run. It needs Derek's screenshots and an API key; the
+cloud session has neither (no key in the environment, and the image hosts are blocked), so it was verified
+with mock frames in `--fake` mode (labels fed back as the model's answer, scored through the real app) and
+`--dry-run` (image prep + the exact request body). Request shape checked against the structured-outputs and
+vision docs on 2026-10-16.
+
+1. Save 30-50 screenshots of held cards during a stream into one folder (PNG or JPG, the whole browser window
+   is fine; the script can crop). Mix modern, vintage, JP, sleeved, glare, finger over the number.
+2. Add `labels.csv` beside them:
+   ```
+   file,name,number,total,lang,notes
+   IMG_0001.png,Maushold ex,233,182,en,sleeved
+   IMG_0002.png,Charizard,4,102,en,glare
+   IMG_0003.png,Pikachu,25,,en,promo
+   ```
+   `total` blank for promos; `lang` en or jp (default en); notes free text.
+3. Key from console.anthropic.com (separate billing from the subscription), then:
+   ```
+   npm i playwright && npx playwright install chromium     # once, in the repo dir
+   ANTHROPIC_API_KEY=sk-ant-... node scripts/recog-test.js --shots ~/shots
+   ```
+   50 shots x 2 models is well under $0.50. Writes `results.md` / `results.json` into the shots folder:
+   per model name %, number %, CardComp top-1 %, top-3 %, median and p90 latency, $ per card; then one row
+   per shot with what each model read and which card the app opened on it.
+4. Options: `--crop 0.2,0,0.5,1` (fraction x,y,w,h of the frame; try the video region), `--max-edge 1000`,
+   `--effort low|medium`, `--models haiku,sonnet,opus`. Rerun with a crop if background cards leak in.
+
+What the harness already told us (mock frames, real data.json):
+- The app resolves `name number/total` for the mock labels (Maushold ex 233/182, Charizard 4/102, Pikachu 25,
+  JP Pikachu 20/103 in JP mode). The harness reports a "label resolves" ceiling so a bad label is not blamed
+  on the model.
+- Owner-prefixed names miss: "Team Rocket's Meowth 18" parses "Team Rocket" as the set and searches "s meowth"
+  in Team Rocket (returns Dark Alakazam #18). "meowth 18" finds the WOTC promo. The model will read the name as
+  printed, so the pipeline (or `parse`) needs to treat "<set name>'s" as an owner prefix. Only set names
+  collide: Misty's / Brock's / Erika's / Rocket's (Gym sets) parse as names and resolve (checked headless).
+- Image cost: one visual token per 28x28 patch. A 1280x720 frame is ~1,150 tokens; cropped to the middle
+  half and downscaled to 640x720 it is ~600. Haiku 5.5 and Sonnet 5.5 both take `output_config.format`
+  (structured outputs, no beta header); the script falls back to plain-JSON text if a model rejects it.
