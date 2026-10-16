@@ -102,14 +102,20 @@
   #lotstats .lstab{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
   #lotstats .lstab th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;padding:4px 4px;border-bottom:1px solid var(--line)}
   #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
-  #lotstats .lshaul{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;background:var(--panel2);border-radius:9px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--dim)}
-  #lotstats .lshaul b{color:var(--ink);font-size:14px}
   #lotstats .lstab tr.me td{background:rgba(51,168,118,.12);color:var(--ink);font-weight:600}
   #lotstats .lstab tr.me td:first-child{box-shadow:inset 3px 0 0 #33a876}
   #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
   #lotstats .lsclear button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
   #lotstats .lsclear button:hover{border-color:var(--red);color:var(--ink)}
+  /* Wide window (Derek, 2026-10: the side panel dragged wide): stats become a right column beside search, not a drawer over it */
+  @media (min-width:1120px){
+    #lotstats{top:0;bottom:0;left:auto;right:0;width:430px;max-width:none;max-height:none;margin:0;border-radius:0;border:none;border-left:1px solid var(--line);box-shadow:-10px 0 30px rgba(0,0,0,.35)}
+    #lotstats .lstiles{grid-template-columns:repeat(2,1fr)}
+    #lotstats .lssel{max-width:120px}
+    body.lsopen .wrap{margin-right:max(16px,calc((100vw - 430px - 680px)/2 + 430px));margin-left:max(0px,calc((100vw - 430px - 680px)/2))}
+    body.lsopen #cart{right:430px}
+  }
   @media (max-width:440px){ #lotstats .lstiles{grid-template-columns:repeat(2,1fr)} #lotstats .lstab th:nth-child(4),#lotstats .lstab td:nth-child(4){display:none} }
   /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
      every tap target is at least ~40px tall (phone thumb, side panel mouse) */
@@ -2678,7 +2684,7 @@ window.addEventListener("message", e=>{   // extension handshake: relabel the bi
   if(!(fromSelf||fromPanel)) return;
   WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
   if(!WN_STAT_TIMER){ askStatus(); WN_STAT_TIMER=setInterval(askStatus, 4000); }
-  setTimeout(resetSweep, 1500);
+  setTimeout(syncLots, 1500);
 });
 // With the extension: TCGplayer links (LP ↗, market price, "view on TCGplayer") open in a background tab so
 // focus stays on the Whatnot stream; the extension reads the price there and it lands on the row. Without the
@@ -2784,33 +2790,47 @@ function cardFields(t){ const o=Object.assign({}, t); delete o.bid; delete o.at;
 // ---- Stream stats: one slim row per finished lot, kept in this browser (120 days, 4000 rows) ----
 // Labeled lots (a card tapped or opened) carry the condition market, so each sale becomes a % of market.
 const LOTS_KEY="cardcomp_lots";
-// One-time cleanup (2026-10-16, Derek asked): everything logged before this version came from readers that logged
-// his own name as the seller, duplicate rows, missing prices and stale card labels. The first load of this version
-// wipes this browser's lot stats; with the extension present it also sweeps the private GitHub log for rows from
-// before that moment (the old extension may have written more after the file was deleted by hand).
-const RESET_KEY="cardcomp_reset_2026_10_16";
-let RESET_AT=0, RESET_SENT=false;
-try{ RESET_AT=+localStorage.getItem(RESET_KEY)||0; if(!RESET_AT){ RESET_AT=Date.now(); localStorage.removeItem(LOTS_KEY); localStorage.setItem(RESET_KEY, String(RESET_AT)); } }catch(_){ }
-function resetSweep(){   // GitHub part, once, after the extension says hello; marked done only when it answers
-  try{ if(RESET_SENT || localStorage.getItem(RESET_KEY+"_gh")) return; }catch(_){ return; }
-  RESET_SENT=true; extPost({type:"cardcomp-log-prune", since:0, before:RESET_AT, reset:true});
-}
+// Stats live in this browser, the full log in the private GitHub repo. On load (extension present) pull the last
+// 120 days of the log back in, so the side panel, a CardComp tab and a second computer all show the same lots,
+// and lots restored in the repo by hand show up here.
+let LOTS_SYNCED=false;
+function syncLots(){ if(LOTS_SYNCED) return; LOTS_SYNCED=true; extPost({type:"cardcomp-log-read", since:Date.now()-120*86400000}); }
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-log-read-ack" || !lotFromExt(e)) return;
+  if(!d.ok || !Array.isArray(d.rows)){ LOTS_SYNCED=false; return; }
+  try{   // the log is the record: replace this browser's rows with it, keeping only local lots newer than the log (not flushed yet)
+    const logRows=d.rows.filter(r=>r && r.at && !r.empty).map(lotRow), newest=logRows.reduce((m,r)=>Math.max(m,r.at),0);
+    const local=loadLots().filter(r=>r.at>newest);
+    localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(logRows.concat(local));
+  }catch(_){ }
+  try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
+  paintLot(); if(LOTSTATS_OPEN) paintLotStats();
+});
 function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
-function recordLotStat(rec){
-  try{
+function lotRow(rec){
     const c=rec.card||null, multi=c&&c.multi&&c.cards;
     const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
     const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null };
-    const cut=Date.now()-120*86400000;
-    row.k=rec.startedAt!=null ? `${rec.seller||""}|${rec.startedAt}|${rec.at}` : null;   // same lot seen by two CardComp copies: keep one, the labeled one
-    let rows=loadLots().filter(r=>r.at>=cut);
-    const dup=row.k ? rows.findIndex(r=>r.k===row.k) : -1;
-    if(dup<0) rows.push(row); else if(!rows[dup].n && row.n) rows[dup]=row;
-    localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
-  }catch(_){ }
+    row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
+    return row;
+}
+function storeLotRows(add){   // merge rows into this browser's stats by lot key
+  const cut=Date.now()-120*86400000;
+  let rows=loadLots().filter(r=>r.at>=cut);
+  const at=new Map(rows.map((r,i)=>[r.k,i]));
+  for(const row of add){
+    if(row.at<cut) continue;
+    const i=row.k!=null ? at.get(row.k) : undefined;
+    if(i==null){ at.set(row.k, rows.length); rows.push(row); } else if(!rows[i].n && row.n) rows[i]=row;
+  }
+  rows.sort((a,b)=>a.at-b.at);
+  localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
+}
+function recordLotStat(rec){
+  try{ storeLotRows([lotRow(rec)]); }catch(_){ }
   try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
 }
@@ -2843,7 +2863,6 @@ function haul(rows){
   return { n:wins.length, spent, net, mkt, margin:pSpent>0?net/pSpent:null, unl:wins.length-priced.length };
 }
 function streamRows(seller){ return lotStats(seller, "stream").rows; }
-function todayRows(){ const m=new Date(); m.setHours(0,0,0,0); return loadLots().filter(r=>r.at>=m.getTime()); }
 function refreshVerdict(seller){
   VERDICT={seller, txt:"", col:"", haul:null};
   try{ VERDICT.haul=haul(streamRows(seller)); }catch(_){ }
@@ -2853,6 +2872,7 @@ function refreshVerdict(seller){
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && LOTSTATS_OPEN){ LOTSTATS_OPEN=false; paintLot(); paintLotStats(); } });
 function paintLotStats(){
   const el=$("#lotstats"); if(!el) return;
+  document.body.classList.toggle("lsopen", !!LOTSTATS_OPEN);
   if(!LOTSTATS_OPEN){ el.style.display="none"; return; }
   const all=loadLots(), sellers=[...new Set(all.slice().reverse().map(r=>r.s))];
   const seller=LOTSTATS_SELLER || (LOT&&LOT.seller) || sellers[0] || "";
@@ -2878,7 +2898,6 @@ function paintLotStats(){
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
       <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
-    ${haulHTML(haul(S.rows), "This stream")}${haulHTML(haul(todayRows()), "Today, all streams")}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
@@ -2922,7 +2941,6 @@ function clearLots(range){
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-prune-ack" || !lotFromExt(e)) return;
-  if(RESET_SENT && !CLEAR_NOTE){ RESET_SENT=false; if(d.ok){ try{ localStorage.setItem(RESET_KEY+"_gh", String(Date.now())); }catch(_){ } } return; }   // the one-time sweep, not a button press
   CLEAR_NOTE += d.ok ? ` GitHub log: removed ${d.removed||0} row${d.removed===1?"":"s"}${d.files?` across ${d.files} file${d.files===1?"":"s"}`:""}.` : ` GitHub log not cleared (${escH(d.why||"no reply")}).`;
   CLEAR_NOTE = CLEAR_NOTE.replace("Clearing the GitHub log… ", "");
   paintLotStats();
@@ -2955,13 +2973,6 @@ function lotDotStrip(host, S){
     const show=()=>{ tip.innerHTML=`<b>${escH(r.n||"card")}</b> ${escH(r.c||"")}<br>sold $${r.f} · ${Math.round(r.f/r.m*100)}% of $${r.m.toFixed(2)}<br>${r.me?"you won":"won by "+escH(r.w||"?")}${n!=null?` · ${n>=0?"+":"−"}$${Math.abs(n).toFixed(2)} at that price`:""}${Math.max(r.mx||0,r.pm||0)?` · your max $${Math.max(r.mx||0,r.pm||0)}`:""}`;
       tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
     g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
-}
-function haulHTML(H, label){
-  const D=v=>(v<0?"−":"+")+"$"+Math.abs(v).toFixed(2);
-  if(!H.n) return `<div class="lshaul"><span class="lsl">${label}</span><span class="lsmuted">no wins yet</span></div>`;
-  return `<div class="lshaul"><span class="lsl">${label}</span><b>${H.n} won</b><span>$${H.spent.toFixed(0)} spent</span>`+
-    (H.n>H.unl ? `<span>$${H.mkt.toFixed(0)} market</span><b style="color:${H.net>=0?"var(--green)":"var(--red)"}">${D(H.net)} net${H.margin!=null?` (${Math.round(H.margin*100)}%)`:""}</b>` : "")+
-    (H.unl ? `<span class="lsmuted">${H.unl} win${H.unl===1?"":"s"} without a card, not in net</span>` : "")+`</div>`;
 }
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";

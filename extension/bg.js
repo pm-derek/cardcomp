@@ -43,6 +43,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since, msg.before).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"
+  if (msg.type === "cardcomp-log-read") { readLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // app load: log -> browser stats
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {

@@ -59,18 +59,17 @@ async function flushLog() {
   const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
-      let sha = null, rows = [];
-      if (g.ok) { const j = await g.json(); sha = j.sha; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {} }
-      else if (g.status !== 404) throw new Error("GitHub GET " + g.status);
+      const { sha, rows } = await logFile(api, hdr);
       const body = { message: `Auction log: ${batch.length} lots`, branch: LOG.branch, content: b64enc(JSON.stringify(mergeRows(rows.concat(batch)))) };   // also folds a copy written by another CardComp window
       if (sha) body.sha = sha;
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
       if (r.status === 409 || r.status === 422) continue;
       if (!r.ok) throw new Error("GitHub PUT " + r.status);
       return;
-    } catch (e) { console.warn("CardComp auction log:", e.message); if (attempt) pendingLog = batch.concat(pendingLog); }
+    } catch (e) { console.warn("CardComp auction log:", e.message); }
   }
+  pendingLog = batch.concat(pendingLog);   // not written: keep the lots for the next flush
+  if (!logTimer) logTimer = setTimeout(flushLog, 60000);
 }
 // Delete every logged lot with at >= since (0 = everything): drops queued rows, rewrites day files that keep
 // older rows, deletes day files left empty. Derek-triggered from the stats panel ("clear logged data").
@@ -88,9 +87,8 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
   const sinceDay = new Date(since).toISOString().slice(0, 10);
   for (const f of (await list.json()).filter((f) => /^log-\d{4}-\d{2}-\d{2}\.json$/.test(f.name) && f.name.slice(4, 14) >= sinceDay)) {
     const api = `https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/${f.name}`;
-    const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
-    if (!g.ok) continue;
-    const j = await g.json(); let rows = []; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {}
+    let j; try { j = await logFile(api, hdr); } catch (_) { continue; }
+    const rows = j.rows;
     const keep = rows.filter((r) => !gone(r));
     if (keep.length === rows.length) continue;
     removed += rows.length - keep.length; files++;
@@ -100,6 +98,36 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
     await fetch(api, { method: keep.length ? "PUT" : "DELETE", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
   }
   return { ok: true, removed, files };
+}
+// Every logged lot with at >= since, for the app's stream stats (one list call + one GET per day file).
+async function readLog(since) {
+  since = +since || 0;
+  const tok = await token();
+  if (!tok) return { ok: false, why: "no GitHub token" };
+  const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
+  const list = await fetch(`https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+  if (!list.ok) return { ok: false, why: "GitHub list " + list.status };
+  const sinceDay = new Date(since).toISOString().slice(0, 10);
+  let rows = [];
+  for (const f of (await list.json()).filter((f) => /^log-\d{4}-\d{2}-\d{2}\.json$/.test(f.name) && f.name.slice(4, 14) >= sinceDay)) {
+    try { rows = rows.concat((await logFile(`https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/${f.name}`, hdr)).rows); } catch (_) {}
+  }
+  return { ok: true, rows: mergeRows(rows.concat(pendingLog)).filter((r) => (r.at || 0) >= since) };
+}
+// A day file's rows + sha. Over 1 MB the contents API sends no content, so fetch the raw file then; reading it
+// as empty would make the next write replace the whole day with one batch.
+async function logFile(api, hdr) {
+  const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+  if (g.status === 404) return { sha: null, rows: [] };
+  if (!g.ok) throw new Error("GitHub GET " + g.status);
+  const j = await g.json();
+  let txt = j.content ? b64dec(j.content) : "";
+  if (!txt && j.size > 0) {
+    const r = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: Object.assign({}, hdr, { Accept: "application/vnd.github.raw" }), cache: "no-store" });
+    if (!r.ok) throw new Error("GitHub raw " + r.status);
+    txt = await r.text();
+  }
+  return { sha: j.sha, rows: JSON.parse(txt || "[]") || [] };   // a parse error throws: never write over a file we could not read
 }
 // One row per lot. Every CardComp copy that is open (side panel, a CardComp tab) receives the same lot-end and
 // logs it, which wrote each lot 2-4 times. A lot is identified by the extension's own timestamps (startedAt + at
