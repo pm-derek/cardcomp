@@ -265,6 +265,9 @@ function readLot() {
   if (best < 0) { card = null; bidsEl = null; }   // only the shop tile: no live lot on screen
   if (!card && bidsEl) card = bidsEl.parentElement && bidsEl.parentElement.parentElement;   // price column not found: still read the text block
   lastRow = card;
+  // The whole lot card can be one real <button> (zenzoogie, 2026-10: title, description and "5 Bids" inside it,
+  // price and timer outside), so only skip text in a button that does not also hold the bid count.
+  const inBtn = (el) => { const b = el.closest("button"); return !!b && !(bidsEl && b.contains(bidsEl)); };
   const texts = [];
   // Read every element that holds text of its own, not only childless leaves: a title like
   // "Card on Screen (NO REFUNDS) #87" can sit beside an icon or badge element (zenzoogie's layout), which made
@@ -276,12 +279,19 @@ function readLot() {
     else if (LOT_RX.timer.test(t)) st.timer = t;
     else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
     else if (/^sold$/i.test(t)) st.ended = true;
-    else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button")) texts.push(t);   // icon-only text ("💀") is not a title; a role=button lot row is fine
+    else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !inBtn(el)) texts.push(t);   // icon-only text ("💀") is not a title; a role=button lot row is fine
   }
   // Still no title: look one or two levels above the row, taking only multi-word lines (a bare "nick0217" is a name)
   for (let up = card && card.parentElement, k = 0; !texts.length && up && k < 2; up = up.parentElement, k++)
     for (const { el, t } of ownTexts(up)) if (!card.contains(el) && /\s/.test(t) && t.length < 120 && /[A-Za-z]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button")) texts.push(t);
-  st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
+  st.title = texts[0] || ""; st.sub = texts[1] || "";
+  // Whatnot labels the title itself (data-testid="show-product-title"): use it when it is on screen.
+  const tEl = document.querySelector('[data-testid="show-product-title"]');
+  if (tEl && textShown(tEl) && tEl.textContent.trim()) {
+    st.title = tEl.textContent.replace(/\s+/g, " ").trim().slice(0, 119);
+    const nx = tEl.nextElementSibling, sub = nx && nx.textContent.replace(/\s+/g, " ").trim();
+    if (sub && !LOT_RX.bids.test(sub)) st.sub = sub.slice(0, 119);
+  }   // title, then the seller's condition / category line
   st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";   // "Near Mint ∙ Card" uses U+2219
   let wonBy = "", meWon = false, wonUser = "";
   for (let i = 0; i < all.length; i++) {
