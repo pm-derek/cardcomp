@@ -158,13 +158,13 @@ Sonnet still need the API run (`scripts/recog-test.js`) before picking a model.
 | name right | 20 / 20 (incl. 2 JP, 1 vintage behind a wall of other cards) |
 | number exact | 5 / 20 (one more off by one digit) |
 | number unreadable | 14 / 20 (motion blur, or camera a few feet back: zenzoogie 0 / 10) |
-| card not in catalog (under $1.50 floor) | 6 / 20 |
-| app showed a WRONG card on the reading | 7 / 20 |
-| right card first, of the 14 in catalog | 10 (12 with the rules below; Mew ex and Snorunt stay ambiguous) |
+| card not in catalog (under $1.50 floor) | 5 / 20 |
+| app showed a WRONG card on the reading | 6 / 20 |
+| right card first, of the 15 in catalog | 13 |
 
 Every wrong card came from one of two app behaviours, not from misreading:
 - Under-floor card, name search lands on a pricier sibling: Radiant Heatran (Prize Pack $21), Jellicent ex
-  (SIR $25), Cynthia's Garchomp ex (SIR $185 for a UR).
+  (SIR $25). (Cynthia's Garchomp ex UR #215 is in the catalog at $3.98; a SIR read sends it to #232 at $185.)
 - Number given but no exact match, so `run()` falls back to "closest by name", a different Pokemon with that
   number: Mewtwo ex, Beedrill V, Sinistcha ex.
 
@@ -192,7 +192,7 @@ Match rules for an auto query (both use cases; the difference is only what happe
   likely under $1.50". Never the closest-by-name fallback, never a pricier sibling. Scouting: count it as
   bulk (sold price only, no % of market).
 - Price-spread guard: when the candidates for a name span more than ~5x (Garchomp UR vs SIR), require the
-  number before opening, whatever the use case.
+  number before opening, whatever the use case. Rarity is a tie-break, never a filter that picks the pricier card.
 
 Scouting extra constraints, to test before building: `captureVisibleTab` only sees the visible tab, so several
 streams need a `<video>`-to-canvas grab in `whatnot.js` (cross-origin taint untested) or one window per stream.
@@ -202,3 +202,29 @@ Chrome may stop painting video in hidden tabs. Cost at Haiku prices is small eve
 Build order: (1) the match rules in `index.html` as an `auto` query path, testable now with the CSV readings
 as fixtures; (2) API run of Haiku / Sonnet on the same 20 frames; (3) capture + trigger in the extension for
 live buying; (4) scouting across streams, after confirming background capture works.
+
+## Model test: Haiku vs Sonnet vs Opus on the same 20 frames (2026-10-16)
+
+No API key in the cloud session, so each model ran as a Claude Code subagent (Haiku, Sonnet) reading the
+same images with the same blind prompt; Opus is Claude's own read from the conversation. Same scorer for all:
+the reading goes into the real app headless (name + number/total + "ir"/"sir" when the model said so).
+Readings: `docs/recog-reads/*.jsonl`. Caveats: not the raw API path (image handling and system prompt
+differ), so no latency or cost numbers yet; treat as relative accuracy.
+
+| | Haiku | Sonnet | Opus |
+|---|---|---|---|
+| name right | 19 / 20 | 19 / 20 | 20 / 20 |
+| numbers read / right | 4 / 2 | 5 / 4 | 7 / 6 |
+| right card first (15 in catalog) | 9 | 9 | 13 |
+| wrong card shown | 10 / 20 | 10 / 20 | 6 / 20 |
+
+- Names are solid on every model. Haiku and Sonnet each fumbled one name (Haiku "Time Distortion",
+  Sonnet "Giovanni's Exit"); the app still found Time-Space Distortion.
+- Haiku invents numbers (Ursaring 063/090, Cetitan 216). A wrong number is worse than none.
+- Haiku and Sonnet over-call "Special Illustration Rare" on full arts (Sonnet 5 times, Haiku 3). Fed to the
+  search that pushes toward the expensive printing: both sent Cynthia's Garchomp ex (UR, $3.98) to the
+  $185 SIR. Illustration Rare reads were right on every model.
+- Every model fell into the same app traps (closest-by-name fallback 4 times each; under-floor siblings).
+  Those are app fixes and help all models equally.
+- Cost if Opus wins: ~1,300 input tokens a frame at $4/MTok is about $0.006 a lot, about $15 a month at
+  2,600 lots (one frame). Haiku would be about $0.50. The accuracy gap (13 vs 9 of 15) is worth that.
