@@ -72,6 +72,34 @@ async function flushLog() {
     } catch (e) { console.warn("CardComp auction log:", e.message); if (attempt) pendingLog = batch.concat(pendingLog); }
   }
 }
+// Delete every logged lot with at >= since (0 = everything): drops queued rows, rewrites day files that keep
+// older rows, deletes day files left empty. Derek-triggered from the stats panel ("clear logged data").
+async function pruneLog(since) {
+  since = +since || 0;
+  const before = pendingLog.length;
+  pendingLog = pendingLog.filter((r) => (r.at || 0) < since);
+  let removed = before - pendingLog.length, files = 0;
+  const tok = await token();
+  if (!tok) return { ok: false, why: "no GitHub token", removed };
+  const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
+  const list = await fetch(`https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+  if (!list.ok) return { ok: false, why: "GitHub list " + list.status, removed };
+  const sinceDay = new Date(since).toISOString().slice(0, 10);
+  for (const f of (await list.json()).filter((f) => /^log-\d{4}-\d{2}-\d{2}\.json$/.test(f.name) && f.name.slice(4, 14) >= sinceDay)) {
+    const api = `https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/${f.name}`;
+    const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+    if (!g.ok) continue;
+    const j = await g.json(); let rows = []; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {}
+    const keep = rows.filter((r) => (r.at || 0) < since);
+    if (keep.length === rows.length) continue;
+    removed += rows.length - keep.length; files++;
+    const body = keep.length
+      ? { message: `Clear ${rows.length - keep.length} logged lots`, branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(keep)) }
+      : { message: `Clear ${rows.length} logged lots`, branch: LOG.branch, sha: j.sha };
+    await fetch(api, { method: keep.length ? "PUT" : "DELETE", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
+  }
+  return { ok: true, removed, files };
+}
 function queueLog(rec) {
   pendingLog.push(rec);
   if (!logTimer) logTimer = setTimeout(flushLog, 60000);

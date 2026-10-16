@@ -186,7 +186,17 @@ function readChat() {
 // text leaves: any size counts ("kal", "32" are narrower than the 20 px input heuristic in visible())
 const textShown = (el) => { const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0) return false; const cs = getComputedStyle(el); return cs.visibility !== "hidden" && cs.display !== "none"; };
 const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && textShown(el));
-const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "");   // Whatnot usernames: no spaces
+// elements with their own (direct) text, in document order: leaves plus mixed elements ("Title #87<svg/>")
+function ownTexts(root) {
+  const out = [];
+  for (const el of [root, ...root.querySelectorAll("*")]) {
+    let t = ""; for (const n of el.childNodes) if (n.nodeType === 3) t += n.nodeValue;
+    t = t.replace(/\s+/g, " ").trim();
+    if (t && textShown(el)) out.push({ el, t });
+  }
+  return out;
+}
+const userLike = (s) =>/^[A-Za-z0-9_.-]{2,32}$/.test(s || "");   // Whatnot usernames: no spaces
 function sellerName() {
   const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
   if (a) { const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); if (m) return decodeURIComponent(m[1]); }
@@ -217,14 +227,17 @@ function readLot() {
   if (best < 0) { card = null; bidsEl = null; }   // only the shop tile: no live lot on screen
   if (!card && bidsEl) card = bidsEl.parentElement && bidsEl.parentElement.parentElement;   // price column not found: still read the text block
   const texts = [];
-  for (const el of (card ? leaves(card) : [])) {
-    const t = el.textContent.trim(); let m;
+  // Read every element that holds text of its own, not only childless leaves: a title like
+  // "Card on Screen (NO REFUNDS) #87" can sit beside an icon or badge element (zenzoogie's layout), which made
+  // it invisible to a leaves-only read, so no title, no lot, and an old tap kept labeling lots.
+  for (const { el, t } of (card ? ownTexts(card) : [])) {
+    let m;
     if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
-    else if (bareMoney(el)) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
+    else if (LOT_RX.money.test(t) && !el.closest("button,[role=button]")) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
     else if (LOT_RX.timer.test(t)) st.timer = t;
     else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
     else if (/^sold$/i.test(t)) st.ended = true;
-    else if (t.length > 1 && t.length < 120 && !LOT_RX.skip.test(t) && !el.closest("button,[role=button]")) texts.push(t);
+    else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button,[role=button]")) texts.push(t);   // icon-only text ("💀") is not a title
   }
   st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
   st.cond = COND_TXT[(st.sub.split("·")[0] || "").trim().toLowerCase()] || "";
@@ -279,12 +292,16 @@ function lotTick() {
   // A new lot starts when the title changes, or, for sellers who reuse one title ("$2 start") lot after
   // lot, when the bid count drops back (a new lot starts at 0) or the timer jumps back up after a sale.
   const tSec = secs(st.timer);
-  const rolled = lot && st.title === lot.title && (
+  // A lot must exist even when no title is readable: otherwise nothing ever ends and an old tap labels every
+  // later lot. No title -> keep the current lot's key (a flicker is not a new lot), or "(untitled lot)" if a
+  // live price or bid count is on screen; boundaries then come from the rollover rules and "Sold".
+  const lkey = st.title || (lot ? lot.title : ((st.cur != null || st.bids != null) ? "(untitled lot)" : ""));
+  const rolled = lot && lkey === lot.title && (
     (st.bids != null && lot.maxBids > 0 && st.bids < lot.maxBids) ||
     (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
-  if ((st.title && (!lot || st.title !== lot.title)) || rolled) {
+  if ((lkey && (!lot || lkey !== lot.title)) || rolled) {
     if (lot && lotLastState) endLot(lotLastState);
-    lot = { title: st.title, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
+    lot = { title: lkey, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
   }
   if (lot) {
     if (st.lead) lot.lastLead = st.lead;
