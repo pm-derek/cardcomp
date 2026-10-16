@@ -6,7 +6,8 @@
   "permissions": [
     "sidePanel",
     "storage",
-    "activeTab"
+    "activeTab",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://*.whatnot.com/*",
@@ -72,7 +73,8 @@
   "commands": {
     "recog-grab": {
       "suggested_key": {
-        "default": "Alt+Shift+R"
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
       },
       "description": "Recognition test (experiment): grab a frame of the Whatnot stream"
     }

@@ -183,7 +183,7 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 ## Auto-recognition (experiment, removable)
 
 Plan and results: docs/auto-recognition-handoff.md. Everything lives in `recog/` (app: `autoMatch`, never called by
-manual search) and `extension/recog/` (capture check, Alt+Shift+R, results page), plus lines tagged `RECOG` and
+manual search) and `extension/recog/` (capture check, Ctrl+Shift+Y or right-click, results page), plus lines tagged `RECOG` and
 blocks between RECOG-BEGIN / RECOG-END. `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js`
 runs fixtures (20 confirmed frames), a 258-search regression (identical with and without), the strip test and the
 capture tests on a mock Whatnot page. Rule: a strong suggestion is never the wrong card; no closest-by-name fallback.

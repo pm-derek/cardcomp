@@ -8,8 +8,9 @@
 const mode = new URLSearchParams(location.search).get("mode") || "video";
 window.__sent = []; window.__listeners = [];
 Object.defineProperty(window, "chrome", { configurable: true, writable: true, value: {
-  runtime: { onMessage: { addListener: (fn) => window.__listeners.push(fn) } },
+  runtime: { onMessage: { addListener: (fn) => window.__listeners.push(fn) }, onInstalled: { addListener: () => {} } },
   commands: { onCommand: { addListener: () => {} } },
+  contextMenus: { create: () => {}, onClicked: { addListener: () => {} } },
   tabs: {
     query: () => Promise.resolve([]),
     captureVisibleTab: () => Promise.resolve(window.__shot),

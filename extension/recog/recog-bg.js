@@ -1,9 +1,9 @@
 // RECOG experiment, background half (docs/auto-recognition-handoff.md). Removed by scripts/strip-recog.js.
 //
-// Capture check: the keyboard shortcut (Alt+Shift+R by default, change it at chrome://extensions/shortcuts)
-// on a Whatnot tab grabs one frame of the stream:
+// Capture check: the keyboard shortcut (Ctrl+Shift+Y by default, change it at chrome://extensions/shortcuts) or
+// right-click > "Recognition test: grab a frame" on a Whatnot tab grabs one frame of the stream:
 //   1. copy the <video> to a canvas in the page (needs no permission; fails if the stream is cross-origin)
-//   2. else a screenshot of the visible tab, cropped to the video (the shortcut press grants activeTab)
+//   2. else a screenshot of the visible tab, cropped to the video (the key press or menu click grants activeTab)
 // Then, 5 s later and without a key press, it tries the same method again: that says whether lots can be
 // captured automatically once a stream is armed. Frames stay in this extension's IndexedDB; see recog/debug.html.
 
@@ -90,3 +90,10 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (!tab || !/^https:\/\/([^/]*\.)?whatnot\.com\//.test(tab.url || "")) return;
   recogGrab(tab);
 });
+
+// Right-click menu: same grab, no key needed (Chrome keeps some keys for itself, e.g. Alt+Shift+R is Reading Mode).
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({ id: "recog-grab", title: "Recognition test: grab a frame", contexts: ["page", "video", "image", "link"],
+    documentUrlPatterns: ["https://*.whatnot.com/*"] }, () => chrome.runtime.lastError);
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => { if (info.menuItemId === "recog-grab" && tab && tab.id) recogGrab(tab); });

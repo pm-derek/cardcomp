@@ -156,8 +156,9 @@ keyboard's clipboard chip.
 Step 1 of docs/auto-recognition-handoff.md: can the extension grab a frame of the stream at all?
 
 1. Reload the extension at chrome://extensions, then reload the Whatnot tab once.
-2. On a live stream press **Alt+Shift+R** (Option+Shift+R on a Mac). If nothing happens, set the key at
-   chrome://extensions/shortcuts ("Recognition test").
+2. On a live stream press **Ctrl+Shift+Y** (Cmd+Shift+Y on a Mac), or right-click the page and choose
+   "Recognition test: grab a frame". Not Alt+Shift+R: Chrome uses that for Reading Mode. To change the key,
+   go to chrome://extensions/shortcuts ("Recognition test").
 3. A blue box bottom-left says how the frame was grabbed. 5 s later it tries again with no key press, which
    says whether later lots can be captured on their own.
 4. Results: Options > "the recognition test page" (thumbnails, method, size, brightness). Export or delete there.
