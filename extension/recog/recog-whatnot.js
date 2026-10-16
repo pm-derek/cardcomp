@@ -67,7 +67,8 @@
   // Two measures, 0-255: "mean" = average difference (is the picture still?), "peak" = average of the 15% most
   // changed pixels (did the card change?). A small card swapped in the same spot moves the mean by a few points but
   // the peak by 80+. Tune from the "diff" stored on each pre-start read.
-  const CHANGE = 14, CHANGE_PEAK = 70, STILL = 5, SAME = 40, REUSE = 30;
+  const CHANGE = 14, CHANGE_PEAK = 70, STILL = 8, SAME = 40, REUSE = 30;
+  const SETTLE_MS = 3500, STEADY = 14;   // a card held in a moving hand never goes fully still: read it anyway after 3.5 s if roughly steady
   const PRE_MAX = 4, PRE_GAP_MS = 3000;      // pre-start reads per gap between lots, and the minimum spacing
   let tc = null;
   function thumb() {
@@ -87,42 +88,66 @@
     d.sort(); const k = Math.max(1, Math.round(d.length * 0.15)); let s = 0; for (let i = d.length - k; i < d.length; i++) s += d[i];
     return s / k;
   };
-  let lastSt = null, lastLot = null, prevT = null, moved = false, still = 0, REF = null, PRE = { at: 0, n: 0, last: 0, thumb: null };
-  const live = (st, lot) => !!(st && lot && !lot.ended && !st.ended && !st.sold && !st.waiting && (secs(st.timer) || 0) > 0);
-  setInterval(() => {
-    if (!on || document.hidden || live(lastSt, lastLot)) { prevT = null; still = 0; return; }
-    const t = thumb(); if (!t) return;
-    const step = diff(t, prevT), stepPeak = peak(t, prevT); prevT = t;
-    if (step > CHANGE || stepPeak > CHANGE_PEAK) { moved = true; still = 0; return; }
-    if (step < STILL) still++; else still = 0;
-    if (still < 2) return;
-    const vsRef = peak(t, REF);
-    if (!moved && REF) return;                       // nothing new since the last read
-    moved = false;
-    if (vsRef < SAME) return;                        // the same card as last read (seller still holding the sold card)
-    if (PRE.n >= PRE_MAX || Date.now() - PRE.last < PRE_GAP_MS) return;
+  let lastSt = null, lastLot = null, prevT = null, moved = 0, still = 0, REF = null, PRE = { at: 0, n: 0, last: 0, thumb: null, lot: null };
+  // Live = the timer is counting down. Whatnot can show a lot's timer before the auction starts; a timer that has
+  // not changed for 2.5 s is not live, so the watcher keeps looking for the card (Derek: "no reads before the timer").
+  const TM = { lot: null, val: null, at: 0 };
+  const running = () => TM.at > 0 && Date.now() - TM.at < 2500 && (TM.val || 0) > 0;
+  const live = (st, lot) => !!(st && lot && !lot.ended && !st.ended && !st.sold && !st.waiting && running());
+  let WATCH = { phase: "", why: "", mean: 0, peak: 0, at: 0 };
+  function status(phase, why, m, pk) {
+    WATCH = { phase, why, mean: Math.round(m || 0), peak: Math.round(pk || 0), at: Date.now() };
+  }
+  setInterval(() => {   // what the watcher is doing, for the auto line in CardComp (every 2 s, only when on)
+    if (!on) return;
+    try { chrome.runtime.sendMessage(Object.assign({ type: "cardcomp-auto-watch" }, WATCH, { hidden: document.hidden }), () => chrome.runtime.lastError); } catch (_) {}
+  }, 2000);
+  function readNow(trigger, t, vsRef) {
     const key = Date.now();
-    PRE = { at: key, n: PRE.n + 1, last: key, thumb: t };
-    REF = t;
-    post(key, 1, { title: "", sinceStart: 0, trigger: "pre", diff: Math.round(vsRef) });
+    t = t || thumb();
+    PRE = { at: key, n: PRE.n + 1, last: key, thumb: t, lot: lastLot && lastLot.startedAt };
+    REF = t; moved = 0; still = 0;
+    post(key, 1, { title: "", sinceStart: 0, trigger, diff: vsRef == null ? null : Math.round(vsRef) });
+    status(trigger === "manual" ? "read now" : "reading", trigger === "manual" ? "you asked" : "new card held up");
+  }
+  setInterval(() => {
+    if (!on) return;
+    if (document.hidden) { prevT = null; still = 0; status("paused", "Whatnot tab hidden"); return; }
+    if (live(lastSt, lastLot)) { prevT = null; still = 0; status("live", "timer running: reads at the start"); return; }
+    const t = thumb(); if (!t) { status("off", streamVideo() ? "video cannot be copied" : "no video"); return; }
+    const step = diff(t, prevT), stepPeak = peak(t, prevT); prevT = t;
+    if (step > CHANGE || stepPeak > CHANGE_PEAK) { if (!moved) moved = Date.now(); still = 0; status("watching", "picture changing", step, stepPeak); return; }
+    if (step < STILL) still++; else still = 0;
+    const vsRef = peak(t, REF);
+    if (!moved && REF) { status("watching", "same picture as the last read", step, vsRef); return; }
+    const settled = still >= 1 || (moved && Date.now() - moved > SETTLE_MS && step < STEADY);
+    if (!settled) { status("watching", "waiting for the card to hold still", step, vsRef); return; }
+    if (vsRef < SAME) { moved = 0; status("watching", "same card as the last read", step, vsRef); return; }
+    if (PRE.n >= PRE_MAX) { status("watching", PRE_MAX + " reads this gap already", step, vsRef); return; }
+    if (Date.now() - PRE.last < PRE_GAP_MS) { status("watching", "just read", step, vsRef); return; }
+    readNow("pre", t, vsRef);
   }, TICK_MS);
 
   // A lot goes live when its timer is running. Already read before the start and the picture has not changed:
   // reuse that reading. Else one frame ~1 s later, while the seller holds the card up.
   window.__recogTick = (st, lot) => {
     const wasLive = live(lastSt, lastLot);
+    if (lot && TM.lot !== lot.startedAt) { TM.lot = lot.startedAt; TM.val = secs(st.timer); TM.at = 0; }   // new lot: its timer must move to count
+    else { const v = secs(st.timer); if (v != null && TM.val != null && v !== TM.val) TM.at = Date.now(); TM.val = v; }
     lastSt = st; lastLot = lot;
-    if (wasLive && !live(st, lot)) PRE = { at: 0, n: 0, last: PRE.last, thumb: null };   // lot over: a new gap begins
+    // lot over, or a new lot object (a seller whose timer is never read still gets a fresh pre-start allowance)
+    if (wasLive && !live(st, lot)) PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot && lot.startedAt };
+    else if (lot && PRE.lot !== lot.startedAt) { PRE.n = 0; PRE.lot = lot.startedAt; }   // a new lot: fresh pre-start allowance, keep a recent read for reuse
     if (!on || !lot || lots.has(lot.startedAt) || !live(st, lot)) return;
     lots.set(lot.startedAt, lot);
     if (lots.size > 50) lots.delete(lots.keys().next().value);
     const now = thumb(), d = peak(now, PRE.thumb);
     if (PRE.at && d < REUSE && Date.now() - PRE.at < 10000) {
       try { chrome.runtime.sendMessage({ type: "recog-adopt", from: PRE.at, to: lot.startedAt, title: lot.title || "", diff: Math.round(d) }, () => chrome.runtime.lastError); } catch (_) {}
-      PRE = { at: 0, n: 0, last: PRE.last, thumb: null };
+      PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt };
       return;
     }
-    setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null }; }, 1000);
+    setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt }; }, 600);   // live is seen ~1 s after the timer starts (it must tick once)
   };
 
   // ---------- capture check toast
@@ -143,6 +168,7 @@
     if (!msg) return;
     if (msg.type === "recog-grab") { reply(grab(1000)); return; }
     if (msg.type === "recog-grab-again") { sendFrame(msg.key, msg.n || 2); return; }
+    if (msg.type === "recog-read-now") { if (on) readNow("manual"); reply({ ok: on }); return; }   // "read now" button / hotkey
     if (msg.type === "recog-grab-result") {
       if (msg.ok) show(`Frame grabbed by ${msg.method === "video" ? "video copy" : "screenshot"}: ${msg.w}x${msg.h}, ${msg.kb} KB, ${msg.ms} ms.` +
         (msg.luma < 12 ? "\nWarning: the frame is black (protected video?)." : "") + "\nChecking automatic capture in 5 s...", msg.luma >= 12);

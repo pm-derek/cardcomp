@@ -3,6 +3,7 @@
 //   node scripts/recog-check.js
 // 1. fixtures:   autoMatch on the 20 confirmed frames as read by Opus / Haiku / Sonnet (docs/recog-reads).
 //    1b: Derek's first live test, 23 lots: Haiku as streamed, Sonnet / Opus on the same frames.
+//    1c: his second session, 33 lots, mostly Sonnet as streamed (stamped promos, anniversary reprints).
 //                Hard rule: a strong suggestion is never the wrong card.
 // 2. regression: manual search gives identical results with and without recog/automatch.js loaded.
 // 3. strip:      in a temp copy, scripts/strip-recog.js restores every touched file to main as it was before the
@@ -121,6 +122,26 @@ async function appPage(browser, base, blockRecog) {
   }
   console.table(liveRows);
 
+  // ---------- 1c. second live session (lots 24-56), mostly Sonnet as streamed: stamped promos
+  console.log("1c. second live session: stamped promos, anniversary reprints");
+  const live2 = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/recog-reads/live-2026-10-16b.json"), "utf8")).lots;
+  const sess2 = await app.evaluate((live2) => {
+    const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
+    return live2.map((l) => {
+      const short = l.frames[0] ? Math.min(...l.frames[0].split("x").map(Number)) : 0;
+      const reads = l.reads.filter((r) => r.name && r.card_visible !== false);
+      let best = null;
+      for (const r of reads) { const m = autoMatch(r, { short, model: r.model || "" }); if (!best || (RANK[m.kind] || 0) >= (RANK[best.kind] || 0)) best = m; }
+      return { shot: l.shot, truth: l.truth && l.truth.ids, sug: best && best.suggestion, strength: best && best.strength, ids: best ? best.cards.map((c) => c.id) : [] };
+    });
+  }, live2);
+  const t2 = sess2.filter((r) => r.truth), by2 = Object.fromEntries(sess2.map((r) => [r.shot, r]));
+  const right2 = t2.filter((r) => r.sug && r.truth.includes(r.sug)).length, wrong2 = t2.filter((r) => r.sug && !r.truth.includes(r.sug)).length;
+  ok(!t2.some((r) => r.strength === "strong" && !r.truth.includes(r.sug)), "session 2: no strong suggestion is the wrong card");
+  ok(right2 >= 12 && wrong2 <= 1 && t2.every((r) => r.ids.some((id) => r.truth.includes(id))), `session 2: ${right2} of ${t2.length} picked right, ${wrong2} wrong (was 8 and 5), every right card listed`);
+  ok(by2[37].sug === "tc:654703" && by2[53].sug === "tc:623594" && by2[56].sug === "tc:618107", "stamp names the stamped product (Bulbasaur Mega Evolution, N's Reshiram Journey Together, Leafeon Prismatic Evolutions)");
+  ok(by2[34].sug === "me55c-106", "anniversary stamp read as 25th still finds the 30th Celebration Classic Collection Shining Celebi, not Neo Destiny");
+
   // ---------- 2. regression ----------
   console.log("2. regression: manual search unchanged");
   const without = await appPage(browser, base, true);
@@ -231,8 +252,13 @@ async function appPage(browser, base, blockRecog) {
   await mp.waitForFunction(() => window.__mockReady === true);
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
-  const tick = (key) => mp.evaluate((key) => { const lot = { startedAt: key, title: "$1 START SINGLES #" + (key % 100), ended: false }; window.__lot = lot; window.__recogTick({ timer: "00:12" }, lot); }, key);
-  const sold = () => mp.evaluate(() => { window.__lot.ended = true; window.__recogTick({ timer: "", sold: "Sold", ended: true }, window.__lot); });
+  // a live lot: the timer counts down (whatnot.js calls __recogTick on every page change, so every second)
+  const tick = (key) => mp.evaluate((key) => {
+    clearInterval(window.__clock); const lot = { startedAt: key, title: "$1 START SINGLES #" + (key % 100), ended: false }; window.__lot = lot; let t = 30;
+    const f = () => { if (lot.ended) return clearInterval(window.__clock); window.__recogTick({ timer: "00:" + String(t--).padStart(2, "0") }, lot); };
+    f(); window.__clock = setInterval(f, 500);
+  }, key);
+  const sold = () => mp.evaluate(() => { clearInterval(window.__clock); window.__lot.ended = true; window.__recogTick({ timer: "", sold: "Sold", ended: true }, window.__lot); });
   const scene = (n) => mp.evaluate((n) => { window.__scene = n; }, n);
   const toApp = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto"));
   const lotRec = (key) => mp.evaluate((key) => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("lots").objectStore("lots").get(key); q.onsuccess = () => res(q.result); }; }), key);
@@ -270,7 +296,7 @@ async function appPage(browser, base, blockRecog) {
   const r3 = await lotRec(k3);
   ok(r3 && r3.frames[0].trigger === "start" && r3.reads.length === 2 && apiCalls.length === 4, "new card right at the timer: read at start (" + (r3 && r3.reads.length) + " reads, 2nd because it read the same card as before)");
   // sold before the delay: no capture
-  const k4 = Date.now(); await tick(k4); await mp.evaluate(() => { window.__lot.ended = true; }); await mp.waitForTimeout(1500);
+  const k4 = Date.now(); await tick(k4); await mp.evaluate(() => { clearInterval(window.__clock); window.__lot.ended = true; }); await mp.waitForTimeout(1500);
   ok(apiCalls.length === 4, "lot sold within the first second: no API call");
   // API rejects the key: the error reaches CardComp, nothing breaks
   apiMode = "401"; const k5 = Date.now(); await tick(k5); await mp.waitForTimeout(2000);
@@ -293,6 +319,18 @@ async function appPage(browser, base, blockRecog) {
   await scene(4); await mp.waitForTimeout(3600);
   ok(apiCalls.length === before + 1 && !apiCalls[apiCalls.length - 1].thinking, "a rejected option is not sent again (no extra round trip per read)");
   await mp.evaluate(() => chrome.storage.local.set({ recogModel: "haiku" }));
+  // the next lot shows its timer before the auction starts (not counting): still "before the timer", so a new card is read
+  await sold(); await mp.evaluate(() => { window.__lot = { startedAt: Date.now(), title: "$1 START SINGLES #77", ended: false }; window.__recogTick({ timer: "00:15" }, window.__lot); setTimeout(() => window.__recogTick({ timer: "00:15" }, window.__lot), 900); });
+  before = apiCalls.length; await scene(1); await mp.waitForTimeout(3800);
+  ok(apiCalls.length === before + 1, "timer shown but not counting: the card is read before the start");
+  // "read now": reads right away, whatever the watcher thinks
+  before = apiCalls.length;
+  await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {})));
+  await mp.waitForTimeout(900);
+  const man = (await toApp()).filter((m) => m.manual);
+  ok(apiCalls.length === before + 1 && man.length === 1, "read now: one immediate read, marked manual");
+  const watch = await mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto-watch").map((m) => m.why));
+  ok(watch.length > 0 && watch.some((w) => /same picture|same card|waiting|changing|just read/.test(w)), "watcher reports what it is doing (" + [...new Set(watch)].slice(0, 3).join(" / ") + ")");
   // CardComp reports its match and the lot outcome back
   await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
     send({ type: "cardcomp-auto-match", key: k, n: 1, kind: "number-miss", strength: null, suggestion: null, cards: [{ id: "sv10pt5-165", n: "Kyurem ex", s: "Black Bolt", num: "165", m: 68.9 }], note: "no #157", filled: true });
@@ -376,6 +414,18 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, status: document.querySelector("#status").textContent, color: document.querySelector("#status").style.color, badge: !!document.querySelector("#results .autobadge"), n: document.querySelectorAll("#results .card").length }));
   ok(/Chinese card/.test(st.line) && /Chinese card/.test(st.status) && /red/.test(st.color) && !st.badge && st.n > 0, "Chinese card: red warning, English printings listed for reference, nothing marked as the card");
+  // read now button and watcher status on the line
+  await send({ type: "cardcomp-auto-watch", phase: "watching", why: "waiting for the card to hold still", mean: 9, peak: 60 }); await ap.waitForTimeout(150);
+  ok(/waiting for the card to hold still/.test(await ap.textContent("#autoline")), "watcher status shown on the auto line");
+  await ap.click("#autoread"); await ap.waitForTimeout(150);
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-read"), "read now button asks the extension for a read");
+  await ap.fill("#q", "typing something"); await ap.waitForTimeout(100);
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, manual: true, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset.id, line: document.querySelector("#autoline").textContent }));
+  ok(st.q === "Carbink" && st.first === "me2pt5-242" && /read now/.test(st.line), "a read you asked for fills the search even if you were typing");
+  await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
+  ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   await ap.click("#autosw"); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");

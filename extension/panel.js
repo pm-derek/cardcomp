@@ -3,7 +3,7 @@ const cc = document.getElementById("cc");
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
-  if (/^cardcomp-auto-(hello|config|match|outcome)$/.test(d.type || "")) { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }   // RECOG app -> extension
+  if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }   // RECOG app -> extension
   if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
   if (d.type === "cardcomp-snapshot") { chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
   if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read") {
@@ -23,4 +23,4 @@ window.addEventListener("message", (e) => {
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
 chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt)?$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app

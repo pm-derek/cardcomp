@@ -1,0 +1,1006 @@
+{
+ "note": "Derek second live session (lots 24-56 of the export), mostly Sonnet 5.5. Review meanings (Derek): right = auto correct, listed = auto wrong but the card was in the list, wrong = card not in the list, nocard = no card on screen.",
+ "lots": [
+  {
+   "shot": 24,
+   "seller": "ivasaur",
+   "title": "$2 Start Singles - Mixed Conditions See on Screen #16",
+   "frames": [
+    "1080x1920"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Lugia",
+     "number": "249",
+     "total": "",
+     "language": "jp",
+     "rarity": "Holo Rare",
+     "stamp": "",
+     "set": "Neo Genesis",
+     "confidence": 0.93
+    }
+   ]
+  },
+  {
+   "shot": 25,
+   "seller": "dustyjsmith79",
+   "title": "most all 1st edition base unlimited #3",
+   "frames": [],
+   "review": "",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "error": "no frame: 1 video element(s), none showing a picture"
+    }
+   ]
+  },
+  {
+   "shot": 26,
+   "seller": "dustyjsmith79",
+   "title": "",
+   "frames": [
+    "540x960"
+   ],
+   "review": "nocard",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": false,
+     "name": "",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "",
+     "stamp": "",
+     "set": "",
+     "confidence": 0
+    }
+   ]
+  },
+  {
+   "shot": 27,
+   "seller": "dustyjsmith79",
+   "title": "most all 1st edition base unlimited #4",
+   "frames": [
+    "540x960"
+   ],
+   "review": "",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Minccino",
+     "number": "192",
+     "total": "",
+     "language": "other",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "",
+     "confidence": 0.8
+    }
+   ]
+  },
+  {
+   "shot": 28,
+   "seller": "calipokehouse",
+   "title": "",
+   "frames": [
+    "1080x1920"
+   ],
+   "review": "nocard",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": false,
+     "name": "",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "",
+     "stamp": "",
+     "set": "",
+     "confidence": 0
+    }
+   ]
+  },
+  {
+   "shot": 29,
+   "seller": "yougotthepull",
+   "title": "",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "nocard",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": false,
+     "name": "",
+     "number": "",
+     "total": "",
+     "language": "other",
+     "rarity": "",
+     "stamp": "",
+     "set": "",
+     "confidence": 0
+    }
+   ]
+  },
+  {
+   "shot": 30,
+   "seller": "safamtb",
+   "title": "Phynite Single Pack #14",
+   "frames": [],
+   "review": "",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "error": "no frame: 1 video element(s), none showing a picture"
+    }
+   ]
+  },
+  {
+   "shot": 31,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #47",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "sv9-162"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Wailord",
+     "number": "162",
+     "total": "159",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "Crown Zenith Galarian Gallery",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 32,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #48",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "tc:632083",
+   "truth": {
+    "ids": [
+     "tc:632083"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Eevee ex",
+     "number": "173",
+     "total": "",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "Black Star promo mark",
+     "set": "SVP Black Star Promos",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 33,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #49",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "svp-51",
+   "truth": {
+    "ids": [
+     "svp-51"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Snorlax",
+     "number": "057",
+     "total": "",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "Black Star promo mark",
+     "set": "Scarlet & Violet Black Star Promos",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 34,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #50",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "me55c-106",
+   "truth": {
+    "ids": [
+     "me55c-106"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Shining Celebi",
+     "number": "106",
+     "total": "105",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "Pikachu 25th anniversary logo",
+     "set": "Celebrations Classic Collection (Neo Destiny)",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 35,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #51",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "swsh9-181"
+    ],
+    "note": "Derek: right (top of the list)"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Galarian Articuno V",
+     "number": "180",
+     "total": "198",
+     "language": "en",
+     "rarity": "Secret Rare gold full art",
+     "stamp": "",
+     "set": "Chilling Reign",
+     "confidence": 0.6
+    }
+   ]
+  },
+  {
+   "shot": 36,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #52",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "zsv10pt5-112"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Emolga",
+     "number": "112",
+     "total": "086",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "Black Bolt",
+     "confidence": 0.75
+    }
+   ]
+  },
+  {
+   "shot": 37,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #53",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "tc:654703",
+   "truth": {
+    "ids": [
+     "tc:654703"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Bulbasaur",
+     "number": "133",
+     "total": "132",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "Mega Evolution",
+     "set": "Mega Evolution",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 38,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #54",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "sv3pt5-177"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Machoke",
+     "number": "177",
+     "total": "165",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "151",
+     "confidence": 0.93
+    }
+   ]
+  },
+  {
+   "shot": 39,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #55",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "zsv10pt5-101",
+   "truth": {
+    "ids": [
+     "zsv10pt5-101"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Panpour",
+     "number": "107",
+     "total": "086",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "Black Bolt",
+     "confidence": 0.85
+    }
+   ]
+  },
+  {
+   "shot": 40,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #56",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Lacey",
+     "number": "122",
+     "total": "142",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "",
+     "set": "Stellar Crown",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 41,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #58",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "zsv10pt5-168"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Excadrill ex",
+     "number": "168",
+     "total": "086",
+     "language": "en",
+     "rarity": "Special Illustration Rare",
+     "stamp": "",
+     "set": "Black Bolt",
+     "confidence": 0.85
+    }
+   ]
+  },
+  {
+   "shot": 42,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #60",
+   "frames": [
+    "720x1280",
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Torkoal",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "",
+     "set": "",
+     "confidence": 0.95
+    },
+    {
+     "n": 2,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Torkoal",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "",
+     "set": "",
+     "confidence": 0.97
+    }
+   ]
+  },
+  {
+   "shot": 43,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #61",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "sv5-169"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Charjabug",
+     "number": "169",
+     "total": "162",
+     "language": "en",
+     "rarity": "Special Illustration Rare",
+     "stamp": "",
+     "set": "Temporal Forces",
+     "confidence": 0.97
+    }
+   ]
+  },
+  {
+   "shot": 44,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #62",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "wrong",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Snorlax",
+     "number": "057",
+     "total": "",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "",
+     "confidence": 0.95
+    }
+   ]
+  },
+  {
+   "shot": 45,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #63",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "me2-98",
+   "truth": {
+    "ids": [
+     "me2-98"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Piplup",
+     "number": "098",
+     "total": "094",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "Phantasmal Flames",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 46,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #71",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "right",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "swshp-SWSH125"
+    ],
+    "note": "Derek: right (top of the list)"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Galarian Moltres",
+     "number": "SWSH244",
+     "total": "",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "Black Star promo",
+     "set": "SWSH Black Star Promos",
+     "confidence": 0.93
+    }
+   ]
+  },
+  {
+   "shot": 47,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #72",
+   "frames": [
+    "720x1280",
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Mimikyu",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "Pikachu 25th anniversary logo",
+     "set": "Celebrations Classic Collection",
+     "confidence": 0.93
+    },
+    {
+     "n": 2,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Mimikyu δ",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "Pikachu 25th anniversary logo",
+     "set": "Celebrations Classic Collection",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 48,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #73",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "me3-94",
+   "truth": {
+    "ids": [
+     "me3-94"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Clefairy",
+     "number": "094",
+     "total": "088",
+     "language": "en",
+     "rarity": "Illustration Rare",
+     "stamp": "",
+     "set": "Phantasmal Flames",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 49,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #74",
+   "frames": [
+    "720x1280",
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Mimikyu",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "25th anniversary Pikachu logo",
+     "set": "Celebrations Classic Collection",
+     "confidence": 0.93
+    },
+    {
+     "n": 2,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Mimikyu",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "25th Anniversary",
+     "set": "EX Holon Phantoms",
+     "confidence": 0.95
+    }
+   ]
+  },
+  {
+   "shot": 50,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #75",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "tc:127189",
+   "truth": {
+    "ids": [
+     "tc:127189"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Lurantis GX",
+     "number": "150",
+     "total": "149",
+     "language": "en",
+     "rarity": "Hyper Rare (rainbow)",
+     "stamp": "",
+     "set": "Sun & Moon Detective Pikachu",
+     "confidence": 0.6
+    }
+   ]
+  },
+  {
+   "shot": 51,
+   "seller": "doogecards",
+   "title": "",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "nocard",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": false,
+     "name": "",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "",
+     "stamp": "",
+     "set": "",
+     "confidence": 0
+    }
+   ]
+  },
+  {
+   "shot": 52,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #76",
+   "frames": [
+    "720x1280",
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": null,
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Golisopod GX",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Secret Rare full art (Shiny)",
+     "stamp": "",
+     "set": "Hidden Fates",
+     "confidence": 0.95
+    },
+    {
+     "n": 2,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Golisopod GX",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Secret Rare full art (Shiny Rare)",
+     "stamp": "",
+     "set": "Hidden Fates",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 53,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #77",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "tc:623594",
+   "truth": {
+    "ids": [
+     "tc:623594"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "N's Reshiram",
+     "number": "162",
+     "total": "159",
+     "language": "en",
+     "rarity": "Special Illustration Rare",
+     "stamp": "Journey Together Stamp",
+     "set": "Journey Together",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 54,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #78",
+   "frames": [
+    "720x1280",
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "swshp-SWSH291",
+   "truth": {
+    "ids": [
+     "swshp-SWSH291"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Lucario VSTAR",
+     "number": "",
+     "total": "",
+     "language": "en",
+     "rarity": "Ultra Rare full art",
+     "stamp": "Black Star promo mark",
+     "set": "",
+     "confidence": 0.93
+    },
+    {
+     "n": 2,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Lucario VSTAR",
+     "number": "SWSH224",
+     "total": "",
+     "language": "en",
+     "rarity": "Holo Rare",
+     "stamp": "Black Star promo mark",
+     "set": "SWSH Black Star Promos",
+     "confidence": 0.9
+    }
+   ]
+  },
+  {
+   "shot": 55,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #81",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "",
+   "outcome": "tc:618090",
+   "truth": {
+    "ids": [
+     "tc:618090"
+    ],
+    "note": "tapped / opened or Derek: right"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Flareon ex",
+     "number": "014",
+     "total": "131",
+     "language": "en",
+     "rarity": "Double Rare holo",
+     "stamp": "",
+     "set": "Prismatic Evolutions",
+     "confidence": 0.97
+    }
+   ]
+  },
+  {
+   "shot": 56,
+   "seller": "doogecards",
+   "title": "🔥Single On Screen🔥 #82",
+   "frames": [
+    "720x1280"
+   ],
+   "review": "listed",
+   "outcome": "",
+   "truth": {
+    "ids": [
+     "tc:618107"
+    ],
+    "note": "listed per Derek; the stamp read names the stamped product"
+   },
+   "reads": [
+    {
+     "n": 1,
+     "model": "claude-sonnet-5-5",
+     "card_visible": true,
+     "name": "Leafeon ex",
+     "number": "006",
+     "total": "131",
+     "language": "en",
+     "rarity": "Double Rare holo",
+     "stamp": "Prismatic Evolutions logo stamp",
+     "set": "Prismatic Evolutions",
+     "confidence": 0.97
+    }
+   ]
+  }
+ ]
+}
