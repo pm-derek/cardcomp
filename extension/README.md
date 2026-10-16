@@ -56,10 +56,44 @@ GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission
 Test shows how many entries the store holds. Without a token, live reads still work for the session; they
 just are not saved.
 
+After the first read on a freshly opened TCGplayer page the extension switches you back to the Whatnot tab
+(the TCGplayer tab stays open behind). If nothing could be read within 8 seconds, the open card says so
+under its grid and you stay on TCGplayer.
+
 ## Your own bid
 
-Under the condition grid: `your bid $ [ 14 ] send`. It is prefilled with the NM margin bid. Change it to
-15, press Enter or send, and that number goes to Whatnot (and the clipboard) like any tapped bid.
+Under the bid table: `your bid $ −1 [ 14 ] +1 send`. It starts at the NM margin bid and then follows
+whatever bid you last tapped (LP, flat, profit...). −1 / +1 step it by a dollar; Enter or send puts that
+number into Whatnot (and the clipboard) like any tapped bid.
+
+## Lot strip and auction log
+
+With a Whatnot tab open, a strip above the search box shows the auction as it runs: `now $21 · next $23 ·
+0:05 · 14 bids · ship $4.47 · lead eriper37185 · your max $19`. Gold normally, red once the current bid
+passes the last bid you sent ("over your $19"), green while you lead. New lot: the title shows as a chip
+("on stream: ...", tap to search it) and the search box is selected so typing replaces the old search.
+
+When a lot ends the extension records it: title, final price, bid count, winner, everyone who led during
+the lot, shipping, seller, time, and the card you last sent a bid on (name, condition, printing, market,
+your max, rarity, era, speed tier, margin, verified or not), every bid you sent during the lot, the full
+bid history (each lead change with amount and seconds into the lot), viewer count at start and end,
+giveaway entries, and who was in the room (chat joins and lot leaders in the last 30 minutes). Lots you won
+are flagged. Rows go to `log-YYYY-MM-DD.json` in a private repo, `pm-derek/cardcomp-data`, because they
+carry other people's usernames and your purchase ledger, and the cardcomp repo is public.
+
+Setup once: on github.com create a new repository named `cardcomp-data`, set it to Private, tick "Add a
+README" (so the main branch exists), create. Then edit the token (Settings > Developer settings > tokens),
+add `cardcomp-data` under Repository access, keep Contents: Read and write, save. Without this the log is
+dropped with a console warning; prices still save.
+
+The reader reacts to page changes rather than polling, so streams open in other tabs keep reporting
+(mute them). Each tab is its own room; records carry the seller and URL. Over weeks this is the room read (what this seller's lots close at vs market, who the
+aggressive bidders are) and your purchase ledger (what you paid, per card, per seller).
+
+## Footer status
+
+With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
+means tapping a bid will only copy; `store: no token` means click-outs are not being saved (see Options).
 
 ## What it does and does not do
 

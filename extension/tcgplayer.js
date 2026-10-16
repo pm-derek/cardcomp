@@ -56,23 +56,31 @@ function lowestListing(condName) {
   return low;
 }
 
+let reported = false;   // anything read since this page / filter loaded
+function send(extra) {
+  const c = ctx();
+  try { chrome.runtime.sendMessage(Object.assign({ type: "cardcomp-tcg-price", pid: c.pid, printing: c.printing, cond: c.cond, href: location.href }, extra)); } catch (_) {}
+}
 function report() {
   const c = ctx();
-  if (!c.pid) return;
+  if (!c.pid) return false;
   const market = marketPrice(c.condName), low = lowestListing(c.condName);
-  if (market == null && low == null) return;
+  if (market == null && low == null) return false;
   const key = [c.pid, c.printing, c.cond, market, low].join("|");
-  if (key === last) return;
+  if (key === last) return true;
   last = key;
-  try { chrome.runtime.sendMessage({ type: "cardcomp-tcg-price", pid: c.pid, printing: c.printing, cond: c.cond, market, low, href: location.href }); } catch (_) {}
+  send({ market, low, first: !reported });   // first: the extension switches back to the Whatnot tab
+  reported = true;
+  return true;
 }
 
 // Prices render after load, and the condition filter is client-side routing: poll, lightly.
 let href = location.href, tries = 0;
 const tick = () => {
-  if (location.href !== href) { href = location.href; last = ""; tries = 0; }
+  if (location.href !== href) { href = location.href; last = ""; tries = 0; reported = false; }
   report();
   tries++;
+  if (tries === 16 && !reported) send({ none: true });   // 8 s and nothing read: tell CardComp so Derek knows the reader missed
   setTimeout(tick, tries < 20 ? 500 : 2000);
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();

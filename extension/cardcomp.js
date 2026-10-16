@@ -3,7 +3,11 @@
 window.addEventListener("message", (e) => {
   if (e.source !== window || e.origin !== location.origin) return;
   const d = e.data;
-  if (d && d.type === "cardcomp-live-save") { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }
+  if (d && (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }
+  if (d && d.type === "cardcomp-status") {
+    try { chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) window.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, location.origin); }); } catch (_) {}
+    return;
+  }
   if (!d || d.type !== "cardcomp-bid") return;
   try {
     chrome.runtime.sendMessage(d, (r) => {
@@ -17,4 +21,4 @@ window.addEventListener("message", (e) => {
 
 // Hello, so CardComp can label the bid chips "this bid goes into Whatnot".
 window.postMessage({ type: "cardcomp-ext-ready" }, location.origin);
-chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.type === "cardcomp-tcg-price") window.postMessage(msg, location.origin); });
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) window.postMessage(msg, location.origin); });
