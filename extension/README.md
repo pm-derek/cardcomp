@@ -90,6 +90,17 @@ The reader reacts to page changes rather than polling, so streams open in other 
 (mute them). Each tab is its own room; records carry the seller and URL. Over weeks this is the room read (what this seller's lots close at vs market, who the
 aggressive bidders are) and your purchase ledger (what you paid, per card, per seller).
 
+### What labels a lot with a card
+
+- One lot is one record, however many times you tap. Tapping NM, then LP, then NM on the same card
+  labels the lot with the last tap (NM) and keeps all three in the record.
+- A bid counts when you tap it (any bid chip, the cart total, or send / Enter in "your bid"). Typing in
+  "your bid" without sending does not. Each tap is marked if it landed in Whatnot's Custom bid box.
+- Taps made while the seller is still showing the card, before the auction starts, count for that lot.
+- Two cards in one lot: add both to the cart and tap the cart's max bid total. The lot is labeled with both
+  cards and each one's share of the bid.
+- Whether you actually placed the bid is shown by whether you were ever the leader during the lot.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`

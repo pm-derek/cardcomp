@@ -179,20 +179,33 @@ function sendApp(msg) { try { chrome.runtime.sendMessage(msg, () => chrome.runti
 function endLot(st) {
   if (!lot || lot.ended) return;
   lot.ended = true;
-  if (st.cur == null && st.bids == null) return;   // never saw a price: not a lot
+  if (st.cur == null && st.bids == null) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }   // never saw a price: tell the app to reset, log nothing
   sendApp({ type: "cardcomp-lot-end", rec: {
-    v: 2, title: lot.title, start: lot.start, final: st.cur, bids: st.bids,
+    v: 3, title: lot.title, start: lot.start, final: st.cur, bids: st.bids,
     winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"),
+    iLed: lot.iLed,                                       // Derek was the leader at some point: proof he actually bid, not just tapped
     leaders: [...lot.leaders], hist: lot.hist,            // hist: every lead change {t: s since lot start, u: user, a: amount}
     ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
     room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
   } });
 }
+const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
 function lotTick() {
   let st; try { st = readLot(); } catch (_) { return; }
-  if (st.title && (!lot || st.title !== lot.title)) {
+  // A new lot starts when the title changes, or, for sellers who reuse one title ("$2 start") lot after
+  // lot, when the bid count drops back (a new lot starts at 0) or the timer jumps back up after a sale.
+  const tSec = secs(st.timer);
+  const rolled = lot && st.title === lot.title && (
+    (st.bids != null && lot.maxBids > 0 && st.bids < lot.maxBids) ||
+    (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
+  if ((st.title && (!lot || st.title !== lot.title)) || rolled) {
     if (lot && lotLastState) endLot(lotLastState);
-    lot = { title: st.title, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false };
+    lot = { title: st.title, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false };
+  }
+  if (lot) {
+    if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
+    if (tSec != null) lot.lastSec = tSec;
+    if (st.me) lot.iLed = true;
   }
   if (lot && st.lead) {
     lot.leaders.add(st.lead); seen(st.lead, "leads");

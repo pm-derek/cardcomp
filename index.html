@@ -73,8 +73,6 @@
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
   .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:6px 9px;font-size:12.5px;align-items:center}
-  body.framed .condgrid{grid-template-columns:auto auto auto auto 1fr}   /* in the extension side panel: no cart column, the stream is live */
-  body.framed .condgrid .cadd,body.framed .condgrid .hadd{display:none}
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
   .condgrid .c{font-weight:700}
@@ -2547,18 +2545,30 @@ function copyAmt(val, el){
 let WN_PENDING=null, WN_EXT=false;   // WN_EXT: the extension said hello, so a tap sends the bid into Whatnot
 function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to copy"; }
 let LAST_TAP=null;   // the card behind the last bid sent: joins the auction log to a card, and powers "over your $X" in the lot strip
+// card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
+function cardSnap(r, cond, printing, rowMkt, name){
+  const mkt=r?bestMarket(r):0; rowMkt=rowMkt>0?rowMkt:mkt;
+  const pr=r&&printing&&r.px&&r.px[printing], sp=r?speedOf(r, rowMkt, cond):null;
+  return { id:r?r.id:"", n:r?r.n:(name||""), s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
+    cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
+    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0) };
+}
 function sendToWhatnot(s, el, show){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
   try{
-    const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id);
-    const pk=c&&c.querySelector(".pchip.on");
-    const cond=(el&&el.dataset&&el.dataset.cond)||"NM", mkt=r?bestMarket(r):0, rowMkt=el&&el.dataset&&el.dataset.mkt?+el.dataset.mkt:mkt;
-    const sp=r?speedOf(r, rowMkt, cond):null, pr=r&&pk&&r.px&&r.px[pk.dataset.k];
-    // card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
-    LAST_TAP={ id:r?r.id:"", n:name, s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
-      cond, printing:pk?pk.dataset.k:"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
-      d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0), bid:+s, at:Date.now() };
-    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
+    const ds=(el&&el.dataset)||{};
+    if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
+      const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
+        return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin).toFixed(2)}); });
+      name=`${cards.length} cards`;
+      LAST_TAP=Object.assign({ id:"", n:name, multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });
+    } else {
+      const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id), pk=c&&c.querySelector(".pchip.on");
+      // the "your bid" send has no condition of its own: keep the condition last tapped on this card
+      const cond=ds.cond || (LAST_TAP && r && LAST_TAP.id===r.id && LAST_TAP.cond) || "NM";
+      LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:"", ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
+    }
+    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     paintLot();
   }catch(_){ }
   const msg={type:"cardcomp-bid", amount:+s, name};
@@ -2571,7 +2581,9 @@ window.addEventListener("message", e=>{
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
   if(!(fromSelf||fromPanel)) return;
   const p=WN_PENDING; if(!p || Date.now()-p.at>3000) return;
-  if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null; }
+  if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null;
+    const last=TAPS_THIS_LOT[TAPS_THIS_LOT.length-1]; if(last && String(last.bid)===String(p.s)) last.filled=true;   // landed in the Custom bid box, not just copied
+    if(LAST_TAP && String(LAST_TAP.bid)===String(p.s)) LAST_TAP.filled=true; }
 });
 window.addEventListener("message", e=>{   // live TCGplayer price from the extension
   const d=e.data; if(!d || d.type!=="cardcomp-tcg-price") return;
@@ -2632,15 +2644,22 @@ window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
     LOT=d;
-    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; LOT_START=Date.now(); const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }   // new lot: typing replaces the old search
+    // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
+    // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
+    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
     paintLot();
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
-    // card label only from a bid sent while this lot ran. Sellers rarely name the card, so this tap is the
-    // only record of what sold; a stale tap would label the lot with the previous card.
-    const rec=d.rec, tap=LAST_TAP && LAST_TAP.at>=(rec.startedAt||LOT_START)-3000 && LAST_TAP.at<=rec.at ? LAST_TAP : null;
+    // Card label: the last bid sent since the previous lot ended (pre-start taps included, at most 3 min
+    // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
+    // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
+    // labeled with the last one; every tap is kept in bidsSent.
+    const rec=d.rec, from=Math.max(LOT_START, (rec.startedAt||Date.now())-180000);
+    const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at ? LAST_TAP : null;
     LOT_START=Date.now();
-    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.bidsSent=TAPS_THIS_LOT.slice(); }
+    if(rec.empty){ TAPS_THIS_LOT=[]; paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
+    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; }
+    rec.bidsSent=TAPS_THIS_LOT.filter(t=>t.t>=from);
     TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
     const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM.json (needs the token)
@@ -2920,7 +2939,9 @@ function renderCart(){
       <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <span style="color:var(--dim);font-size:10px">${pctMkt(bid,atc)}</span> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
-  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
+  // the total is tappable like any bid: copies, goes into Whatnot, and labels the lot with every card in the cart
+  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b class="cpy carttot" data-bid="${totBid.toFixed(2)}" data-cart="1" title="${cpTitle()}" style="color:var(--gold);font-size:15px;cursor:pointer;text-decoration:underline dotted">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
+  { const t=$("#cartitems").querySelector(".carttot"); if(t) t.onclick=(e)=>{ e.stopPropagation(); copyAmt(t.dataset.bid, t); }; }
   $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
