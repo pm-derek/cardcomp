@@ -14,6 +14,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== "cardcomp-bid") return;
   const amt = String(Math.max(0, Math.floor(Number(msg.amount) || 0)));
   if (amt === "0") { reply({ ok: false, why: "no amount" }); return; }
+  // Lot already sold / "Awaiting next item": a late tap is for the card that sold. Never fill or arm anything,
+  // or the next lot's Custom box would get the old card's bid.
+  let now0 = null; try { now0 = readLot(); } catch (_) {}   // read the page now, not the last tick: a late tap lands right after "Sold"
+  const st0 = now0 || lotLastState;
+  if (st0 && (st0.ended || st0.waiting)) {
+    toast(`Lot already sold. $${amt}${msg.name ? " for " + msg.name : ""} was not entered.`, "wait");
+    reply({ ok: false, why: "sold" });
+    return;
+  }
   pending = { amt, name: msg.name || "", at: Date.now() };
   // Already priced out (the live lot's next bid is above this max): don't open Custom bid at all
   const min0 = minBid();
