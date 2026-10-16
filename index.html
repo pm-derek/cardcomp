@@ -200,6 +200,15 @@
   #results.grid .bids .brow .blab{font-size:8px;margin-right:0}
   #results.grid .bids .brow b{font-size:13px}
   /* an opened tile spans the row and falls back to the list layout so the detail reads normally */
+  /* Tiles: the bids are tapped straight from results (Derek knows the card), so they are chips, not small text.
+     Margin bid = gold chip ~34px tall; b/e = smaller outlined chip. Fits 4 columns in the side panel. */
+  #results.grid .card:not(.open) .bids{gap:5px 6px;align-items:center}
+  #results.grid .card:not(.open) .bids .bm b.rounded,#results.grid .card:not(.open) .bids .bp b{display:inline-block;border-radius:8px;line-height:1;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  #results.grid .card:not(.open) .bids .bm b.rounded{padding:9px 12px;font-size:16px;font-weight:800;border:1px solid var(--gold);background:rgba(245,179,1,.12);min-width:46px;text-align:center}
+  #results.grid .card:not(.open) .bids .bp b{padding:7px 8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
+  #results.grid .card:not(.open) .bids .brow b:active{transform:scale(.96)}
+  #results.grid[data-cols="4"] .card:not(.open) .bids .bm b.rounded{padding:8px 9px;font-size:15px;min-width:40px}
+  #results.grid[data-cols="4"] .card:not(.open) .bids .bp b{padding:6px 6px;font-size:12px}
   #results.grid .card.open .row{flex-direction:row;gap:9px}
   #results.grid .card.open img{width:44px;height:62px;aspect-ratio:auto}
   #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
@@ -2584,7 +2593,9 @@ function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }      
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
-  const show=(msg,col)=>{ if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color=col||"var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },col?2200:900); };
+  const tileChip=!!(el && el.closest && el.closest("#results.grid .card:not(.open) .bids"));
+  const short=m=>!tileChip ? m : m.replace(/^copied \$(\d+)$/,"✓ $$$1").replace(/^Whatnot \$(\d+) ✓$/,"✓ $$$1").replace(/^under next \$/,"need $$").replace(/^lot sold, not sent$/,"sold").replace(/^under \$1$/,"<$$1");
+  const show=(msg,col)=>{ msg=short(msg); if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color=col||"var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },col?2200:900); };
   const flash=()=>show("copied $"+s);
   // Whatnot's minimum bid is $1: a sub-$1 max floors to 0, so nothing is copied or sent, but the tap still
   // labels the lot with this card (data-collection taps on bulk cards)
@@ -2667,6 +2678,7 @@ window.addEventListener("message", e=>{   // extension handshake: relabel the bi
   if(!(fromSelf||fromPanel)) return;
   WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
   if(!WN_STAT_TIMER){ askStatus(); WN_STAT_TIMER=setInterval(askStatus, 4000); }
+  setTimeout(resetSweep, 1500);
 });
 // With the extension: TCGplayer links (LP ↗, market price, "view on TCGplayer") open in a background tab so
 // focus stays on the Whatnot stream; the extension reads the price there and it lands on the row. Without the
@@ -2772,6 +2784,17 @@ function cardFields(t){ const o=Object.assign({}, t); delete o.bid; delete o.at;
 // ---- Stream stats: one slim row per finished lot, kept in this browser (120 days, 4000 rows) ----
 // Labeled lots (a card tapped or opened) carry the condition market, so each sale becomes a % of market.
 const LOTS_KEY="cardcomp_lots";
+// One-time cleanup (2026-10-16, Derek asked): everything logged before this version came from readers that logged
+// his own name as the seller, duplicate rows, missing prices and stale card labels. The first load of this version
+// wipes this browser's lot stats; with the extension present it also sweeps the private GitHub log for rows from
+// before that moment (the old extension may have written more after the file was deleted by hand).
+const RESET_KEY="cardcomp_reset_2026_10_16";
+let RESET_AT=0, RESET_SENT=false;
+try{ RESET_AT=+localStorage.getItem(RESET_KEY)||0; if(!RESET_AT){ RESET_AT=Date.now(); localStorage.removeItem(LOTS_KEY); localStorage.setItem(RESET_KEY, String(RESET_AT)); } }catch(_){ }
+function resetSweep(){   // GitHub part, once, after the extension says hello; marked done only when it answers
+  try{ if(RESET_SENT || localStorage.getItem(RESET_KEY+"_gh")) return; }catch(_){ return; }
+  RESET_SENT=true; extPost({type:"cardcomp-log-prune", since:0, before:RESET_AT, reset:true});
+}
 function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
 function recordLotStat(rec){
   try{
@@ -2899,6 +2922,7 @@ function clearLots(range){
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-prune-ack" || !lotFromExt(e)) return;
+  if(RESET_SENT && !CLEAR_NOTE){ RESET_SENT=false; if(d.ok){ try{ localStorage.setItem(RESET_KEY+"_gh", String(Date.now())); }catch(_){ } } return; }   // the one-time sweep, not a button press
   CLEAR_NOTE += d.ok ? ` GitHub log: removed ${d.removed||0} row${d.removed===1?"":"s"}${d.files?` across ${d.files} file${d.files===1?"":"s"}`:""}.` : ` GitHub log not cleared (${escH(d.why||"no reply")}).`;
   CLEAR_NOTE = CLEAR_NOTE.replace("Clearing the GitHub log… ", "");
   paintLotStats();

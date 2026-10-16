@@ -74,11 +74,12 @@ async function flushLog() {
 }
 // Delete every logged lot with at >= since (0 = everything): drops queued rows, rewrites day files that keep
 // older rows, deletes day files left empty. Derek-triggered from the stats panel ("clear logged data").
-async function pruneLog(since) {
-  since = +since || 0;
-  const before = pendingLog.length;
-  pendingLog = pendingLog.filter((r) => (r.at || 0) < since);
-  let removed = before - pendingLog.length, files = 0;
+async function pruneLog(since, before) {   // deletes rows with since <= at < before (before defaults to forever)
+  since = +since || 0; before = before == null ? Infinity : +before;
+  const gone = (r) => (r.at || 0) >= since && (r.at || 0) < before;
+  const queued = pendingLog.length;
+  pendingLog = pendingLog.filter((r) => !gone(r));
+  let removed = queued - pendingLog.length, files = 0;
   const tok = await token();
   if (!tok) return { ok: false, why: "no GitHub token", removed };
   const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
@@ -90,7 +91,7 @@ async function pruneLog(since) {
     const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
     if (!g.ok) continue;
     const j = await g.json(); let rows = []; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {}
-    const keep = rows.filter((r) => (r.at || 0) < since);
+    const keep = rows.filter((r) => !gone(r));
     if (keep.length === rows.length) continue;
     removed += rows.length - keep.length; files++;
     const body = keep.length
