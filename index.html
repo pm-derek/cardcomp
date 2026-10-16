@@ -2678,6 +2678,7 @@ window.addEventListener("message", e=>{   // extension handshake: relabel the bi
   if(!(fromSelf||fromPanel)) return;
   WN_EXT=true; document.querySelectorAll('[title="tap to copy"]').forEach(el=>el.title=cpTitle());
   if(!WN_STAT_TIMER){ askStatus(); WN_STAT_TIMER=setInterval(askStatus, 4000); }
+  setTimeout(resetSweep, 1500);
 });
 // With the extension: TCGplayer links (LP ↗, market price, "view on TCGplayer") open in a background tab so
 // focus stays on the Whatnot stream; the extension reads the price there and it lands on the row. Without the
@@ -2783,6 +2784,17 @@ function cardFields(t){ const o=Object.assign({}, t); delete o.bid; delete o.at;
 // ---- Stream stats: one slim row per finished lot, kept in this browser (120 days, 4000 rows) ----
 // Labeled lots (a card tapped or opened) carry the condition market, so each sale becomes a % of market.
 const LOTS_KEY="cardcomp_lots";
+// One-time cleanup (2026-10-16, Derek asked): everything logged before this version came from readers that logged
+// his own name as the seller, duplicate rows, missing prices and stale card labels. The first load of this version
+// wipes this browser's lot stats; with the extension present it also sweeps the private GitHub log for rows from
+// before that moment (the old extension may have written more after the file was deleted by hand).
+const RESET_KEY="cardcomp_reset_2026_10_16";
+let RESET_AT=0, RESET_SENT=false;
+try{ RESET_AT=+localStorage.getItem(RESET_KEY)||0; if(!RESET_AT){ RESET_AT=Date.now(); localStorage.removeItem(LOTS_KEY); localStorage.setItem(RESET_KEY, String(RESET_AT)); } }catch(_){ }
+function resetSweep(){   // GitHub part, once, after the extension says hello; marked done only when it answers
+  try{ if(RESET_SENT || localStorage.getItem(RESET_KEY+"_gh")) return; }catch(_){ return; }
+  RESET_SENT=true; extPost({type:"cardcomp-log-prune", since:0, before:RESET_AT, reset:true});
+}
 function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
 function recordLotStat(rec){
   try{
@@ -2910,6 +2922,7 @@ function clearLots(range){
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-prune-ack" || !lotFromExt(e)) return;
+  if(RESET_SENT && !CLEAR_NOTE){ RESET_SENT=false; if(d.ok){ try{ localStorage.setItem(RESET_KEY+"_gh", String(Date.now())); }catch(_){ } } return; }   // the one-time sweep, not a button press
   CLEAR_NOTE += d.ok ? ` GitHub log: removed ${d.removed||0} row${d.removed===1?"":"s"}${d.files?` across ${d.files} file${d.files===1?"":"s"}`:""}.` : ` GitHub log not cleared (${escH(d.why||"no reply")}).`;
   CLEAR_NOTE = CLEAR_NOTE.replace("Clearing the GitHub log… ", "");
   paintLotStats();
