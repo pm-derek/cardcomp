@@ -126,8 +126,17 @@ const LOT_RX = {
   bids: /(\d+)\s+bids?\b/i, money: /^\$\s?([\d,]+(?:\.\d{2})?)$/, timer: /^\d{1,2}:\d{2}$/,
   ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
+  joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
   skip: /^condition|shipping|bids?$|^\$|^\d{1,2}:\d{2}$|winning|^bid\b|^custom/i
 };
+// Room: who has been seen (joined in chat, or led a lot) and when. Sent with every lot record.
+const members = new Map();   // user -> {first, last, joins, leads}
+function seen(user, how) {
+  if (!user || user.length > 32 || user === "me") return;
+  const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0 };
+  m.last = Date.now(); m[how]++; members.set(user, m);
+}
+function roomSnapshot() { const cut = Date.now() - 30 * 60000; const out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, min: Math.round((Date.now() - m.first) / 60000) }; return out; }
 const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && visible(el));
 function sellerName() {
   const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
@@ -136,7 +145,7 @@ function sellerName() {
 }
 function readLot() {
   const all = leaves(document.body);
-  const st = { title: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", seller: sellerName(), url: location.href };
+  const st = { title: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", seller: sellerName(), url: location.href, viewers: null, giveaway: null };
   const bidsEl = all.find((el) => LOT_RX.bids.test(el.textContent.trim()));
   let card = null;
   if (bidsEl) { let el = bidsEl.parentElement; for (let i = 0; i < 8 && el; i++, el = el.parentElement) { const t = el.textContent || ""; if (/\$\s?\d/.test(t) && t.length < 600) { card = el; break; } } }
@@ -156,28 +165,56 @@ function readLot() {
     else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
     else if (LOT_RX.meWon.test(t)) { st.sold = "me"; st.me = true; }
     else if ((m = LOT_RX.sold.exec(t))) st.sold = m[1] || m[2];
+    else if ((m = LOT_RX.joined.exec(t))) { if (!joinedSeen.has(all[i])) { joinedSeen.add(all[i]); seen(m[1], "joins"); } }
+    else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
+    else if (st.viewers == null && LOT_RX.viewers.test(t) && !(card && card.contains(all[i]))) {   // viewer count: a bare number in the top band of the page
+      const r = all[i].getBoundingClientRect(); if (r.top < 220 && r.top >= 0) st.viewers = +t;
+    }
   }
   return st;
 }
+const joinedSeen = new WeakSet();
 let lotLast = "", lot = null;   // lot: {title, leaders:Set, startedAt, ended}
 function sendApp(msg) { try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {} }
 function endLot(st) {
   if (!lot || lot.ended) return;
   lot.ended = true;
   if (st.cur == null && st.bids == null) return;   // never saw a price: not a lot
-  sendApp({ type: "cardcomp-lot-end", rec: { title: lot.title, final: st.cur, bids: st.bids, winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"), leaders: [...lot.leaders], ship: st.ship, seller: st.seller, url: st.url, startedAt: lot.startedAt, at: Date.now() } });
+  sendApp({ type: "cardcomp-lot-end", rec: {
+    v: 2, title: lot.title, start: lot.start, final: st.cur, bids: st.bids,
+    winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"),
+    leaders: [...lot.leaders], hist: lot.hist,            // hist: every lead change {t: s since lot start, u: user, a: amount}
+    ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
+    room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
+  } });
 }
 function lotTick() {
   let st; try { st = readLot(); } catch (_) { return; }
   if (st.title && (!lot || st.title !== lot.title)) {
     if (lot && lotLastState) endLot(lotLastState);
-    lot = { title: st.title, leaders: new Set(), startedAt: Date.now(), ended: false };
+    lot = { title: st.title, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false };
   }
-  if (lot && st.lead) lot.leaders.add(st.lead);
+  if (lot && st.lead) {
+    lot.leaders.add(st.lead); seen(st.lead, "leads");
+    const h = lot.hist, last = h[h.length - 1];
+    if (!last || last.u !== st.lead || last.a !== st.cur) h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: st.lead, a: st.cur });
+    if (h.length > 400) h.shift();
+  }
   if (lot && st.sold && !lot.ended) endLot(st);
   lotLastState = st;
   const key = JSON.stringify(st);
   if (key !== lotLast) { lotLast = key; sendApp(Object.assign({ type: "cardcomp-lot" }, st)); }
 }
 let lotLastState = null;
-setInterval(lotTick, 1000);
+// Run on page changes, not a timer: Chrome throttles background-tab timers to once a minute, but
+// mutation callbacks still fire, so a muted stream in another tab keeps reporting.
+let lotBusy = false, lotQueued = false, lotLastRun = 0;
+function lotRun() {
+  if (lotBusy) { lotQueued = true; return; }
+  lotBusy = true; lotLastRun = Date.now();
+  try { lotTick(); } finally { lotBusy = false; }
+  if (lotQueued) { lotQueued = false; setTimeout(lotRun, 250); }
+}
+new MutationObserver(() => { if (Date.now() - lotLastRun > 300) lotRun(); else { lotQueued = true; if (!lotBusy) setTimeout(lotRun, 300); } })
+  .observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+setInterval(lotRun, 2000);   // timer fallback for the foreground tab (the timer, not the observer, counts the clock down)

@@ -43,24 +43,27 @@ function queue(key, rec) {
   if (!timer) timer = setTimeout(flush, 20000);
 }
 
-// Auction log: one array per month, log-YYYY-MM.json on the same branch. Appended, batched 60 s.
+// Auction log: one array per day, log-YYYY-MM-DD.json, in a PRIVATE repo (pm-derek/cardcomp-data, branch
+// main). The public cardcomp repo carries prices only; the log carries usernames and the purchase ledger.
+// The token needs Contents read/write on both repos. Appended, batched 60 s.
+const LOG = { owner: "pm-derek", repo: "cardcomp-data", branch: "main" };
 let pendingLog = [], logTimer = null;
-function logApi(month) { return `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/log-${month}.json`; }
+function logApi(day) { return `https://api.github.com/repos/${LOG.owner}/${LOG.repo}/contents/log-${day}.json`; }
 async function flushLog() {
   logTimer = null;
   const batch = pendingLog; pendingLog = [];
   if (!batch.length) return;
   const tok = await token();
   if (!tok) return;
-  const month = new Date().toISOString().slice(0, 7), api = logApi(month);
+  const month = new Date().toISOString().slice(0, 10), api = logApi(month);   // one file per day: each write re-uploads the whole file
   const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const g = await fetch(`${api}?ref=${GH.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+      const g = await fetch(`${api}?ref=${LOG.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
       let sha = null, rows = [];
       if (g.ok) { const j = await g.json(); sha = j.sha; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {} }
       else if (g.status !== 404) throw new Error("GitHub GET " + g.status);
-      const body = { message: `Auction log: ${batch.length} lots`, branch: GH.branch, content: b64enc(JSON.stringify(rows.concat(batch))) };
+      const body = { message: `Auction log: ${batch.length} lots`, branch: LOG.branch, content: b64enc(JSON.stringify(rows.concat(batch))) };
       if (sha) body.sha = sha;
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
       if (r.status === 409 || r.status === 422) continue;

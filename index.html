@@ -2552,7 +2552,13 @@ function sendToWhatnot(s, el, show){
   try{
     const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id);
     const pk=c&&c.querySelector(".pchip.on");
-    LAST_TAP={ id:r?r.id:"", n:name, s:r?r.s:"", cond:(el&&el.dataset&&el.dataset.cond)||"NM", printing:pk?pk.dataset.k:"", market:r?bestMarket(r):0, bid:+s, at:Date.now() };
+    const cond=(el&&el.dataset&&el.dataset.cond)||"NM", mkt=r?bestMarket(r):0, rowMkt=el&&el.dataset&&el.dataset.mkt?+el.dataset.mkt:mkt;
+    const sp=r?speedOf(r, rowMkt, cond):null, pr=r&&pk&&r.px&&r.px[pk.dataset.k];
+    // card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
+    LAST_TAP={ id:r?r.id:"", n:name, s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
+      cond, printing:pk?pk.dataset.k:"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
+      d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0), bid:+s, at:Date.now() };
+    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     paintLot();
   }catch(_){ }
   const msg={type:"cardcomp-bid", amount:+s, name};
@@ -2594,7 +2600,7 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
-let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="";
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[];   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
@@ -2631,7 +2637,8 @@ window.addEventListener("message", e=>{
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
     const rec=d.rec, tap=LAST_TAP && rec.at-LAST_TAP.at<15*60000 ? LAST_TAP : null;
-    if(tap) rec.card={id:tap.id, n:tap.n, s:tap.s, cond:tap.cond, printing:tap.printing, market:tap.market, myMax:tap.bid};
+    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.bidsSent=TAPS_THIS_LOT.slice(); }
+    TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
     const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM.json (needs the token)
     try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
@@ -2718,7 +2725,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }

@@ -75,8 +75,19 @@ passes the last bid you sent ("over your $19"), green while you lead. New lot: t
 
 When a lot ends the extension records it: title, final price, bid count, winner, everyone who led during
 the lot, shipping, seller, time, and the card you last sent a bid on (name, condition, printing, market,
-your max). Lots you won are flagged. Rows go to `log-YYYY-MM.json` on the `live` branch (same token,
-batched 60 s). Over weeks this is the room read (what this seller's lots close at vs market, who the
+your max, rarity, era, speed tier, margin, verified or not), every bid you sent during the lot, the full
+bid history (each lead change with amount and seconds into the lot), viewer count at start and end,
+giveaway entries, and who was in the room (chat joins and lot leaders in the last 30 minutes). Lots you won
+are flagged. Rows go to `log-YYYY-MM-DD.json` in a private repo, `pm-derek/cardcomp-data`, because they
+carry other people's usernames and your purchase ledger, and the cardcomp repo is public.
+
+Setup once: on github.com create a new repository named `cardcomp-data`, set it to Private, tick "Add a
+README" (so the main branch exists), create. Then edit the token (Settings > Developer settings > tokens),
+add `cardcomp-data` under Repository access, keep Contents: Read and write, save. Without this the log is
+dropped with a console warning; prices still save.
+
+The reader reacts to page changes rather than polling, so streams open in other tabs keep reporting
+(mute them). Each tab is its own room; records carry the seller and URL. Over weeks this is the room read (what this seller's lots close at vs market, who the
 aggressive bidders are) and your purchase ledger (what you paid, per card, per seller).
 
 ## Footer status
