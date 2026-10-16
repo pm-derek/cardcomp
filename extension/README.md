@@ -66,6 +66,19 @@ Under the bid table: `your bid $ −1 [ 14 ] +1 send`. It starts at the NM margi
 whatever bid you last tapped (LP, flat, profit...). −1 / +1 step it by a dollar; Enter or send puts that
 number into Whatnot (and the clipboard) like any tapped bid.
 
+## Lot strip and auction log
+
+With a Whatnot tab open, a strip above the search box shows the auction as it runs: `now $21 · next $23 ·
+0:05 · 14 bids · ship $4.47 · lead eriper37185 · your max $19`. Gold normally, red once the current bid
+passes the last bid you sent ("over your $19"), green while you lead. New lot: the title shows as a chip
+("on stream: ...", tap to search it) and the search box is selected so typing replaces the old search.
+
+When a lot ends the extension records it: title, final price, bid count, winner, everyone who led during
+the lot, shipping, seller, time, and the card you last sent a bid on (name, condition, printing, market,
+your max). Lots you won are flagged. Rows go to `log-YYYY-MM.json` on the `live` branch (same token,
+batched 60 s). Over weeks this is the room read (what this seller's lots close at vs market, who the
+aggressive bidders are) and your purchase ledger (what you paid, per card, per seller).
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`

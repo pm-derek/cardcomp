@@ -207,6 +207,7 @@
     <div id="slogbody" style="display:none;margin-top:10px;font-size:12px;line-height:1.5"></div>
   </div>
   <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px;flex-direction:column;gap:8px">
+    <div id="lotstrip" style="display:none;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.35;padding:6px 9px;border-radius:7px;background:var(--panel2);border-left:4px solid var(--gold)"></div>
     <div style="display:flex;gap:8px;align-items:center">
       <div style="position:relative;flex:1;min-width:0">
         <input id="q" placeholder="search a card…" autocomplete="off" enterkeyhint="search" style="padding-right:66px">
@@ -2545,8 +2546,15 @@ function copyAmt(val, el){
 // in the extension's side panel). No extension: nothing hears it, the clipboard copy above still happened.
 let WN_PENDING=null, WN_EXT=false;   // WN_EXT: the extension said hello, so a tap sends the bid into Whatnot
 function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to copy"; }
+let LAST_TAP=null;   // the card behind the last bid sent: joins the auction log to a card, and powers "over your $X" in the lot strip
 function sendToWhatnot(s, el, show){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
+  try{
+    const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id);
+    const pk=c&&c.querySelector(".pchip.on");
+    LAST_TAP={ id:r?r.id:"", n:name, s:r?r.s:"", cond:(el&&el.dataset&&el.dataset.cond)||"NM", printing:pk?pk.dataset.k:"", market:r?bestMarket(r):0, bid:+s, at:Date.now() };
+    paintLot();
+  }catch(_){ }
   const msg={type:"cardcomp-bid", amount:+s, name};
   WN_PENDING={s, show, at:Date.now()};
   try{ window.postMessage(msg, location.origin); }catch(_){ }
@@ -2582,6 +2590,53 @@ window.addEventListener("message", e=>{
   const el=$("#wnstat"); if(!el) return;
   el.style.display="block";
   el.innerHTML=(d.whatnot?`<span style="color:var(--green)">Whatnot ✓</span>`:`<span style="color:var(--gold)">no Whatnot tab</span>`)+" · "+(d.store?`<span style="color:var(--green)">store ✓</span>`:`<span style="color:var(--gold)">store: no token (extension Options)</span>`);
+});
+// Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
+// now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
+// green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="";
+function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
+function paintLot(){
+  const el=$("#lotstrip"); if(!el) return;
+  const d=LOT; if(!d){ el.style.display="none"; return; }
+  el.style.display="block";
+  const tap=LAST_TAP && Date.now()-LAST_TAP.at<15*60000 ? LAST_TAP : null;
+  const over=tap && d.cur!=null && d.cur>=tap.bid;
+  const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
+  el.style.borderLeftColor=color;
+  const parts=[];
+  if(d.cur!=null) parts.push(`<b style="color:${color};font-size:15px">now $${d.cur}</b>`);
+  if(d.next!=null) parts.push(`next $${d.next}`);
+  if(d.timer) parts.push(`<b>${d.timer}</b>`);
+  if(d.bids!=null) parts.push(`${d.bids} bids`);
+  if(d.ship!=null) parts.push(`ship $${d.ship.toFixed(2)}`);
+  if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
+  if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
+  if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
+  const title=d.title ? `<div style="margin-top:3px"><span class="lotchip" style="cursor:pointer;color:var(--blue);font-size:11.5px" title="search this">on stream: ${escH(d.title).slice(0,60)}</span></div>` : "";
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title;
+  const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=lotQuery(d.title); run(q.value); } };
+}
+function lotQuery(title){   // the card name hiding in a lot title, else the title minus the seller's boilerplate
+  const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
+  for(let n=3;n>=1;n--) for(let i=0;i+n<=words.length;i++){ const s=words.slice(i,i+n).join(" "); try{ if(isBaseName(s)) return s; }catch(_){ } }
+  return words.filter(w=>!/^(no|cancel|start|dollar|lot|the|a|an|of|and|\$?\d+|#\d+)$/.test(w)).join(" ");
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || !lotFromExt(e)) return;
+  if(d.type==="cardcomp-lot"){
+    LOT=d;
+    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }   // new lot: typing replaces the old search
+    paintLot();
+  }
+  if(d.type==="cardcomp-lot-end" && d.rec){
+    const rec=d.rec, tap=LAST_TAP && rec.at-LAST_TAP.at<15*60000 ? LAST_TAP : null;
+    if(tap) rec.card={id:tap.id, n:tap.n, s:tap.s, cond:tap.cond, printing:tap.printing, market:tap.market, myMax:tap.bid};
+    if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
+    const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM.json (needs the token)
+    try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
+    paintLot();
+  }
 });
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 // price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
@@ -2663,7 +2718,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }

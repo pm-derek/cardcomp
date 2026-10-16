@@ -117,3 +117,67 @@ function toast(msg, kind) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, kind === "wait" ? 8000 : 3500);
 }
+
+// ---- Lot reader: what the auction on screen is doing, sent to CardComp whenever it changes ----
+// Reads: lot title, current bid, next quick-bid, bid count, timer, who is winning (and if it is you),
+// the seller's shipping line, the seller. When a lot ends (sold, or the title changes) the last state
+// goes to CardComp as a record, which adds the card you were bidding on and stores it.
+const LOT_RX = {
+  bids: /(\d+)\s+bids?\b/i, money: /^\$\s?([\d,]+(?:\.\d{2})?)$/, timer: /^\d{1,2}:\d{2}$/,
+  ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
+  me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
+  skip: /^condition|shipping|bids?$|^\$|^\d{1,2}:\d{2}$|winning|^bid\b|^custom/i
+};
+const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && visible(el));
+function sellerName() {
+  const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
+  if (a) { const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); if (m) return decodeURIComponent(m[1]); }
+  return (document.title || "").replace(/\s*[|·-]\s*whatnot.*$/i, "").trim();
+}
+function readLot() {
+  const all = leaves(document.body);
+  const st = { title: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", seller: sellerName(), url: location.href };
+  const bidsEl = all.find((el) => LOT_RX.bids.test(el.textContent.trim()));
+  let card = null;
+  if (bidsEl) { let el = bidsEl.parentElement; for (let i = 0; i < 8 && el; i++, el = el.parentElement) { const t = el.textContent || ""; if (/\$\s?\d/.test(t) && t.length < 600) { card = el; break; } } }
+  for (const el of (card ? leaves(card) : [])) {
+    const t = el.textContent.trim(); let m;
+    if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
+    else if ((m = LOT_RX.money.exec(t))) { if (st.cur == null) st.cur = parseFloat(m[1].replace(/,/g, "")); }
+    else if (LOT_RX.timer.test(t)) st.timer = t;
+    else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
+    else if (!st.title && t.length > 2 && t.length < 120 && !LOT_RX.skip.test(t)) st.title = t;
+  }
+  for (let i = 0; i < all.length; i++) {
+    const t = all[i].textContent.trim(); let m;
+    if (LOT_RX.me.test(t)) st.me = true;
+    else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
+    else if (LOT_RX.winTail.test(t) && i > 0) st.lead = all[i - 1].textContent.trim();
+    else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
+    else if (LOT_RX.meWon.test(t)) { st.sold = "me"; st.me = true; }
+    else if ((m = LOT_RX.sold.exec(t))) st.sold = m[1] || m[2];
+  }
+  return st;
+}
+let lotLast = "", lot = null;   // lot: {title, leaders:Set, startedAt, ended}
+function sendApp(msg) { try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {} }
+function endLot(st) {
+  if (!lot || lot.ended) return;
+  lot.ended = true;
+  if (st.cur == null && st.bids == null) return;   // never saw a price: not a lot
+  sendApp({ type: "cardcomp-lot-end", rec: { title: lot.title, final: st.cur, bids: st.bids, winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"), leaders: [...lot.leaders], ship: st.ship, seller: st.seller, url: st.url, startedAt: lot.startedAt, at: Date.now() } });
+}
+function lotTick() {
+  let st; try { st = readLot(); } catch (_) { return; }
+  if (st.title && (!lot || st.title !== lot.title)) {
+    if (lot && lotLastState) endLot(lotLastState);
+    lot = { title: st.title, leaders: new Set(), startedAt: Date.now(), ended: false };
+  }
+  if (lot && st.lead) lot.leaders.add(st.lead);
+  if (lot && st.sold && !lot.ended) endLot(st);
+  lotLastState = st;
+  const key = JSON.stringify(st);
+  if (key !== lotLast) { lotLast = key; sendApp(Object.assign({ type: "cardcomp-lot" }, st)); }
+}
+let lotLastState = null;
+setInterval(lotTick, 1000);

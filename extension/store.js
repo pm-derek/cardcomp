@@ -43,6 +43,37 @@ function queue(key, rec) {
   if (!timer) timer = setTimeout(flush, 20000);
 }
 
+// Auction log: one array per month, log-YYYY-MM.json on the same branch. Appended, batched 60 s.
+let pendingLog = [], logTimer = null;
+function logApi(month) { return `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/log-${month}.json`; }
+async function flushLog() {
+  logTimer = null;
+  const batch = pendingLog; pendingLog = [];
+  if (!batch.length) return;
+  const tok = await token();
+  if (!tok) return;
+  const month = new Date().toISOString().slice(0, 7), api = logApi(month);
+  const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const g = await fetch(`${api}?ref=${GH.branch}&t=${Date.now()}`, { headers: hdr, cache: "no-store" });
+      let sha = null, rows = [];
+      if (g.ok) { const j = await g.json(); sha = j.sha; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {} }
+      else if (g.status !== 404) throw new Error("GitHub GET " + g.status);
+      const body = { message: `Auction log: ${batch.length} lots`, branch: GH.branch, content: b64enc(JSON.stringify(rows.concat(batch))) };
+      if (sha) body.sha = sha;
+      const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
+      if (r.status === 409 || r.status === 422) continue;
+      if (!r.ok) throw new Error("GitHub PUT " + r.status);
+      return;
+    } catch (e) { console.warn("CardComp auction log:", e.message); if (attempt) pendingLog = batch.concat(pendingLog); }
+  }
+}
+function queueLog(rec) {
+  pendingLog.push(rec);
+  if (!logTimer) logTimer = setTimeout(flushLog, 60000);
+}
+
 async function test() {
   const tok = await token();
   if (!tok) return { ok: false, why: "no token saved" };

@@ -1,17 +1,18 @@
 // Relay: CardComp (tab or side panel) -> the Whatnot tab you are watching.
 // Toolbar button opens CardComp in the side panel next to the Whatnot stream.
 importScripts("store.js");
+const TO_APP = new Set(["cardcomp-tcg-price", "cardcomp-lot", "cardcomp-lot-end"]);
 if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg) return;
-  if (msg.type === "cardcomp-tcg-price") {   // TCGplayer tab -> CardComp (side panel page + CardComp tabs)
+  if (TO_APP.has(msg.type)) {   // TCGplayer / Whatnot tab -> CardComp (side panel page + CardComp tabs)
     chrome.runtime.sendMessage(msg).catch(() => {});
     chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => tabs.forEach((t) => chrome.tabs.sendMessage(t.id, msg).catch(() => {})));
     // First read on a freshly opened TCGplayer page: take Derek back to the stream (same window first).
-    if (msg.first && !msg.none && sender.tab && sender.tab.active) {
+    if (msg.type === "cardcomp-tcg-price" && msg.first && !msg.none && sender.tab && sender.tab.active) {
       chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
         if (!tabs.length) return;
         tabs.sort((a, b) => ((b.windowId === sender.tab.windowId) - (a.windowId === sender.tab.windowId)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
@@ -29,6 +30,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
+  if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }          // app -> GitHub log-YYYY-MM.json
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {

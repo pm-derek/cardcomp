@@ -3,7 +3,7 @@ const cc = document.getElementById("cc");
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
-  if (d.type === "cardcomp-live-save") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
+  if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
   if (d.type === "cardcomp-status") {
     chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
     return;
@@ -16,4 +16,4 @@ window.addEventListener("message", (e) => {
 });
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
-chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.type === "cardcomp-tcg-price") cc.contentWindow.postMessage(msg, "*"); });
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });
