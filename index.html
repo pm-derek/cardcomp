@@ -2682,6 +2682,7 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
+let DBG_NOTE="";
 let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false, LOT_ENDED_AT=0, LOT_END_SEEN_AT=0;
 const LABEL_MAX_MS=5*60000;   // a tap or opened card older than this never labels a lot (a lot runs ~30-90 s)   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
@@ -2735,9 +2736,13 @@ function paintLot(){
   const lab = tap ? `<span style="color:var(--green)">${pre}logging: ${escH(tap.n).slice(0,28)} ${tap.cond||""}</span>`
             : view ? `<span style="color:var(--green)">${pre}logging: ${escH(view.n).slice(0,28)} ${(!d.ended&&d.cond)||"NM?"} (viewed)</span>`
             : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
+  // title not read (new layout): one tap copies what the reader saw, to paste to Claude
+  const noTitle=!d.title || d.title==="(untitled lot)";
   const nm=d.title ? lotQuery(d.title) : "";
   const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
+  const dbg=noTitle ? `<div style="margin-top:2px;font-size:11px;color:var(--faint)">lot title not read · <span class="lotdbg" style="cursor:pointer;color:var(--blue)">${DBG_NOTE||"copy debug"}</span></div>` : "";
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`+dbg;
+  const db=el.querySelector(".lotdbg"); if(db) db.onclick=(e)=>{ e.stopPropagation(); DBG_NOTE="reading…"; paintLot(); extPost({type:"cardcomp-snapshot"}); };
   const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
   const nb=el.querySelector(".lotnudge"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); copyAmt(nb.dataset.bid, nb); };
   const sb=el.querySelector(".lotstatbtn"); if(sb) sb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=!LOTSTATS_OPEN; paintLot(); paintLotStats(); };
@@ -2756,7 +2761,10 @@ function recordLotStat(rec){
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null };
     const cut=Date.now()-120*86400000;
-    const rows=loadLots().filter(r=>r.at>=cut); rows.push(row);
+    row.k=rec.startedAt!=null ? `${rec.seller||""}|${rec.startedAt}|${rec.at}` : null;   // same lot seen by two CardComp copies: keep one, the labeled one
+    let rows=loadLots().filter(r=>r.at>=cut);
+    const dup=row.k ? rows.findIndex(r=>r.k===row.k) : -1;
+    if(dup<0) rows.push(row); else if(!rows[dup].n && row.n) rows[dup]=row;
     localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
   }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
@@ -2817,6 +2825,13 @@ function paintLotStats(){
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
   lotDotStrip(el.querySelector(".lschart"), S);
 }
+window.addEventListener("message", e=>{   // "copy debug" reply: put it on the clipboard for Derek to paste
+  const d=e.data; if(!d || d.type!=="cardcomp-snapshot-ack" || !lotFromExt(e)) return;
+  if(!d.ok){ DBG_NOTE="debug failed: "+(d.why||"no reply"); paintLot(); return; }
+  const txt="CardComp debug snapshot\n"+JSON.stringify(d.snap, null, 1);
+  const done=()=>{ DBG_NOTE="copied, paste it to Claude"; paintLot(); setTimeout(()=>{ DBG_NOTE=""; paintLot(); }, 6000); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, ()=>{ copyFallback(txt, done); }); else copyFallback(txt, done);
+});
 // ---- Clear logged data (Derek, 2026-10: a stuck label polluted a stream's lots) ----
 // Removes lots logged since a cutoff from this browser's stats AND the private log repo (via the extension).
 // Verified TCGplayer prices (live.json) are separate and untouched. Also drops any tap / opened card in memory.

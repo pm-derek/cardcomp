@@ -34,7 +34,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
   if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }
-  if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"          // app -> GitHub log-YYYY-MM.json
+  if (msg.type === "cardcomp-snapshot") {   // "copy debug": ask the Whatnot tab for its lot row
+    chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
+      if (!tabs.length) { reply({ ok: false, why: "no Whatnot tab" }); return; }
+      tabs.sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+      chrome.tabs.sendMessage(tabs[0].id, msg).then((r) => reply(r || { ok: false, why: "no reply" })).catch(() => reply({ ok: false, why: "reload the Whatnot tab" }));
+    });
+    return true;
+  }
+  if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
