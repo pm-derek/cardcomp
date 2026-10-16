@@ -15,9 +15,27 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const amt = String(Math.max(0, Math.floor(Number(msg.amount) || 0)));
   if (amt === "0") { reply({ ok: false, why: "no amount" }); return; }
   pending = { amt, name: msg.name || "", at: Date.now() };
-  take(pending).then((how) => reply({ ok: true, how }));
+  take(pending).then((how) => {
+    // Under the minimum (Custom bid shows "$2 $3 $4 $5" and "Enter an amount of $2 or more"): the box is
+    // filled so Derek sees it, but Whatnot will refuse it, so say pass instead of "place the bid".
+    setTimeout(() => {
+      const min = minBid();
+      if (min != null && +amt < min) {
+        toast(`Pass: your max $${amt}${pending && pending.name ? " for " + pending.name : ""} is under the next bid $${min}.`, "bad");
+        reply({ ok: false, why: "under", min });
+      } else reply({ ok: true, how });
+    }, 200);
+  });
   return true;
 });
+function minBid() {   // the lowest bid Whatnot will take right now
+  for (const el of document.querySelectorAll("*")) {
+    if (el.children.length) continue;
+    const m = /enter an amount of \$([\d,]+) or more/i.exec(el.textContent || "");
+    if (m) return +m[1].replace(/,/g, "");
+  }
+  return lotLastState && lotLastState.next != null && !lotLastState.ended ? lotLastState.next : null;
+}
 
 async function take(p) {
   let inp = findBidInput();
@@ -127,77 +145,150 @@ const LOT_RX = {
   ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
   joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
-  skip: /^condition|shipping|bids?$|^\$|^\d{1,2}:\d{2}$|winning|^bid\b|^custom/i
+  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|^sold$|^bid\b|^custom|^follow$/i
 };
 // Room: who has been seen (joined in chat, or led a lot) and when. Sent with every lot record.
-const members = new Map();   // user -> {first, last, joins, leads}
-function seen(user, how) {
+const members = new Map();   // user -> {first, last, joins, leads, chats}
+function seen(user, how) {   // one call per event: a join line, a chat message, a lead change
   if (!user || user.length > 32 || user === "me") return;
-  const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0 };
+  const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0, chats: 0, lastJoin: 0 };
+  if (how === "joins" && Date.now() - m.lastJoin < 5 * 60000) { m.last = Date.now(); return; }   // chat list re-renders: one join per 5 min
+  if (how === "joins") m.lastJoin = Date.now();
   m.last = Date.now(); m[how]++; members.set(user, m);
 }
-function roomSnapshot() { const cut = Date.now() - 30 * 60000; const out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, min: Math.round((Date.now() - m.first) / 60000) }; return out; }
-const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && visible(el));
+// who was seen in the last 30 min: min = minutes since first seen, ago = minutes since last seen
+function roomSnapshot() { const cut = Date.now() - 30 * 60000, now = Date.now(); const out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, chats: m.chats, min: Math.round((now - m.first) / 60000), ago: Math.round((now - m.last) / 60000) }; return out; }
+// Chat panel (side list in the wide layout, overlay on the video in the narrow one): rows are
+// [avatar letter?] "primo_512" + "joined 👋", or "bigben1171" + "Any mega IRs?". Rooted at the "Say something" box.
+const chatSeen = new WeakSet();
+function readChat() {
+  const box = document.querySelector('input[placeholder^="Say something" i],textarea[placeholder^="Say something" i]');
+  if (!box) return;
+  let root = box.parentElement;
+  for (let i = 0; i < 6 && root; i++, root = root.parentElement) if (root.querySelectorAll("*").length > 60) break;
+  if (!root) return;
+  const ls = leaves(root);
+  for (let i = 0; i + 1 < ls.length; i++) {
+    const u = ls[i].textContent.trim(), next = ls[i + 1].textContent.trim();
+    if (!userLike(u) || chatSeen.has(ls[i + 1])) continue;
+    if (/^joined\b/i.test(next)) { chatSeen.add(ls[i + 1]); seen(u, "joins"); i++; }
+    else if (next.length && !userLike(next) && ls[i].getBoundingClientRect().left <= ls[i + 1].getBoundingClientRect().left + 4) { chatSeen.add(ls[i + 1]); seen(u, "chats"); i++; }
+  }
+}
+// text leaves: any size counts ("kal", "32" are narrower than the 20 px input heuristic in visible())
+const textShown = (el) => { const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0) return false; const cs = getComputedStyle(el); return cs.visibility !== "hidden" && cs.display !== "none"; };
+const leaves = (root) => [...root.querySelectorAll("*")].filter((el) => el.children.length === 0 && (el.textContent || "").trim().length && textShown(el));
+const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "");   // Whatnot usernames: no spaces
 function sellerName() {
   const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
   if (a) { const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); if (m) return decodeURIComponent(m[1]); }
   return (document.title || "").replace(/\s*[|·-]\s*whatnot.*$/i, "").trim();
 }
+// Layout read from live screenshots (2026-10): the lot row is
+//   [thumb] "$1 START SINGLES 🔥 #76" / "Near Mint · Card" / "1 Bid" / "Shipping is $0.78 + Taxes"   [ "$1" / "00:07" or "Sold" ]
+// with "darks_tcg" + "is Winning!" (or "daybreakfm" + "won!") above it, a "darks_tcg won the auction!" popup
+// on the video, and "Bid: $2" / "Awaiting next item" below. Titles often start with "$", so only a bare "$1"
+// counts as a price, and the lot row is the smallest ancestor of "N Bid" that holds a bare price.
+let ME = "";   // Derek's Whatnot username (extension Options), so "derek won!" counts as a win
+try { chrome.storage.local.get("wnUser", (r) => { ME = String((r && r.wnUser) || "").trim().toLowerCase(); }); } catch (_) {}
+const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
+const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG" };
 function readLot() {
   const all = leaves(document.body);
-  const st = { title: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", seller: sellerName(), url: location.href, viewers: null, giveaway: null };
-  const bidsEl = all.find((el) => LOT_RX.bids.test(el.textContent.trim()));
-  let card = null;
-  if (bidsEl) { let el = bidsEl.parentElement; for (let i = 0; i < 8 && el; i++, el = el.parentElement) { const t = el.textContent || ""; if (/\$\s?\d/.test(t) && t.length < 600) { card = el; break; } } }
+  const st = { title: "", sub: "", cond: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", ended: false, waiting: false, seller: sellerName(), url: location.href, viewers: null, giveaway: null };
+  const bareMoney = (el) => LOT_RX.money.test(el.textContent.trim()) && !el.closest("button,[role=button]");
+  // Several "N bids" can be on the page: the wide layout has a Shop panel ("$1 START SINGLES" / "$1" /
+  // "0 bids" / "Qty. 115" / "Pre-bid") before the live lot. Score each candidate's row and keep the live one.
+  let card = null, bidsEl = null, best = -99;
+  for (const b of all.filter((el) => LOT_RX.bids.test(el.textContent.trim()))) {
+    let row = null; for (let el = b.parentElement, i = 0; i < 8 && el; i++, el = el.parentElement) { if ((el.textContent || "").length > 800) break; if (leaves(el).some(bareMoney)) { row = el; break; } }
+    const t = (row || b.parentElement || b).textContent || "";
+    const score = (/shipping is/i.test(t) ? 3 : 0) + (/\d{1,2}:\d{2}|\bsold\b/i.test(t) ? 3 : 0) + (row ? 1 : 0) - (/qty\.|pre-bid/i.test(t) ? 6 : 0);
+    if (score > best) { best = score; card = row; bidsEl = b; }
+  }
+  if (best < 0) { card = null; bidsEl = null; }   // only the shop tile: no live lot on screen
+  if (!card && bidsEl) card = bidsEl.parentElement && bidsEl.parentElement.parentElement;   // price column not found: still read the text block
+  const texts = [];
   for (const el of (card ? leaves(card) : [])) {
     const t = el.textContent.trim(); let m;
     if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
-    else if ((m = LOT_RX.money.exec(t))) { if (st.cur == null) st.cur = parseFloat(m[1].replace(/,/g, "")); }
+    else if (bareMoney(el)) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
     else if (LOT_RX.timer.test(t)) st.timer = t;
     else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
-    else if (!st.title && t.length > 2 && t.length < 120 && !LOT_RX.skip.test(t)) st.title = t;
+    else if (/^sold$/i.test(t)) st.ended = true;
+    else if (t.length > 1 && t.length < 120 && !LOT_RX.skip.test(t) && !el.closest("button,[role=button]")) texts.push(t);
   }
+  st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
+  st.cond = COND_TXT[(st.sub.split("·")[0] || "").trim().toLowerCase()] || "";
+  let wonBy = "", meWon = false, wonUser = "";
   for (let i = 0; i < all.length; i++) {
     const t = all[i].textContent.trim(); let m;
+    const prev = i > 0 ? all[i - 1].textContent.trim() : "";
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
-    else if (LOT_RX.winTail.test(t) && i > 0) st.lead = all[i - 1].textContent.trim();
+    else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
+    else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
+    else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
-    else if (LOT_RX.meWon.test(t)) { st.sold = "me"; st.me = true; }
-    else if ((m = LOT_RX.sold.exec(t))) st.sold = m[1] || m[2];
-    else if ((m = LOT_RX.joined.exec(t))) { if (!joinedSeen.has(all[i])) { joinedSeen.add(all[i]); seen(m[1], "joins"); } }
+    else if (LOT_RX.meWon.test(t)) { meWon = true; st.me = true; }           // "You won" popup in the middle of the video
+    else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
+    else if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i])) { chatSeen.add(all[i]); seen(m[1], "joins"); } }   // one-leaf "X joined" variant
     else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
     else if (st.viewers == null && LOT_RX.viewers.test(t) && !(card && card.contains(all[i]))) {   // viewer count: a bare number in the top band of the page
       const r = all[i].getBoundingClientRect(); if (r.top < 220 && r.top >= 0) st.viewers = +t;
     }
   }
+  if (isMe(st.lead)) st.me = true;
+  // "You won" in the middle + "rewired won!" bottom left on the same screen: rewired is Derek. Learn it
+  // once, so later wins and "rewired is Winning!" count as his even when the popup is gone.
+  if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { chrome.storage.local.set({ wnUser: wonUser }); } catch (_) {} }
+  if (meWon) wonBy = "me";
+  if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
   return st;
 }
-const joinedSeen = new WeakSet();
 let lotLast = "", lot = null;   // lot: {title, leaders:Set, startedAt, ended}
 function sendApp(msg) { try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {} }
 function endLot(st) {
   if (!lot || lot.ended) return;
   lot.ended = true;
-  if (st.cur == null && st.bids == null) return;   // never saw a price: not a lot
+  if (st.cur == null && st.bids == null) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }   // never saw a price: tell the app to reset, log nothing
   sendApp({ type: "cardcomp-lot-end", rec: {
-    v: 2, title: lot.title, start: lot.start, final: st.cur, bids: st.bids,
-    winner: st.sold && st.sold !== "me" ? st.sold : (st.me ? "me" : st.lead), me: !!(st.me || st.sold === "me"),
+    v: 3, title: lot.title, sub: st.sub || lot.sub, sellerCond: st.cond || lot.cond, start: lot.start, final: st.cur, bids: st.bids,
+    winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),
+    sold: !!st.ended,                                     // saw "Sold" / "won!" (false: the lot rolled over without an end screen)
+    iLed: lot.iLed,                                       // Derek was the leader at some point: proof he actually bid, not just tapped
     leaders: [...lot.leaders], hist: lot.hist,            // hist: every lead change {t: s since lot start, u: user, a: amount}
     ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
     room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
   } });
 }
+const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
 function lotTick() {
+  try { readChat(); } catch (_) {}
   let st; try { st = readLot(); } catch (_) { return; }
-  if (st.title && (!lot || st.title !== lot.title)) {
+  // A new lot starts when the title changes, or, for sellers who reuse one title ("$2 start") lot after
+  // lot, when the bid count drops back (a new lot starts at 0) or the timer jumps back up after a sale.
+  const tSec = secs(st.timer);
+  const rolled = lot && st.title === lot.title && (
+    (st.bids != null && lot.maxBids > 0 && st.bids < lot.maxBids) ||
+    (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
+  if ((st.title && (!lot || st.title !== lot.title)) || rolled) {
     if (lot && lotLastState) endLot(lotLastState);
-    lot = { title: st.title, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false };
+    lot = { title: st.title, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
+  }
+  if (lot) {
+    if (st.lead) lot.lastLead = st.lead;
+    if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
+    if (tSec != null) lot.lastSec = tSec;
+    if (st.me) lot.iLed = true;
   }
   if (lot && st.lead) {
-    lot.leaders.add(st.lead); seen(st.lead, "leads");
+    lot.leaders.add(st.lead);
     const h = lot.hist, last = h[h.length - 1];
-    if (!last || last.u !== st.lead || last.a !== st.cur) h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: st.lead, a: st.cur });
+    if (!last || last.u !== st.lead || last.a !== st.cur) {   // one lead change = one bid event
+      h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: st.lead, a: st.cur });
+      if (!last || last.u !== st.lead) seen(st.lead, "leads");
+    }
     if (h.length > 400) h.shift();
   }
   if (lot && st.sold && !lot.ended) endLot(st);

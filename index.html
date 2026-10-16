@@ -72,17 +72,26 @@
   .bidtbl .pc{font-size:10.5px;color:var(--dim);line-height:1.2}
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
-  .condgrid{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:6px 9px;font-size:12.5px;align-items:center}
-  body.framed .condgrid{grid-template-columns:auto auto auto auto 1fr}   /* in the extension side panel: no cart column, the stream is live */
-  body.framed .condgrid .cadd,body.framed .condgrid .hadd{display:none}
+  /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
+     every tap target is at least ~40px tall (phone thumb, side panel mouse) */
+  .condgrid{display:grid;grid-template-columns:auto auto minmax(92px,1fr) auto auto auto;gap:7px 10px;font-size:13.5px;align-items:center}
   .condgrid .pc{color:var(--dim);font-size:11px;text-align:right}
   .condgrid .h{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
+  .condgrid .bd.h{text-align:center}
   .condgrid .c{font-weight:700}
+  .condgrid .c .clink,.condgrid .mk .clink{display:inline-block;padding:10px 2px}
   .condgrid .clink{text-decoration:underline dotted;text-underline-offset:2px}
-  .condgrid .carr{font-size:8px;opacity:.6;vertical-align:1px}
+  .condgrid .carr{font-size:9px;opacity:.6;vertical-align:1px}
   .condgrid .mk{color:var(--dim)}
-  .condgrid .bd{font-weight:700;text-align:right}
+  .condgrid .bd.cpy{display:block;text-align:center;font-weight:800;font-size:17px;line-height:1;padding:11px 8px;border:1px solid currentColor;border-radius:9px;background:rgba(255,255,255,.04);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .condgrid .bd.cpy:hover{background:rgba(255,255,255,.09)}
+  .condgrid .bd.cpy:active{transform:scale(.97)}
   .condgrid .mg{font-weight:600;text-align:right}
+  @media (max-width:440px){   /* phone: drop the % column so the bid button keeps its width */
+    .condgrid{grid-template-columns:auto auto minmax(80px,1fr) auto auto;gap:7px 7px}
+    .condgrid .pc{display:none}
+  }
+  .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
   .finep{color:var(--faint);font-size:10.5px;margin-top:11px;line-height:1.5}
   .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
@@ -2534,8 +2543,11 @@ function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }      
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
-  const show=(msg)=>{ if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color="var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },900); };
+  const show=(msg,col)=>{ if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color=col||"var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },col?2200:900); };
   const flash=()=>show("copied $"+s);
+  // Whatnot's minimum bid is $1: a sub-$1 max floors to 0, so nothing is copied or sent, but the tap still
+  // labels the lot with this card (data-collection taps on bulk cards)
+  if(s==="0"){ show("under $1"); sendToWhatnot(s, el, show, true); return; }
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
   else copyFallback(s,flash);
   document.querySelectorAll(".ovrin").forEach(i=>{ if(document.activeElement!==i) i.value=s; });   // "your bid" follows the last tap, so +1 starts from it
@@ -2547,20 +2559,34 @@ function copyAmt(val, el){
 let WN_PENDING=null, WN_EXT=false;   // WN_EXT: the extension said hello, so a tap sends the bid into Whatnot
 function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to copy"; }
 let LAST_TAP=null;   // the card behind the last bid sent: joins the auction log to a card, and powers "over your $X" in the lot strip
-function sendToWhatnot(s, el, show){
+// card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
+function cardSnap(r, cond, printing, rowMkt, name){
+  const mkt=r?bestMarket(r):0; rowMkt=rowMkt>0?rowMkt:mkt;
+  const pr=r&&printing&&r.px&&r.px[printing], sp=r?speedOf(r, rowMkt, cond):null;
+  return { id:r?r.id:"", n:r?r.n:(name||""), s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
+    cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
+    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0) };
+}
+let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
+function sendToWhatnot(s, el, show, labelOnly){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
   try{
-    const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id);
-    const pk=c&&c.querySelector(".pchip.on");
-    const cond=(el&&el.dataset&&el.dataset.cond)||"NM", mkt=r?bestMarket(r):0, rowMkt=el&&el.dataset&&el.dataset.mkt?+el.dataset.mkt:mkt;
-    const sp=r?speedOf(r, rowMkt, cond):null, pr=r&&pk&&r.px&&r.px[pk.dataset.k];
-    // card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
-    LAST_TAP={ id:r?r.id:"", n:name, s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
-      cond, printing:pk?pk.dataset.k:"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
-      d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0), bid:+s, at:Date.now() };
-    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
+    const ds=(el&&el.dataset)||{};
+    if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
+      const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
+        return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin).toFixed(2)}); });
+      name=`${cards.length} cards`;
+      LAST_TAP=Object.assign({ id:"", n:name, multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });
+    } else {
+      const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id), pk=c&&c.querySelector(".pchip.on");
+      // the "your bid" send has no condition of its own: keep the condition last tapped on this card
+      const cond=ds.cond || (LAST_TAP && r && LAST_TAP.id===r.id && LAST_TAP.cond) || "NM";
+      LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:"", ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
+    }
+    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     paintLot();
   }catch(_){ }
+  if(labelOnly) return;
   const msg={type:"cardcomp-bid", amount:+s, name};
   WN_PENDING={s, show, at:Date.now()};
   try{ window.postMessage(msg, location.origin); }catch(_){ }
@@ -2571,7 +2597,10 @@ window.addEventListener("message", e=>{
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
   if(!(fromSelf||fromPanel)) return;
   const p=WN_PENDING; if(!p || Date.now()-p.at>3000) return;
-  if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null; }
+  if(!d.ok && d.why==="under" && d.min){ p.show("under next $"+d.min, "var(--red)"); WN_PENDING=null; return; }   // filled, but below the lowest bid Whatnot takes: pass
+  if(d.ok){ p.show("Whatnot $"+p.s+" ✓"); WN_PENDING=null;
+    const last=TAPS_THIS_LOT[TAPS_THIS_LOT.length-1]; if(last && String(last.bid)===String(p.s)) last.filled=true;   // landed in the Custom bid box, not just copied
+    if(LAST_TAP && String(LAST_TAP.bid)===String(p.s)) LAST_TAP.filled=true; }
 });
 window.addEventListener("message", e=>{   // live TCGplayer price from the extension
   const d=e.data; if(!d || d.type!=="cardcomp-tcg-price") return;
@@ -2602,12 +2631,23 @@ window.addEventListener("message", e=>{
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
 let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0;   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
+function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
+  const v=LAST_VIEW; if(!v || v.at<from || v.at>to) return null;
+  const r=CARDS.find(x=>x.id===v.id); if(!r || !r.px) return null;
+  const pk=v.el && v.el.querySelector(".pchip.on");
+  let k=pk ? pk.dataset.k : ""; if(!k || !r.px[k]){ let best=-1; for(const p in r.px){ const m=(r.px[p].m!=null?r.px[p].m:r.px[p].l)||0; if(m>best){ best=m; k=p; } } }
+  const cond=r.sealed ? "sealed" : (sellerCond||"NM"), nm=(r.px[k].m!=null?r.px[k].m:r.px[k].l)||0;
+  const s=cardSnap(r, cond, k, r.sealed ? nm : nm*condMult(cond, r.y, nm));
+  s.label="view"; s.viewAt=v.at; s.condFrom=sellerCond?"seller":"assumed NM";
+  return s;
+}
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
-  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent during this lot: lots are generic ("$2 start #43"), so an older tap is a different card
-  const over=tap && d.cur!=null && d.cur>=tap.bid;
+  const tap=LAST_TAP && LAST_TAP.at>=LOT_START ? LAST_TAP : null;   // only a bid sent since the previous lot ended: lots are generic ("$2 start #43"), so an older tap is a different card
+  const view=!tap && LAST_VIEW && LAST_VIEW.at>=LOT_START ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
+  const over=tap && tap.bid>=1 && d.cur!=null && d.cur>=tap.bid && !d.ended;
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
   const parts=[];
@@ -2616,31 +2656,47 @@ function paintLot(){
   if(d.timer) parts.push(`<b>${d.timer}</b>`);
   if(d.bids!=null) parts.push(`${d.bids} bids`);
   if(d.ship!=null) parts.push(`ship $${d.ship.toFixed(2)}`);
-  if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
-  if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
+  if(d.ended){ const w=d.sold==="me"||d.me ? `<span style="color:var(--green)">you won</span>` : `sold${d.sold&&d.sold!=="?"?" to "+escH(d.sold).slice(0,14):""}`; parts.push(w); }
+  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
+  if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
+  else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
-  const title=d.title ? `<div style="margin-top:3px"><span class="lotchip" style="cursor:pointer;color:var(--blue);font-size:11.5px" title="search this">on stream: ${escH(d.title).slice(0,60)}</span></div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title;
-  const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=lotQuery(d.title); run(q.value); } };
+  // what this lot will be logged as: the card you tapped a bid on, else the card you opened, else nothing
+  const pre=d.ended ? "next lot " : "";   // after "Sold", what you open or tap belongs to the next lot
+  const lab = tap ? `<span style="color:var(--green)">${pre}logging: ${escH(tap.n).slice(0,28)} ${tap.cond||""}</span>`
+            : view ? `<span style="color:var(--green)">${pre}logging: ${escH(view.n).slice(0,28)} ${(!d.ended&&d.cond)||"NM?"} (viewed)</span>`
+            : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
+  const nm=d.title ? lotQuery(d.title) : "";
+  const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
+  const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
 }
-function lotQuery(title){   // the card name hiding in a lot title, else the title minus the seller's boilerplate
+function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
   for(let n=3;n>=1;n--) for(let i=0;i+n<=words.length;i++){ const s=words.slice(i,i+n).join(" "); try{ if(isBaseName(s)) return s; }catch(_){ } }
-  return words.filter(w=>!/^(no|cancel|start|dollar|lot|the|a|an|of|and|\$?\d+|#\d+)$/.test(w)).join(" ");
+  return "";
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
     LOT=d;
-    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; LOT_START=Date.now(); const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }   // new lot: typing replaces the old search
+    // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
+    // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
+    if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
     paintLot();
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
-    // card label only from a bid sent while this lot ran. Sellers rarely name the card, so this tap is the
-    // only record of what sold; a stale tap would label the lot with the previous card.
-    const rec=d.rec, tap=LAST_TAP && LAST_TAP.at>=(rec.startedAt||LOT_START)-3000 && LAST_TAP.at<=rec.at ? LAST_TAP : null;
+    // Card label: the last bid sent since the previous lot ended (pre-start taps included, at most 3 min
+    // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
+    // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
+    // labeled with the last one; every tap is kept in bidsSent.
+    const rec=d.rec, from=Math.max(LOT_START, (rec.startedAt||Date.now())-180000);
+    const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at ? LAST_TAP : null;
     LOT_START=Date.now();
-    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.bidsSent=TAPS_THIS_LOT.slice(); }
+    if(rec.empty){ TAPS_THIS_LOT=[]; paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
+    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; }
+    else { const v=viewLabel(from, rec.at, rec.sellerCond); if(v) rec.card=v; }   // no bid: the card Derek opened during the lot, at the seller's stated condition
+    rec.bidsSent=TAPS_THIS_LOT.filter(t=>t.t>=from);
     TAPS_THIS_LOT=[];
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
     const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM.json (needs the token)
@@ -2728,7 +2784,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col};cursor:pointer;text-decoration:underline dotted">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart" style="width:100%;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:8px 6px">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} (${lv.src}) when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.days<=7?'var(--gold)':'inherit'}">$${atc.toFixed(2)}${lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:''}</a>`:`$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
@@ -2920,7 +2976,9 @@ function renderCart(){
       <span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${badge}${it.n} <span style="color:var(--faint)">· ${prettyPrinting(it.printing)} · ${cond} · $${atc.toFixed(2)}</span></span>
       <span style="white-space:nowrap"><b style="color:var(--gold)">$${bid.toFixed(2)}</b> <span style="color:var(--dim);font-size:10px">${pctMkt(bid,atc)}</span> <button data-i="${i}" class="crm" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px">✕</button></span></div>`;
   }).join("");
-  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b style="color:var(--gold);font-size:15px">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
+  // the total is tappable like any bid: copies, goes into Whatnot, and labels the lot with every card in the cart
+  $("#cartitems").innerHTML = rows + `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--dim)"><span>total market $${totMkt.toFixed(2)}</span><span>max bid <b class="cpy carttot" data-bid="${totBid.toFixed(2)}" data-cart="1" title="${cpTitle()}" style="color:var(--gold);font-size:15px;cursor:pointer;text-decoration:underline dotted">$${totBid.toFixed(2)}</b> <span style="font-size:11px">${pctMkt(totBid,totMkt)}</span></span></div>`;
+  { const t=$("#cartitems").querySelector(".carttot"); if(t) t.onclick=(e)=>{ e.stopPropagation(); copyAmt(t.dataset.bid, t); }; }
   $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} · max bid <b>$${totBid.toFixed(2)}</b>  <span style="color:var(--faint);font-size:11px">tap to view</span>`;
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
@@ -3622,7 +3680,7 @@ function render(res, literal, newestFirst){
     // Opening a tile expanded it in place, so a card in the second row put the bid table below the
     // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
     // Anchoring on the card's top is height-independent, so it works before the detail has painted.
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.
