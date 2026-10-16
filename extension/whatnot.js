@@ -209,19 +209,20 @@ const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.tes
 // two text elements belong together ("garrubia" + "is Winning!") only if they share an ancestor within 4 levels;
 // otherwise the giveaway widget's "27 Entries" once became a winner
 const near = (a, b) => { for (let x = a, i = 0; i < 4 && x; i++, x = x.parentElement) if (x.contains(b)) return true; return false; };
-// The streamer: the name just before the "Follow" / "Following" button over the video ("zenzoogie" / "5.0" /
-// "Follow"). The first /user/ link on the page is Derek's own avatar in the header, which logged every lot under
-// "rewired". Fallback: a /user/ link that is not Derek's.
+// The streamer, over the top-left of the video: "zenzoogie" / "★" "5.0" / "Follow". Found by the Follow /
+// Following button, else by the star rating beside the name (the button is gone once Derek follows the seller,
+// and a /user/ link fallback then logged chat users as sellers: "stayvng", "lex30_"). Once found it sticks for
+// this stream URL, so it can never flip to a chat name mid-stream.
+const SELLER_AT = new Map();   // location.pathname -> seller
 function sellerName(all) {
-  for (let i = 0; i < all.length; i++) {
-    if (!/^follow(ing)?$/i.test(all[i].t)) continue;
-    for (let j = i - 1; j >= Math.max(0, i - 4); j--) if (userLike(all[j].t) && !isMe(all[j].t) && near(all[j].el, all[i].el)) return all[j].t;
-  }
-  for (const a of document.querySelectorAll('a[href*="/user/"]')) {
-    const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); const u = m && decodeURIComponent(m[1]);
-    if (u && !isMe(u) && !a.closest("header,nav")) return u;
-  }
-  return (document.title || "").replace(/\s*[|·-]\s*whatnot.*$/i, "").trim();
+  const path = location.pathname, known = SELLER_AT.get(path);
+  if (known) return known;
+  const pick = (i, back) => { for (let j = i - 1; j >= Math.max(0, i - back); j--) if (userLike(all[j].t) && !isMe(all[j].t) && near(all[j].el, all[i].el)) return all[j].t; return ""; };
+  let u = "";
+  for (let i = 0; i < all.length && !u; i++) if (/^follow(ing)?$/i.test(all[i].t)) u = pick(i, 4);
+  for (let i = 0; i < all.length && !u; i++) if (/^★?\s*[0-5]\.\d$/.test(all[i].t)) { const r = all[i].el.getBoundingClientRect(); if (r.top < 200) u = pick(i, 3); }
+  if (u) SELLER_AT.set(path, u);
+  return u;
 }
 // Layout read from live screenshots (2026-10): the lot row is
 //   [thumb] "$1 START SINGLES 🔥 #76" / "Near Mint · Card" / "1 Bid" / "Shipping is $0.78 + Taxes"   [ "$1" / "00:07" or "Sold" ]
@@ -342,6 +343,9 @@ function lotTick() {
   const rolled = lot && lkey === lot.title && (
     (st.bids != null && lot.maxBids > 0 && st.bids < lot.maxBids) ||
     (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
+  // A title change before any bid is the same lot read better (zenzoogie: the title only became readable when the
+  // Custom bid box opened, which ended a phantom $1 lot and took Derek's Kirlia tap with it): rename, do not end.
+  if (lkey && lot && lkey !== lot.title && !rolled && !lot.ended && !lot.maxBids) lot.title = lkey;
   if ((lkey && (!lot || lkey !== lot.title)) || rolled) {
     if (lot && lotLastState) endLot(lotLastState);
     lot = { title: lkey, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
