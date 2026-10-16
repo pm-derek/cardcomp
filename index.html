@@ -100,6 +100,9 @@
   #lotstats .lstab{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
   #lotstats .lstab th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;padding:4px 4px;border-bottom:1px solid var(--line)}
   #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
+  #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  #lotstats .lsclear button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
+  #lotstats .lsclear button:hover{border-color:var(--red);color:var(--ink)}
   @media (max-width:440px){ #lotstats .lstiles{grid-template-columns:repeat(2,1fr)} #lotstats .lstab th:nth-child(4),#lotstats .lstab td:nth-child(4){display:none} }
   /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
      every tap target is at least ~40px tall (phone thumb, side panel mouse) */
@@ -2587,6 +2590,9 @@ function copyAmt(val, el){
 // Desktop: the "CardComp to Whatnot" Chrome extension (extension/) listens for this message and types the
 // amount into Whatnot's Custom bid box. Posted to this window (CardComp in a tab) and to the parent (CardComp
 // in the extension's side panel). No extension: nothing hears it, the clipboard copy above still happened.
+// One path to the extension per message: the side panel (parent) when CardComp is framed there, else this
+// window (the page-side content script). Posting to both could send a bid or a log row twice.
+function extPost(m){ try{ if(window.parent!==window) window.parent.postMessage(m, "*"); else window.postMessage(m, location.origin); }catch(_){ } }
 let WN_PENDING=null, WN_EXT=false;   // WN_EXT: the extension said hello, so a tap sends the bid into Whatnot
 function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to copy"; }
 let LAST_TAP=null;   // the card behind the last bid sent: joins the auction log to a card, and powers "over your $X" in the lot strip
@@ -2622,8 +2628,7 @@ function sendToWhatnot(s, el, show, labelOnly){
   if(labelOnly) return;
   const msg={type:"cardcomp-bid", amount:+s, name};
   WN_PENDING={s, show, at:Date.now()};
-  try{ window.postMessage(msg, location.origin); }catch(_){ }
-  if(window.parent!==window){ try{ window.parent.postMessage(msg, "*"); }catch(_){ } }
+  extPost(msg);
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-bid-ack") return;
@@ -2659,13 +2664,13 @@ document.addEventListener("click", e=>{
   const a=e.target && e.target.closest ? e.target.closest('a[href^="https://www.tcgplayer.com/product/"]') : null; if(!a) return;
   e.preventDefault();
   const m={type:"cardcomp-open-bg", url:a.href};
-  try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
+  extPost(m);
   const cond=(a.href.match(/Condition=([^&]+)/)||[])[1];
   liveNote(`reading ${cond?decodeURIComponent(cond):"price"} on TCGplayer in a background tab…`);
 }, true);
 // footer status while the extension is present: is a Whatnot tab open, is the verified-price store set up
 let WN_STAT_TIMER=null;
-function askStatus(){ const m={type:"cardcomp-status"}; try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } } }
+function askStatus(){ const m={type:"cardcomp-status"}; extPost(m); }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-status-ack") return;
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
@@ -2781,7 +2786,7 @@ function paintLotStats(){
   const all=loadLots(), sellers=[...new Set(all.slice().reverse().map(r=>r.s))];
   const seller=LOTSTATS_SELLER || (LOT&&LOT.seller) || sellers[0] || "";
   el.style.display="block";
-  if(!seller){ el.innerHTML=`<div class="lsx">No finished lots yet. Stats fill in as lots end on a Whatnot tab.</div>`; return; }
+  if(!seller){ el.innerHTML=`<div class="lsx">No finished lots yet. Stats fill in as lots end on a Whatnot tab.</div>${clearRowHTML()}`; wireClear(el); return; }
   const S=lotStats(seller, LOTSTATS_SCOPE), P=v=>v==null?"–":Math.round(v*100)+"%", D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2);
   // verdict: where this room closes vs where your max sits (status = icon + label, never color alone)
   let vc="var(--faint)", vi="…", vt=`Need 5 labeled lots for a read (${S.n} so far). Open or tap the card each lot.`;
@@ -2805,11 +2810,42 @@ function paintLotStats(){
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
-    ${lotTable(S)}`;
+    ${lotTable(S)}
+    ${clearRowHTML()}`;
+  wireClear(el);
   el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
   lotDotStrip(el.querySelector(".lschart"), S);
 }
+// ---- Clear logged data (Derek, 2026-10: a stuck label polluted a stream's lots) ----
+// Removes lots logged since a cutoff from this browser's stats AND the private log repo (via the extension).
+// Verified TCGplayer prices (live.json) are separate and untouched. Also drops any tap / opened card in memory.
+let CLEAR_NOTE="";
+function clearRowHTML(){
+  return `<div class="lsclear"><span class="lsmuted">Clear logged lots:</span>
+    <button data-clr="hour">last hour</button><button data-clr="today">today</button><button data-clr="all">everything</button>
+    ${CLEAR_NOTE?`<div class="lsx" style="margin-top:6px">${CLEAR_NOTE}</div>`:""}</div>`;
+}
+function wireClear(el){
+  el.querySelectorAll(".lsclear button").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); clearLots(b.dataset.clr); });
+}
+function clearLots(range){
+  const now=new Date(), since = range==="hour" ? Date.now()-3600000 : range==="today" ? new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime() : 0;
+  const rows=loadLots(), gone=rows.filter(r=>r.at>=since).length;
+  const what = range==="hour" ? "the last hour" : range==="today" ? "today" : "all time";
+  if(!confirm(`Delete ${gone} lot${gone===1?"":"s"} logged in ${what} from stream stats, and the matching rows in your private GitHub log? This cannot be undone. Verified TCGplayer prices are kept.`)) return;
+  try{ localStorage.setItem(LOTS_KEY, JSON.stringify(rows.filter(r=>r.at<since))); }catch(_){ }
+  LAST_TAP=null; LAST_VIEW=null; TAPS_THIS_LOT=[]; LOT_START=Date.now(); LOT_N=0; LOT_WON=0;   // nothing stale carries into the next lot
+  CLEAR_NOTE=`Cleared ${gone} from this browser. ${WN_EXT?"Clearing the GitHub log…":"GitHub log: open CardComp in the extension side panel to clear it there too."}`;
+  if(WN_EXT) extPost({type:"cardcomp-log-prune", since});
+  paintLot(); paintLotStats();
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-log-prune-ack" || !lotFromExt(e)) return;
+  CLEAR_NOTE += d.ok ? ` GitHub log: removed ${d.removed||0} row${d.removed===1?"":"s"}${d.files?` across ${d.files} file${d.files===1?"":"s"}`:""}.` : ` GitHub log not cleared (${escH(d.why||"no reply")}).`;
+  CLEAR_NOTE = CLEAR_NOTE.replace("Clearing the GitHub log… ", "");
+  paintLotStats();
+});
 // Dot strip: every labeled lot at its sale price as % of market. Emphasis form: your wins filled green,
 // lots you bid on and lost filled gray, the rest hollow gray. Reference lines: 100% market, your usual max.
 function lotDotStrip(host, S){
@@ -2827,7 +2863,7 @@ function lotDotStrip(host, S){
   const dots=rows.map(r=>{ const cx=x(r.f/r.m); let L=0; for(;L<4;L++){ if(!lanes[L].some(v=>Math.abs(v-cx)<9)) break; } L=Math.min(L,3); lanes[L].push(cx); return {r,cx,cy:ly(L)}; });
   const ticks=[0,0.25,0.5,0.75,1,1.25,1.5,1.75,2].filter(g=>g>=lo && g<=hi && (hi-lo<=1 || g*4%2===0));
   const grid=ticks.map(g=>`<line x1="${x(g)}" x2="${x(g)}" y1="${y0}" y2="${y1+4}" stroke="var(--line)" stroke-width="1"/><text x="${x(g)}" y="${H-6}" text-anchor="${g===lo?"start":g===hi?"end":"middle"}" class="lsax">${Math.round(g*100)}%${g===1?" mkt":""}</text>`).join("");
-  const ref=S.maxPct!=null?`<line x1="${x(S.maxPct)}" x2="${x(S.maxPct)}" y1="${y0-6}" y2="${y1+4}" stroke="var(--gold)" stroke-width="2"/><text x="${x(S.maxPct)}" y="${y0-9}" text-anchor="${x(S.maxPct)>W-90?"end":"middle"}" class="lsref">your max ~${Math.round(S.maxPct*100)}%</text>`:"";
+  const ref=S.maxPct!=null?`<line x1="${x(S.maxPct)}" x2="${x(S.maxPct)}" y1="${y0-6}" y2="${y1+4}" stroke="var(--gold)" stroke-width="2"/><text x="${x(S.maxPct)}" y="${y0-9}" text-anchor="${x(S.maxPct)>W-90?"end":x(S.maxPct)<60?"start":"middle"}" class="lsref">your max ~${Math.round(S.maxPct*100)}%</text>`:"";
   const marks=dots.map((d,i)=>{ const won=d.r.me, bid=mine(d.r);
     const fill=won?WIN:(bid?OTHER:"none"), stroke=won?WIN:OTHER;
     return `<g class="lsdot" data-i="${i}"><circle cx="${d.cx}" cy="${d.cy}" r="10" fill="transparent"/><circle cx="${d.cx}" cy="${d.cy}" r="5" fill="${fill}" stroke="${fill==="none"?stroke:SURF}" stroke-width="2"/></g>`; }).join("");
@@ -2879,7 +2915,7 @@ window.addEventListener("message", e=>{
     if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
     recordLotStat(rec);
     const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
-    try{ window.postMessage(m, location.origin); }catch(_){ } if(window.parent!==window){ try{ window.parent.postMessage(m, "*"); }catch(_){ } }
+    extPost(m);
     paintLot();
   }
 });
@@ -2949,8 +2985,7 @@ function applyLive(d){
   const key=d.pid+"|"+d.cond, rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
   LIVE[key]=rec;
   const msg={type:"cardcomp-live-save", key, rec};   // the extension writes it to the live branch (desktop only; silent without a token)
-  try{ window.postMessage(msg, location.origin); }catch(_){ }
-  if(window.parent!==window){ try{ window.parent.postMessage(msg, "*"); }catch(_){ } }
+  extPost(msg);
   if(LIVE_REDRAW) LIVE_REDRAW();
 }
 function condGridHTML(prices, key, mf, year, pid, card){

@@ -33,7 +33,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return;
   }
   if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
-  if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }          // app -> GitHub log-YYYY-MM.json
+  if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }
+  if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"          // app -> GitHub log-YYYY-MM.json
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
