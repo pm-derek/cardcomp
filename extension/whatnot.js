@@ -14,6 +14,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== "cardcomp-bid") return;
   const amt = String(Math.max(0, Math.floor(Number(msg.amount) || 0)));
   if (amt === "0") { reply({ ok: false, why: "no amount" }); return; }
+  // Lot already sold / "Awaiting next item": a late tap is for the card that sold. Never fill or arm anything,
+  // or the next lot's Custom box would get the old card's bid.
+  let now0 = null; try { now0 = readLot(); } catch (_) {}   // read the page now, not the last tick: a late tap lands right after "Sold"
+  const st0 = now0 || lotLastState;
+  if (st0 && (st0.ended || st0.waiting)) {
+    toast(`Lot already sold. $${amt}${msg.name ? " for " + msg.name : ""} was not entered.`, "wait");
+    reply({ ok: false, why: "sold" });
+    return;
+  }
   pending = { amt, name: msg.name || "", at: Date.now() };
   // Already priced out (the live lot's next bid is above this max): don't open Custom bid at all
   const min0 = minBid();
@@ -153,7 +162,7 @@ const LOT_RX = {
   ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
   joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
-  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|^sold$|^bid\b|^custom|^follow$/i
+  skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|^sold$|^bid\b|^custom|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max/i
 };
 // Room: who has been seen (joined in chat, or led a lot) and when. Sent with every lot record.
 const members = new Map();   // user -> {first, last, joins, leads, chats}
@@ -173,8 +182,7 @@ function readChat() {
   const box = document.querySelector('input[placeholder^="Say something" i],textarea[placeholder^="Say something" i]');
   if (!box) return;
   let root = box.parentElement;
-  for (let i = 0; i < 6 && root; i++, root = root.parentElement) if (root.querySelectorAll("*").length > 60) break;
-  if (!root) return;
+  for (let i = 0; i < 6 && root.parentElement; i++) { if (root.querySelectorAll("*").length > 60) break; root = root.parentElement; }
   const ls = leaves(root);
   for (let i = 0; i + 1 < ls.length; i++) {
     const u = ls[i].textContent.trim(), next = ls[i + 1].textContent.trim();
@@ -196,10 +204,23 @@ function ownTexts(root) {
   }
   return out;
 }
-const userLike = (s) =>/^[A-Za-z0-9_.-]{2,32}$/.test(s || "");   // Whatnot usernames: no spaces
-function sellerName() {
-  const a = document.querySelector('a[href^="/user/"],a[href*="whatnot.com/user/"]');
-  if (a) { const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); if (m) return decodeURIComponent(m[1]); }
+const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products)$/i;
+const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);   // Whatnot usernames: no spaces, has a letter
+// two text elements belong together ("garrubia" + "is Winning!") only if they share an ancestor within 4 levels;
+// otherwise the giveaway widget's "27 Entries" once became a winner
+const near = (a, b) => { for (let x = a, i = 0; i < 4 && x; i++, x = x.parentElement) if (x.contains(b)) return true; return false; };
+// The streamer: the name just before the "Follow" / "Following" button over the video ("zenzoogie" / "5.0" /
+// "Follow"). The first /user/ link on the page is Derek's own avatar in the header, which logged every lot under
+// "rewired". Fallback: a /user/ link that is not Derek's.
+function sellerName(all) {
+  for (let i = 0; i < all.length; i++) {
+    if (!/^follow(ing)?$/i.test(all[i].t)) continue;
+    for (let j = i - 1; j >= Math.max(0, i - 4); j--) if (userLike(all[j].t) && !isMe(all[j].t) && near(all[j].el, all[i].el)) return all[j].t;
+  }
+  for (const a of document.querySelectorAll('a[href*="/user/"]')) {
+    const m = /\/user\/([^/?#]+)/.exec(a.getAttribute("href") || ""); const u = m && decodeURIComponent(m[1]);
+    if (u && !isMe(u) && !a.closest("header,nav")) return u;
+  }
   return (document.title || "").replace(/\s*[|·-]\s*whatnot.*$/i, "").trim();
 }
 // Layout read from live screenshots (2026-10): the lot row is
@@ -211,14 +232,30 @@ let ME = "";   // Derek's Whatnot username (extension Options), so "derek won!" 
 try { chrome.storage.local.get("wnUser", (r) => { ME = String((r && r.wnUser) || "").trim().toLowerCase(); }); } catch (_) {}
 const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
 const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG" };
+let lastRow = null;   // the lot row the reader used last, for the "copy debug" snapshot
+// "copy debug" in CardComp's strip: the lot row's HTML (two levels up, scripts / images / svg paths stripped) and
+// the text the reader saw, so a layout the reader misses can be fixed from a paste instead of a guess.
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== "cardcomp-snapshot") return;
+  let root = lastRow; for (let i = 0; i < 2 && root && root.parentElement; i++) root = root.parentElement;
+  let html = "";
+  if (root) {
+    const c = root.cloneNode(true);
+    c.querySelectorAll("script,style,path,img,video,canvas").forEach((e) => e.remove());
+    c.querySelectorAll("*").forEach((e) => { for (const at of [...e.attributes]) if (!/^(class|role|aria-label|data-testid|href)$/.test(at.name)) e.removeAttribute(at.name); });
+    html = c.outerHTML.replace(/\s+/g, " ").slice(0, 20000);
+  }
+  let st = {}; try { st = readLot(); } catch (_) {}
+  reply({ ok: true, snap: { at: new Date().toISOString(), url: location.href, read: { title: st.title, sub: st.sub, cur: st.cur, bids: st.bids, timer: st.timer, lead: st.lead, seller: st.seller, sold: st.sold }, texts: root ? ownTexts(root).map((x) => x.t).slice(0, 80) : [], html } });
+});
 function readLot() {
-  const all = leaves(document.body);
-  const st = { title: "", sub: "", cond: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", ended: false, waiting: false, seller: sellerName(), url: location.href, viewers: null, giveaway: null };
-  const bareMoney = (el) => LOT_RX.money.test(el.textContent.trim()) && !el.closest("button,[role=button]");
+  const all = ownTexts(document.body);   // every element with its own text: {el, t}
+  const st = { title: "", sub: "", cond: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", ended: false, waiting: false, seller: sellerName(all), url: location.href, viewers: null, giveaway: null };
+  const bareMoney = (el) => LOT_RX.money.test(el.textContent.trim()) && !el.closest("button");   // role=button lot rows keep their price ($null finals in the log)
   // Several "N bids" can be on the page: the wide layout has a Shop panel ("$1 START SINGLES" / "$1" /
   // "0 bids" / "Qty. 115" / "Pre-bid") before the live lot. Score each candidate's row and keep the live one.
   let card = null, bidsEl = null, best = -99;
-  for (const b of all.filter((el) => LOT_RX.bids.test(el.textContent.trim()))) {
+  for (const b of all.filter((x) => LOT_RX.bids.test(x.t)).map((x) => x.el)) {
     let row = null; for (let el = b.parentElement, i = 0; i < 8 && el; i++, el = el.parentElement) { if ((el.textContent || "").length > 800) break; if (leaves(el).some(bareMoney)) { row = el; break; } }
     const t = (row || b.parentElement || b).textContent || "";
     const score = (/shipping is/i.test(t) ? 3 : 0) + (/\d{1,2}:\d{2}|\bsold\b/i.test(t) ? 3 : 0) + (row ? 1 : 0) - (/qty\.|pre-bid/i.test(t) ? 6 : 0);
@@ -226,6 +263,7 @@ function readLot() {
   }
   if (best < 0) { card = null; bidsEl = null; }   // only the shop tile: no live lot on screen
   if (!card && bidsEl) card = bidsEl.parentElement && bidsEl.parentElement.parentElement;   // price column not found: still read the text block
+  lastRow = card;
   const texts = [];
   // Read every element that holds text of its own, not only childless leaves: a title like
   // "Card on Screen (NO REFUNDS) #87" can sit beside an icon or badge element (zenzoogie's layout), which made
@@ -233,31 +271,35 @@ function readLot() {
   for (const { el, t } of (card ? ownTexts(card) : [])) {
     let m;
     if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
-    else if (LOT_RX.money.test(t) && !el.closest("button,[role=button]")) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
+    else if (LOT_RX.money.test(t) && !el.closest("button")) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
     else if (LOT_RX.timer.test(t)) st.timer = t;
     else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
     else if (/^sold$/i.test(t)) st.ended = true;
-    else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button,[role=button]")) texts.push(t);   // icon-only text ("💀") is not a title
+    else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button")) texts.push(t);   // icon-only text ("💀") is not a title; a role=button lot row is fine
   }
+  // Still no title: look one or two levels above the row, taking only multi-word lines (a bare "nick0217" is a name)
+  for (let up = card && card.parentElement, k = 0; !texts.length && up && k < 2; up = up.parentElement, k++)
+    for (const { el, t } of ownTexts(up)) if (!card.contains(el) && /\s/.test(t) && t.length < 120 && /[A-Za-z]/.test(t) && !LOT_RX.skip.test(t) && !el.closest("button")) texts.push(t);
   st.title = texts[0] || ""; st.sub = texts[1] || "";   // title, then the seller's condition / category line
-  st.cond = COND_TXT[(st.sub.split("·")[0] || "").trim().toLowerCase()] || "";
+  st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";   // "Near Mint ∙ Card" uses U+2219
   let wonBy = "", meWon = false, wonUser = "";
   for (let i = 0; i < all.length; i++) {
-    const t = all[i].textContent.trim(); let m;
-    const prev = i > 0 ? all[i - 1].textContent.trim() : "";
+    const t = all[i].t; let m;
+    const prev = i > 0 && near(all[i].el, all[i - 1].el) ? all[i - 1].t : "";   // the name must sit right beside "is Winning!" / "won!"
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
     else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
     else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
     else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = /^max bid added:?\s*\$([\d,]+)/i.exec(t))) st.placedMax = +m[1].replace(/,/g, "");   // what Derek actually set, even if he edited the box by hand
-    else if ((m = LOT_RX.next.exec(t)) && all[i].closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
+    else if ((m = LOT_RX.next.exec(t)) && all[i].el.closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
     else if (LOT_RX.meWon.test(t)) { meWon = true; st.me = true; }           // "You won" popup in the middle of the video
     else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
-    else if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i])) { chatSeen.add(all[i]); seen(m[1], "joins"); } }   // one-leaf "X joined" variant
+    else if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i].el)) { chatSeen.add(all[i].el); seen(m[1], "joins"); } }   // one-leaf "X joined" variant
     else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
-    else if (st.viewers == null && LOT_RX.viewers.test(t) && !(card && card.contains(all[i]))) {   // viewer count: a bare number in the top band of the page
-      const r = all[i].getBoundingClientRect(); if (r.top < 220 && r.top >= 0) st.viewers = +t;
+    else if (/^entries$/i.test(t) && /^\d{1,6}$/.test(prev)) st.giveaway = +prev;   // "27" + "Entries"
+    else if (st.viewers == null && LOT_RX.viewers.test(t) && !(card && card.contains(all[i].el))) {   // viewer count: a bare number in the top band of the page
+      const r = all[i].el.getBoundingClientRect(); if (r.top < 220 && r.top >= 0) st.viewers = +t;
     }
   }
   if (isMe(st.lead)) st.me = true;

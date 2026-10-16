@@ -63,7 +63,7 @@ async function flushLog() {
       let sha = null, rows = [];
       if (g.ok) { const j = await g.json(); sha = j.sha; try { rows = JSON.parse(b64dec(j.content)) || []; } catch (_) {} }
       else if (g.status !== 404) throw new Error("GitHub GET " + g.status);
-      const body = { message: `Auction log: ${batch.length} lots`, branch: LOG.branch, content: b64enc(JSON.stringify(rows.concat(batch))) };
+      const body = { message: `Auction log: ${batch.length} lots`, branch: LOG.branch, content: b64enc(JSON.stringify(mergeRows(rows.concat(batch)))) };   // also folds a copy written by another CardComp window
       if (sha) body.sha = sha;
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr), body: JSON.stringify(body) });
       if (r.status === 409 || r.status === 422) continue;
@@ -100,8 +100,22 @@ async function pruneLog(since) {
   }
   return { ok: true, removed, files };
 }
+// One row per lot. Every CardComp copy that is open (side panel, a CardComp tab) receives the same lot-end and
+// logs it, which wrote each lot 2-4 times. A lot is identified by the extension's own timestamps (startedAt + at
+// are set once in whatnot.js), and the copy that knows the card wins.
+const lotKey = (r) => r && r.startedAt != null && r.at != null ? `${r.seller || ""}|${r.startedAt}|${r.at}` : null;
+const richness = (r) => (r.card ? 10 : 0) + (r.card && r.card.label === "tap" ? 5 : 0) + ((r.bidsSent || []).length ? 2 : 0);
+function mergeRows(rows) {
+  const out = [], at = new Map();
+  for (const r of rows) {
+    const k = lotKey(r);
+    if (k == null || !at.has(k)) { if (k != null) at.set(k, out.length); out.push(r); continue; }
+    const i = at.get(k); if (richness(r) > richness(out[i])) out[i] = r;
+  }
+  return out;
+}
 function queueLog(rec) {
-  pendingLog.push(rec);
+  pendingLog = mergeRows(pendingLog.concat([rec]));
   if (!logTimer) logTimer = setTimeout(flushLog, 60000);
 }
 

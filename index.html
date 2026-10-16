@@ -73,7 +73,9 @@
   .bidtbl .nt{font-size:11px;font-weight:600;line-height:1.2}
   .maxbid .mbsub{color:var(--faint);font-size:11px;line-height:1.45}
   /* stream stats panel (under the sticky search row, opened from "stats" in the lot strip) */
-  #lotstats{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 12px 10px;margin:0 0 10px;font-size:12.5px}
+  /* a bottom sheet over the results, not a block between search and results (Derek: it pushed the results down) */
+  #lotstats{position:fixed;left:0;right:0;bottom:0;z-index:45;max-width:680px;margin:0 auto;max-height:75vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.55);padding:12px 12px 14px;font-size:12.5px}
+  #lotstats .lsclose{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:4px 9px;cursor:pointer}
   #lotstats .lshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
   #lotstats .lshead b{font-size:13.5px;color:var(--ink)}
   #lotstats .lssel{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 6px;max-width:170px}
@@ -100,6 +102,11 @@
   #lotstats .lstab{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
   #lotstats .lstab th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;padding:4px 4px;border-bottom:1px solid var(--line)}
   #lotstats .lstab td{padding:5px 4px;border-bottom:1px solid var(--line);color:var(--dim)}
+  #lotstats .lshaul{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;background:var(--panel2);border-radius:9px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--dim)}
+  #lotstats .lshaul b{color:var(--ink);font-size:14px}
+  #lotstats .lstab tr.me td{background:rgba(51,168,118,.12);color:var(--ink);font-weight:600}
+  #lotstats .lstab tr.me td:first-child{box-shadow:inset 3px 0 0 #33a876}
+  #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
   #lotstats .lsclear button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
   #lotstats .lsclear button:hover{border-color:var(--red);color:var(--ink)}
@@ -2622,7 +2629,11 @@ function sendToWhatnot(s, el, show, labelOnly){
       const cond=ds.cond || (LAST_TAP && r && LAST_TAP.id===r.id && LAST_TAP.cond) || "NM";
       LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:"", ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
     }
-    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
+    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n, snap:Object.assign({}, LAST_TAP)}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
+    if(Date.now()<LOT_START){   // inside the grace window: counted for the lot that just sold
+      LATE_NOTE=Date.now(); setTimeout(paintLot, 3200);
+      if(LAST_VIEW && LAST_VIEW.id===LAST_TAP.id) LOT_VIEW_START=Date.now()+1;   // the card opened for that late tap is used up, not offered for the next lot
+    }
     paintLot();
   }catch(_){ }
   if(labelOnly) return;
@@ -2635,6 +2646,7 @@ window.addEventListener("message", e=>{
   const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent;
   if(!(fromSelf||fromPanel)) return;
   const p=WN_PENDING; if(!p || Date.now()-p.at>3000) return;
+  if(!d.ok && d.why==="sold"){ p.show("lot sold, not sent", "var(--gold)"); WN_PENDING=null; return; }   // late tap after "Sold": logged for that card, nothing entered in Whatnot
   if(!d.ok && d.why==="under" && d.min){   // priced out: nothing opened in Whatnot; put the minimum in "your bid" so one tap on send bids it
     p.show("under next $"+d.min, "var(--red)"); WN_PENDING=null;
     document.querySelectorAll(".ovrin").forEach(i=>{ i.value=String(d.min); i.style.borderColor="var(--red)"; setTimeout(()=>{ i.style.borderColor=""; }, 4000); });
@@ -2682,8 +2694,11 @@ window.addEventListener("message", e=>{
 // Lot strip: what the auction on the Whatnot tab is doing (read by the extension every second).
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
+let DBG_NOTE="";
 let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false, LOT_ENDED_AT=0, LOT_END_SEEN_AT=0;
-const LABEL_MAX_MS=5*60000;   // a tap or opened card older than this never labels a lot (a lot runs ~30-90 s)   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
+const LABEL_MAX_MS=5*60000;
+const LATE_TAP_MS=2500;   // a tap up to 2.5 s after "Sold" is a late reaction to that card, not a pick for the next one
+let LATE_NOTE=0, LOT_VIEW_START=0;   // opened cards: no grace window (opening right after "Sold" is looking up the next card)   // a tap or opened card older than this never labels a lot (a lot runs ~30-90 s)   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
   const v=LAST_VIEW; if(!v || v.at<from || v.at>to || to-v.at>LABEL_MAX_MS) return null;
@@ -2699,11 +2714,12 @@ function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
   el.style.display="block";
+  if(d.seller && VERDICT.seller!==d.seller) refreshVerdict(d.seller);   // this stream's read + haul, before anything below uses them
   // only a bid sent (or a card opened) since the previous lot ended, and within 5 min: lots are generic
   // ("$2 start #43"), so an older tap is a different card
   const fresh=x=>x && x.at>=LOT_START && Date.now()-x.at<LABEL_MAX_MS;
   const tap=fresh(LAST_TAP) ? LAST_TAP : null;
-  const view=!tap && fresh(LAST_VIEW) ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
+  const view=!tap && LAST_VIEW && LAST_VIEW.at>=LOT_VIEW_START && Date.now()-LAST_VIEW.at<LABEL_MAX_MS ? CARDS.find(x=>x.id===LAST_VIEW.id) : null;
   const over=tap && tap.bid>=1 && d.cur!=null && d.cur>=tap.bid && !d.ended;
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
@@ -2718,8 +2734,10 @@ function paintLot(){
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
-  if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won ${LOT_WON}</span>`);
-  parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}</span>`);
+  const H=VERDICT.haul;   // this stream, from the stats store: "won 3 · $24 · +$4.20"
+  if(H && H.n) parts.push(`<span style="color:var(--ink)">won ${H.n} · $${Math.round(H.spent)}${H.n>H.unl?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}</span>`);
+  else if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won 0</span>`);
+  parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
   // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
   // with what that price would net so the nudge is a decision, not a reflex
   let nudge="";
@@ -2735,9 +2753,17 @@ function paintLot(){
   const lab = tap ? `<span style="color:var(--green)">${pre}logging: ${escH(tap.n).slice(0,28)} ${tap.cond||""}</span>`
             : view ? `<span style="color:var(--green)">${pre}logging: ${escH(view.n).slice(0,28)} ${(!d.ended&&d.cond)||"NM?"} (viewed)</span>`
             : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
+  // ✕ clear: drop the card queued for this slot (a wrong search, a late tap) so the lot logs unlabeled until the next tap / open
+  const clr=(tap||view) ? ` <span class="lotclr" title="clear the card for this lot" style="cursor:pointer;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-left:4px">✕ clear</span>` : "";
+  const late=LATE_NOTE && Date.now()-LATE_NOTE<3000 ? `<div style="margin-top:2px;font-size:11px;color:var(--gold)">late tap: counted for the card that just sold, not the next one</div>` : "";
+  // title not read (new layout): one tap copies what the reader saw, to paste to Claude
+  const noTitle=!d.title || d.title==="(untitled lot)";
   const nm=d.title ? lotQuery(d.title) : "";
   const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}</div>`;
+  const dbg=noTitle ? `<div style="margin-top:2px;font-size:11px;color:var(--faint)">lot title not read · <span class="lotdbg" style="cursor:pointer;color:var(--blue)">${DBG_NOTE||"copy debug"}</span></div>` : "";
+  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}${clr}</div>`+late+dbg;
+  const cl=el.querySelector(".lotclr"); if(cl) cl.onclick=(e)=>{ e.stopPropagation(); const n=Date.now(); LOT_START=Math.max(LOT_START, n); LOT_VIEW_START=n; TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>t.t>n); paintLot(); };
+  const db=el.querySelector(".lotdbg"); if(db) db.onclick=(e)=>{ e.stopPropagation(); DBG_NOTE="reading…"; paintLot(); extPost({type:"cardcomp-snapshot"}); };
   const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
   const nb=el.querySelector(".lotnudge"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); copyAmt(nb.dataset.bid, nb); };
   const sb=el.querySelector(".lotstatbtn"); if(sb) sb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=!LOTSTATS_OPEN; paintLot(); paintLotStats(); };
@@ -2756,9 +2782,13 @@ function recordLotStat(rec){
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null };
     const cut=Date.now()-120*86400000;
-    const rows=loadLots().filter(r=>r.at>=cut); rows.push(row);
+    row.k=rec.startedAt!=null ? `${rec.seller||""}|${rec.startedAt}|${rec.at}` : null;   // same lot seen by two CardComp copies: keep one, the labeled one
+    let rows=loadLots().filter(r=>r.at>=cut);
+    const dup=row.k ? rows.findIndex(r=>r.k===row.k) : -1;
+    if(dup<0) rows.push(row); else if(!rows[dup].n && row.n) rows[dup]=row;
     localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
   }catch(_){ }
+  try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
 }
 const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
@@ -2780,13 +2810,31 @@ function lotStats(seller, scope){
     maxPct, target:mf, roomMargin:med(lab.filter(r=>r.np!=null).map(r=>net(r)/r.f)) };
 }
 let LOTSTATS_SELLER="", LOTSTATS_SCOPE="stream";
+let VERDICT={seller:"", txt:"", col:""};   // strip summary: "hot 77%" for this stream, so the sheet rarely needs opening
+// Your haul over a set of lots: wins, spent, market value of the labeled wins, net if listed at market.
+// Unlabeled wins count toward spent but have no market, so net covers labeled wins only (said in the UI).
+function haul(rows){
+  const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
+  const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f,0);
+  const net=priced.reduce((a,r)=>a+(r.np-r.f),0), mkt=priced.reduce((a,r)=>a+r.m,0);
+  return { n:wins.length, spent, net, mkt, margin:pSpent>0?net/pSpent:null, unl:wins.length-priced.length };
+}
+function streamRows(seller){ return lotStats(seller, "stream").rows; }
+function todayRows(){ const m=new Date(); m.setHours(0,0,0,0); return loadLots().filter(r=>r.at>=m.getTime()); }
+function refreshVerdict(seller){
+  VERDICT={seller, txt:"", col:"", haul:null};
+  try{ VERDICT.haul=haul(streamRows(seller)); }catch(_){ }
+  try{ const S=lotStats(seller, "stream"); if(S.n>=5 && S.sold!=null && S.maxPct!=null){ const d=(S.sold-S.maxPct)*100, p=Math.round(S.sold*100)+"%";
+    Object.assign(VERDICT, d<=-5 ? {txt:"soft "+p, col:"var(--green)"} : d<=5 ? {txt:"even "+p, col:"var(--gold)"} : {txt:"hot "+p, col:"var(--red)"}); } }catch(_){ }
+}
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && LOTSTATS_OPEN){ LOTSTATS_OPEN=false; paintLot(); paintLotStats(); } });
 function paintLotStats(){
   const el=$("#lotstats"); if(!el) return;
   if(!LOTSTATS_OPEN){ el.style.display="none"; return; }
   const all=loadLots(), sellers=[...new Set(all.slice().reverse().map(r=>r.s))];
   const seller=LOTSTATS_SELLER || (LOT&&LOT.seller) || sellers[0] || "";
   el.style.display="block";
-  if(!seller){ el.innerHTML=`<div class="lsx">No finished lots yet. Stats fill in as lots end on a Whatnot tab.</div>${clearRowHTML()}`; wireClear(el); return; }
+  if(!seller){ el.innerHTML=`<div class="lshead"><b>Stream stats</b><span class="lschips"><button class="lsclose" title="close">✕</button></span></div><div class="lsx">No finished lots yet. Stats fill in as lots end on a Whatnot tab.</div>${clearRowHTML()}`; wireClear(el); el.querySelector(".lsclose").onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=false; paintLot(); paintLotStats(); }; return; }
   const S=lotStats(seller, LOTSTATS_SCOPE), P=v=>v==null?"–":Math.round(v*100)+"%", D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2);
   // verdict: where this room closes vs where your max sits (status = icon + label, never color alone)
   let vc="var(--faint)", vi="…", vt=`Need 5 labeled lots for a read (${S.n} so far). Open or tap the card each lot.`;
@@ -2805,18 +2853,27 @@ function paintLotStats(){
   el.innerHTML=`
     <div class="lshead"><b>Stream stats</b>
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
-      <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span></div>
+      <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
+    ${haulHTML(haul(S.rows), "This stream")}${haulHTML(haul(todayRows()), "Today, all streams")}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
     ${lotTable(S)}
     ${clearRowHTML()}`;
   wireClear(el);
+  const xb=el.querySelector(".lsclose"); if(xb) xb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=false; paintLot(); paintLotStats(); };
   el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
   lotDotStrip(el.querySelector(".lschart"), S);
 }
+window.addEventListener("message", e=>{   // "copy debug" reply: put it on the clipboard for Derek to paste
+  const d=e.data; if(!d || d.type!=="cardcomp-snapshot-ack" || !lotFromExt(e)) return;
+  if(!d.ok){ DBG_NOTE="debug failed: "+(d.why||"no reply"); paintLot(); return; }
+  const txt="CardComp debug snapshot\n"+JSON.stringify(d.snap, null, 1);
+  const done=()=>{ DBG_NOTE="copied, paste it to Claude"; paintLot(); setTimeout(()=>{ DBG_NOTE=""; paintLot(); }, 6000); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, ()=>{ copyFallback(txt, done); }); else copyFallback(txt, done);
+});
 // ---- Clear logged data (Derek, 2026-10: a stuck label polluted a stream's lots) ----
 // Removes lots logged since a cutoff from this browser's stats AND the private log repo (via the extension).
 // Verified TCGplayer prices (live.json) are separate and untouched. Also drops any tap / opened card in memory.
@@ -2875,10 +2932,17 @@ function lotDotStrip(host, S){
       tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
     g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
 }
-function lotTable(S){   // the table view: last labeled lots, newest first
-  const rows=S.lab.slice(-12).reverse(); if(!rows.length) return "";
+function haulHTML(H, label){
+  const D=v=>(v<0?"−":"+")+"$"+Math.abs(v).toFixed(2);
+  if(!H.n) return `<div class="lshaul"><span class="lsl">${label}</span><span class="lsmuted">no wins yet</span></div>`;
+  return `<div class="lshaul"><span class="lsl">${label}</span><b>${H.n} won</b><span>$${H.spent.toFixed(0)} spent</span>`+
+    (H.n>H.unl ? `<span>$${H.mkt.toFixed(0)} market</span><b style="color:${H.net>=0?"var(--green)":"var(--red)"}">${D(H.net)} net${H.margin!=null?` (${Math.round(H.margin*100)}%)`:""}</b>` : "")+
+    (H.unl ? `<span class="lsmuted">${H.unl} win${H.unl===1?"":"s"} without a card, not in net</span>` : "")+`</div>`;
+}
+function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
+  const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null;
-    return `<tr><td>${escH((r.n||"").slice(0,26))} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${Math.round(r.f/r.m*100)}%</td><td>${r.me?"<b>you</b>":escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/102 NM"), else "" (most titles are "$1 START SINGLES #76")
   const words=String(title||"").toLowerCase().replace(/[^a-z0-9'&. -]/g," ").split(/\s+/).filter(Boolean);
@@ -2894,7 +2958,7 @@ window.addEventListener("message", e=>{
     if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
     // Safety net: "Sold" on screen ends the label window even if no lot-end message arrives (an unread title
     // once meant no lot-end at all, and a Numel tap labeled every lot after it)
-    if(d.ended && !LOT_ENDED_AT){ const t=LOT_ENDED_AT=Date.now(); setTimeout(()=>{ if(LOT_END_SEEN_AT<t-1000 && LOT_START<t){ LOT_START=t; TAPS_THIS_LOT=[]; paintLot(); } }, 1500); }
+    if(d.ended && !LOT_ENDED_AT){ const t=LOT_ENDED_AT=Date.now(); setTimeout(()=>{ if(LOT_END_SEEN_AT<t-1000 && LOT_START<t){ LOT_START=t+LATE_TAP_MS; TAPS_THIS_LOT=TAPS_THIS_LOT.filter(x=>x.t>t+LATE_TAP_MS); paintLot(); } }, 1500); }
     if(!d.ended) LOT_ENDED_AT=0;
     paintLot();
   }
@@ -2904,21 +2968,29 @@ window.addEventListener("message", e=>{
     // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
     // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
     // labeled with the last one; every tap is kept in bidsSent.
-    const rec=d.rec, from=Math.max(LOT_START, (rec.startedAt||Date.now())-180000);
-    const tap=LAST_TAP && LAST_TAP.at>=from && LAST_TAP.at<=rec.at && rec.at-LAST_TAP.at<LABEL_MAX_MS ? LAST_TAP : null;
-    LOT_START=Date.now();
-    if(rec.empty){ TAPS_THIS_LOT=[]; paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
-    if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; }
-    else { const v=viewLabel(from, rec.at, rec.sellerCond); if(v) rec.card=v; }   // no bid: the card Derek opened during the lot, at the seller's stated condition
-    rec.bidsSent=TAPS_THIS_LOT.filter(t=>t.t>=from);
-    TAPS_THIS_LOT=[];
-    if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
-    recordLotStat(rec);
-    const m={type:"cardcomp-log-save", rec};   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
-    extPost(m);
+    // Late taps (Derek, 2026-10): a tap within LATE_TAP_MS after "Sold" is a reaction to the card that just
+    // sold, so the record waits that long and the next lot's window opens after it.
+    const rec=d.rec, from=Math.max(Math.min(LOT_START, Date.now()), (rec.startedAt||Date.now())-180000);
+    const to=(rec.at||Date.now())+LATE_TAP_MS, vFrom=Math.max(LOT_VIEW_START, (rec.startedAt||Date.now())-180000);
+    LOT_START=to; LOT_VIEW_START=rec.at||Date.now();
+    setTimeout(()=>finishLot(rec, from, to, vFrom), Math.max(0, to-Date.now()));
     paintLot();
   }
 });
+function finishLot(rec, from, to, vFrom){
+  const mine=TAPS_THIS_LOT.filter(t=>t.t>=from && t.t<=to);
+  TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>t.t>to);   // taps after the grace window belong to the next lot
+  if(rec.empty){ paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
+  const last=mine.length ? mine[mine.length-1] : null;
+  const tap=last && last.snap && to-last.t<LABEL_MAX_MS+LATE_TAP_MS ? last.snap : null;
+  if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; if(last.t>(rec.at||0)) rec.card.late=true; }
+  else { const v=viewLabel(vFrom, rec.at||to, rec.sellerCond); if(v) rec.card=v; }   // no bid: the card Derek opened during the lot, at the seller's stated condition
+  rec.bidsSent=mine.map(t=>{ const o=Object.assign({}, t); delete o.snap; return o; });
+  if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
+  recordLotStat(rec);
+  extPost({type:"cardcomp-log-save", rec});   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
+  paintLot();
+}
 function copyFallback(s,cb){ try{ const t=document.createElement("textarea"); t.value=s; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand("copy"); document.body.removeChild(t); cb&&cb(); }catch(_){ } }
 // price trend from data.json d7/d30 (percent change of the card's best price) + carried-forward stale prices
 function pctTxt(p){ return `<span style="color:${p<0?"var(--red)":"var(--green)"}">${p<0?"↓":"↑"}${Math.abs(p)}%</span>`; }
