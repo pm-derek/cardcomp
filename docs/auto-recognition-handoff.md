@@ -381,3 +381,18 @@ Fixture: `docs/recog-reads/live-2026-10-16b.json` (19 lots with a known card).
   the one left is a Flareon whose stamp the model never mentioned.
 - Two lots had "no frame: 1 video element(s), none showing a picture" (dustyjsmith79, safamtb): the stream's
   video had no picture at that moment; read now or the next lot covers it.
+
+## Read now vs automatic reads; results page as a backlog (Derek, 2026-10-16)
+
+- Double entries were a read now plus the automatic read at timer start (only skipped within 10 s on a near-identical
+  picture). Two reads of the same moment add little: same frame quality, same mistakes (Haiku read "232/191" twice
+  on one Mew ex). Now a read now is the lot's reading: during a running lot it is added to that lot and nothing
+  automatic follows; before the timer it is reused at the start within 60 s unless the card clearly changed.
+- Auto replaced results after a read now and collapsed the opened card. Now, once Derek engages with a lot (read now,
+  typing, tapping or opening a result), automatic readings only offer "show" until the lot ends.
+- Results page: "to review" lots first; a lot where Derek tapped a bid or opened a card is scored from that card
+  automatically (no buttons); the summary says how many of each. The tapped printing (Reverse Holofoil...) and
+  condition are recorded; right / wrong stays at card level, and the model's rarity read is not used to pick a
+  printing (Haiku called the Celebrations Lugia "Reverse Holo").
+- CardComp: pictures bigger on desktop / side panel (list 60x84, opened card 120x168); phone unchanged (a bigger
+  picture squeezed card names from 76 px to 24 px); tiles keep their crop.

@@ -31,7 +31,8 @@ function verdict(L) {
   if (rv === "listed") return { m, v: "listed", label: "marked: right card listed" };
   if (rv === "wrong") return { m, v: "miss", label: "marked wrong" };
   if (rv === "nocard") return { m, v: "none", label: "marked: no card on screen" };
-  return { m, v: "none", label: "not labeled" };
+  if (m.kind === "no-card") return { m, v: "none", label: "no card in view" };
+  return { m, v: "todo", label: "to review" };
 }
 
 async function paint() {
@@ -40,7 +41,8 @@ async function paint() {
   const reads = lots.flatMap((L) => L.reads || []);
   const first = lots.map((L) => (L.reads || []).find((r) => r.n === 1)).filter((r) => r && r.ms);
   const cost = reads.reduce((a, r) => a + (r.cost || 0), 0);
-  const labeled = V.filter((L) => L.V.v !== "none");
+  const labeled = V.filter((L) => L.V.v !== "none" && L.V.v !== "todo");
+  const fromTaps = V.filter((L) => L.V.truth).length, todo = V.filter((L) => L.V.v === "todo").length;
   const strong = V.filter((L) => L.V.m && L.V.m.strength === "strong" && (L.V.truth || /marked/.test(L.V.label)));
   const strongWrong = strong.filter((L) => L.V.v === "miss").length;
   const kinds = {}; V.forEach((L) => { const k = L.V.m ? L.V.m.kind : "none"; kinds[k] = (kinds[k] || 0) + 1; });
@@ -48,13 +50,14 @@ async function paint() {
   document.getElementById("sum").innerHTML = lots.length ? [
     `<b>${lots.length} lots read</b> · ${reads.length} frames (${lots.filter((L) => (L.reads || []).length > 1).length} lots needed a 2nd) · ${Object.entries(models).map(([m, n]) => esc(m) + " " + n).join(", ")}`,
     `<b>Strong suggestion wrong: <span class="${strongWrong ? "bad" : "ok"}">${strongWrong} of ${strong.length}</span></b> (the number to watch)`,
+    `<b>To review: ${todo}</b> (at the top) · scored from the card you tapped or opened: ${fromTaps} · reviewed by hand: ${labeled.length - fromTaps}`,
     `Labeled ${labeled.length}: right pick <span class="ok">${pct(V.filter((L) => L.V.v === "agree").length, labeled.length)}</span> · right card listed, no pick ${pct(V.filter((L) => L.V.v === "listed").length, labeled.length)} · wrong or not listed <span class="bad">${pct(V.filter((L) => L.V.v === "miss").length, labeled.length)}</span>`,
     `Outcomes: ${Object.entries(kinds).map(([k, n]) => esc(k) + " " + n).join(" · ")}`,
     `Read before the timer: ${lots.filter((L) => (L.frames || []).some((f) => f.trigger === "pre")).length} lots (${lots.filter((L) => L.adopted).length} reused at start, no second call)`,
     `Time to reading (1st frame): median ${(q(first.map((r) => r.ms), 0.5) / 1000).toFixed(1)} s · slow (p90) ${(q(first.map((r) => r.ms), 0.9) / 1000).toFixed(1)} s · errors ${reads.filter((r) => r.error).length}`,
     `Spent ${money(cost)} · ${money(lots.length ? cost / lots.length : 0)} per lot`
   ].join("<br>") : "No lots yet. Turn auto on in the CardComp panel and watch a stream.";
-  const order = { miss: 0, listed: 1, none: 2, agree: 3 };
+  const order = { todo: 0, miss: 1, listed: 2, agree: 3, none: 4 };   // a backlog: lots still to review first
   V.sort((a, b) => (order[a.V.v] - order[b.V.v]) || (b.at - a.at));
   document.getElementById("list").innerHTML = V.map((L) => {
     const f = (L.frames || [])[0], m = L.V.m, o = L.outcome;
@@ -63,7 +66,7 @@ async function paint() {
     const sug = m && m.suggestion && (m.cards || []).find((c) => c.id === m.suggestion);
     const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
       <div class="k">listed: ${(m.cards || []).slice(0, 4).map((c) => esc(c.n) + " #" + esc(c.num) + " $" + (c.m || 0).toFixed(2)).join(", ")}</div>` : "";
-    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + "</b>" : "you did not tap or open a card"} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
+    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
     const rv = L.V.truth ? "" : `<div><button class="sm" data-k="${L.key}" data-r="right">right</button><button class="sm" data-k="${L.key}" data-r="listed">listed, not picked</button><button class="sm" data-k="${L.key}" data-r="wrong">wrong</button><button class="sm" data-k="${L.key}" data-r="nocard">no card</button></div>`;
     return `<div class="row">${f ? `<img src="${f.img}" title="${f.w}x${f.h}, ${f.kb} KB">` : `<div style="width:150px" class="bad">no frame</div>`}<div>
       <div><span class="tag t-${L.V.v}">${esc(L.V.label)}</span>${[new Date(L.at).toLocaleString(), L.seller, L.title].filter(Boolean).map(esc).join(" · ")}</div>${rd}${mt}${oc}${rv}</div></div>`;

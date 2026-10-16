@@ -30,7 +30,12 @@
   #read .f{color:var(--gold)}
   #status{color:var(--dim);font-size:12px;margin:6px 2px 10px}
   .card{display:flex;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:7px;margin-top:5px}
-  .card img{width:44px;height:62px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
+  .card img{width:60px;height:84px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
+  /* Bigger pictures (Derek, 2026-10: "picture previews need to be bigger", to check the card on stream against the
+     result): list rows 60x84 (44x62 before), an opened card 120x168 (also when opened from tiles). Tiles keep
+     their crop: the whole card made each tile ~40% taller, one row per screen instead of two.
+     Phone (440px and under) keeps 44x62: a bigger picture squeezed the card name from 76px to 24px. */
+  .card.open > .row img{width:120px;height:168px}
   .meta{min-width:0;flex:1}
   .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:15px;line-height:1.15}
   .tags{color:var(--dim);font-size:11px;margin-top:2px}
@@ -136,6 +141,7 @@
   .condgrid .bd.cpy:hover{background:rgba(255,255,255,.09)}
   .condgrid .bd.cpy:active{transform:scale(.97)}
   .condgrid .mg{font-weight:600;text-align:right}
+  @media (max-width:440px){ .card img,.card.open > .row img,#results.grid .card.open img{width:44px;height:62px} }   /* phone: names keep their width; tap the picture for full size */
   @media (max-width:440px){   /* phone: drop the % column so the bid button keeps its width */
     .condgrid{grid-template-columns:auto auto minmax(80px,1fr) auto auto;gap:7px 7px}
     .condgrid .pc{display:none}
@@ -220,7 +226,7 @@
   #results.grid[data-cols="4"] .card:not(.open) .bids .bm b.rounded{padding:8px 9px;font-size:15px;min-width:40px}
   #results.grid[data-cols="4"] .card:not(.open) .bids .bp b{padding:6px 6px;font-size:12px}
   #results.grid .card.open .row{flex-direction:row;gap:9px}
-  #results.grid .card.open img{width:44px;height:62px;aspect-ratio:auto}
+  #results.grid .card.open img{width:120px;height:168px;aspect-ratio:auto}
   #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
   #results.grid .card.open .tags{font-size:11px;white-space:normal}
   #results.grid .card.open .xtra{display:inline}

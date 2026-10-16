@@ -193,7 +193,10 @@ hand is read after 3.5 s if roughly steady) and reads it before the timer ("live
 shown before the auction starts does not pause the watcher) (max 4 per gap, never the sold card still held); at timer start that reading is reused only if under 10 s old
 and the picture is unchanged (`recog-adopt`), else a frame ~1 s after the timer starts. Thinking off (Haiku disabled,
 Sonnet between_tools). "read now" on the auto line (or Ctrl+Shift+Y on the Whatnot tab while auto is on) reads
-immediately and fills even over typing; the line shows what the watcher is doing (`cardcomp-auto-watch`). Chinese / Korean readings never match as the English card (kind `foreign`, red note); `recog-bg.js` calls the API with the
+immediately and fills even over typing, counts as that lot's reading (no automatic read after it, reused at the
+timer start within 60 s unless the card changed). Once Derek engages with a lot (read now, typing, tapping or opening
+a result) automatic readings never replace the results until the lot ends; they offer "show". Results page: lots
+to review first, lots with a tapped / opened card scored from it, printing recorded; the line shows what the watcher is doing (`cardcomp-auto-watch`). Chinese / Korean readings never match as the English card (kind `foreign`, red note); `recog-bg.js` calls the API with the
 key from Options, Haiku / Sonnet / Opus, 240 reads an hour cap, records every lot in IndexedDB; `debug.html` results
 page). Hooks in existing files are lines tagged `RECOG` or blocks between RECOG-BEGIN / RECOG-END.
 `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js` runs fixtures (20 confirmed frames), a

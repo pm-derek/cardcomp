@@ -329,6 +329,17 @@ async function appPage(browser, base, blockRecog) {
   await mp.waitForTimeout(900);
   const man = (await toApp()).filter((m) => m.manual);
   ok(apiCalls.length === before + 1 && man.length === 1, "read now: one immediate read, marked manual");
+  // the timer then starts on that same card: the read you asked for is the lot's reading, no automatic second read
+  before = apiCalls.length; const k6 = Date.now() + 5; await tick(k6); await mp.waitForTimeout(2500);
+  const r6 = await lotRec(k6);
+  ok(apiCalls.length === before && r6 && r6.adopted && r6.frames[0].trigger === "manual", "read now, then the timer starts on that card: one reading for the lot, no automatic read");
+  // read now while a lot is running: added to that lot, no separate entry, nothing automatic after it
+  before = apiCalls.length;
+  await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {})));
+  await mp.waitForTimeout(2500);
+  const r6b = await lotRec(k6);
+  ok(apiCalls.length === before + 1 && r6b.reads.length === 2 && r6b.frames.some((f) => f.trigger === "manual" && f.n === 9), "read now during a running lot: one more read on the same lot entry, nothing automatic after it");
+  await sold();
   const watch = await mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto-watch").map((m) => m.why));
   ok(watch.length > 0 && watch.some((w) => /same picture|same card|waiting|changing|just read/.test(w)), "watcher reports what it is doing (" + [...new Set(watch)].slice(0, 3).join(" / ") + ")");
   // CardComp reports its match and the lot outcome back
@@ -342,7 +353,7 @@ async function appPage(browser, base, blockRecog) {
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
   const sum2 = await dbg2.textContent("#sum");
-  ok(/\d+ lots read/.test(sum2) && /Read before the timer: \d+ lots \(1 reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  ok(/\d+ lots read/.test(sum2) && /To review: \d+/.test(sum2) && /Read before the timer: \d+ lots \(\d+ reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
   await dbg2.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
   console.log("  results page screenshot: " + path.join(OUT, "recog-debug-page.png"));
   await dbg2.close(); await mp.close();
@@ -354,6 +365,7 @@ async function appPage(browser, base, blockRecog) {
   await ap.setViewportSize({ width: 660, height: 900 });
   await ap.evaluate(() => { window.__posted = []; window.addEventListener("message", (e) => { if (e.data && /^cardcomp-auto-/.test(e.data.type) && e.data.type !== "cardcomp-auto-state") window.__posted.push(e.data); }); });
   const send = (m) => ap.evaluate((m) => window.postMessage(m, location.origin), m);
+  const lotEnd = async () => { await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(80); };
   const posted = () => ap.evaluate(() => window.__posted);
   ok(await ap.evaluate(() => !document.querySelector("#autoline") || getComputedStyle(document.querySelector("#autoline")).display === "none"), "no extension: no auto line (phone / plain tab unchanged)");
   await send({ type: "cardcomp-ext-ready" }); await ap.waitForTimeout(200);
@@ -377,7 +389,7 @@ async function appPage(browser, base, blockRecog) {
   await ap.click("#autoshow"); await ap.waitForTimeout(200);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "swsh9-162", "'show' fills it: Honchkrow V #162 first (read 161, one off)");
   // the not-in-catalog case shows the note, no pricier sibling picked (1.6 s after the typing above, so not "touched")
-  await ap.waitForTimeout(1600); key = Date.now() + 10;
+  await ap.waitForTimeout(1600); await lotEnd(); key = Date.now() + 10;
   await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Kyurem ex", number: "157", total: "086", language: "en", rarity: "full art", confidence: 0.9 }, model: "claude-opus-5-5", ms: 4100 });
   await ap.waitForTimeout(300);
   st = await ap.evaluate(() => ({ badge: !!document.querySelector("#results .autobadge"), line: document.querySelector("#autoline").textContent }));
@@ -389,7 +401,7 @@ async function appPage(browser, base, blockRecog) {
   const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
   ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true, "lot end: tapped card reported as the outcome");
   // read before the timer: shown as "before start"; the lot (created earlier, older key) reuses it; outcome maps to the lot
-  await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();
+  await lotEnd(); await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();
   await send({ type: "cardcomp-auto", key: preKey, capAt: preKey, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1100 });
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, first: (document.querySelector("#results .card") || {}).dataset }));
@@ -405,10 +417,11 @@ async function appPage(browser, base, blockRecog) {
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me2pt5-242", "a newer frame wins even when its lot key is older than a pre-start read");
   // a tap on the previous card's result must not block the next card's reading (lot created earlier than the tap)
   const oldLot = Date.now() - 30000; await ap.evaluate(() => { const c = document.querySelector("#results .card"); if (c) c.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); });
-  await ap.waitForTimeout(1700); const capNow = Date.now();
+  await ap.waitForTimeout(1700); await lotEnd(); const capNow = Date.now();
   await send({ type: "cardcomp-auto", key: oldLot, capAt: capNow, n: 1, read: { card_visible: true, name: "Frogadier", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
   await ap.waitForTimeout(250);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me4-89", "a tap on the previous card does not block the next card (Frogadier IR filled)");
+  await lotEnd();
   // Chinese card: English printings for reference, nothing marked, warning in red
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
   await ap.waitForTimeout(250);
@@ -424,6 +437,17 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset.id, line: document.querySelector("#autoline").textContent }));
   ok(st.q === "Carbink" && st.first === "me2pt5-242" && /read now/.test(st.line), "a read you asked for fills the search even if you were typing");
+  // after a read you asked for, an automatic reading in the same lot does not replace your results (or close a card
+  // you opened); it offers "show". Once the lot ends, the next reading fills again.
+  await ap.click("#results .card .nm"); await ap.waitForTimeout(200);
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now() + 5000, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, open: !!document.querySelector("#results .card.open"), show: !!document.querySelector("#autoshow") }));
+  ok(st.q === "Carbink" && st.open && st.show, "after read now, an automatic reading in the same lot leaves your results and open card alone ('show' offered)");
+  await lotEnd();
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now() + 6000, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  ok((await ap.evaluate(() => document.querySelector("#q").value)) === "Numel", "after the lot ends, the next card's reading fills again");
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   await ap.click("#autosw"); await ap.waitForTimeout(100);

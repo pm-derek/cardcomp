@@ -13,6 +13,11 @@
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
   const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
   let EXT = false, STATE = { on: false, model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null, WATCH = null;
+  // Engaged with this lot: typed, tapped or opened a result, or asked for "read now". Until the lot ends (not a
+  // new title: it often appears with the timer, when the start read lands), automatic readings never replace the results, they only offer "show" (Derek: an auto read
+  // after his read now collapsed the card he had open). 90 s cap in case no lot end ever arrives.
+  let ENGAGED = 0, LOT_RESET = 0;
+  const engaged = () => ENGAGED > LOT_RESET && Date.now() - ENGAGED < 90000;
   const AUTO = {};   // lot key (whatnot startedAt) -> { best: {m, r, d} }
   const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
 
@@ -100,7 +105,7 @@
     if (typeof window.autoMatch !== "function") return;
     const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
     const cards = m.cards.slice(0, 8).map((c) => ({ id: c.id, n: c.n, s: c.s, num: c.num, r: c.r, m: typeof bestMarket === "function" ? bestMarket(c) : 0 }));
-    if (a.best && (RANK[m.kind] || 0) < (RANK[a.best.m.kind] || 0)) {   // keep the better of a lot's two readings
+    if (!d.manual && a.best && (RANK[m.kind] || 0) < (RANK[a.best.m.kind] || 0)) {   // keep the better of a lot's two readings (a read you asked for always shows)
       post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: false });
       return;
     }
@@ -108,8 +113,9 @@
     // Derek typed or tapped a result for THIS card (within 1.5 s before the frame, or while it was being read):
     // leave his search alone. Measured from the frame, not the lot: the lot can exist well before its card is shown,
     // and a tap on the previous card then blocked the new one (live test).
-    const touched = !d.manual && TOUCH > (d.capAt || d.key) - 1500;
+    const touched = !d.manual && (engaged() || TOUCH > (d.capAt || d.key) - 1500);
     if (!touched) fill(m, r);
+    if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
     paint();
@@ -120,15 +126,16 @@
   window.recogLotDone = (rec) => {
     const key = rec && rec.startedAt; if (!key || !AUTO[key]) return;
     const c = rec.card || null;
-    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, multi: !!c.multi } : null,
+    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi } : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
     delete AUTO[key];
   };
 
-  document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = Date.now(); }, true);
-  document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = Date.now(); }, true);
+  document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = ENGAGED = Date.now(); }, true);
+  document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = ENGAGED = Date.now(); }, true);
   window.addEventListener("message", (e) => {
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
+    if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); return; }
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
     else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
