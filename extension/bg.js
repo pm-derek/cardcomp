@@ -11,15 +11,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (TO_APP.has(msg.type)) {   // TCGplayer / Whatnot tab -> CardComp (side panel page + CardComp tabs)
     chrome.runtime.sendMessage(msg).catch(() => {});
     chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => tabs.forEach((t) => chrome.tabs.sendMessage(t.id, msg).catch(() => {})));
-    // First read on a freshly opened TCGplayer page: take Derek back to the stream (same window first).
-    if (msg.type === "cardcomp-tcg-price" && msg.first && !msg.none && sender.tab && sender.tab.active) {
-      chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
-        if (!tabs.length) return;
-        tabs.sort((a, b) => ((b.windowId === sender.tab.windowId) - (a.windowId === sender.tab.windowId)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
-        chrome.tabs.update(tabs[0].id, { active: true }).catch(() => {});
-        chrome.windows.update(tabs[0].windowId, { focused: true }).catch(() => {});
-      });
-    }
+    // No tab switching here. Click-outs open in a background tab, and an auto-return fired whenever Derek tabbed
+    // over to TCGplayer himself (the page often first renders, and reads, when it becomes visible).
     reply({ ok: true });
     return;
   }
@@ -40,7 +33,17 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return;
   }
   if (msg.type === "cardcomp-live-save") { queue(msg.key, msg.rec); reply({ ok: true }); return; }   // app -> GitHub live.json
-  if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }          // app -> GitHub log-YYYY-MM.json
+  if (msg.type === "cardcomp-log-save") { queueLog(msg.rec); reply({ ok: true }); return; }
+  if (msg.type === "cardcomp-snapshot") {   // "copy debug": ask the Whatnot tab for its lot row
+    chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
+      if (!tabs.length) { reply({ ok: false, why: "no Whatnot tab" }); return; }
+      tabs.sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+      chrome.tabs.sendMessage(tabs[0].id, msg).then((r) => reply(r || { ok: false, why: "no reply" })).catch(() => reply({ ok: false, why: "reload the Whatnot tab" }));
+    });
+    return true;
+  }
+  if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since, msg.before).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"
+  if (msg.type === "cardcomp-log-read") { readLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // app load: log -> browser stats
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;
   chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {

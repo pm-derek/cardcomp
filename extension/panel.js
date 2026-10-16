@@ -4,6 +4,11 @@ window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
   if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
+  if (d.type === "cardcomp-snapshot") { chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
+  if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read") {
+    chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: d.type + "-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*"));
+    return;
+  }
   if (d.type === "cardcomp-status") {
     chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
     return;

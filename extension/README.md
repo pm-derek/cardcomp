@@ -121,6 +121,9 @@ Tap "stats" in the strip. For the stream you are in (or any stream you have watc
 close as a % of market, where you win and lose, your margin on wins vs your target, profit left on the
 table, a dot chart of every labeled lot, and a soft / even / hot verdict for whether to stay.
 
+At the bottom: "Clear logged lots: last hour / today / everything". It asks first, then removes those lots from
+the stats in this browser and from the log in your private `cardcomp-data` repo. Verified TCGplayer prices stay.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
