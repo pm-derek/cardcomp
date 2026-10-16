@@ -8,3 +8,5 @@ window.addEventListener("message", (e) => {
     cc.contentWindow.postMessage({ type: "cardcomp-bid-ack", ok: !!(r && r.ok) && !err, why: err ? err.message : (r && r.why) }, "*");
   });
 });
+
+cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));

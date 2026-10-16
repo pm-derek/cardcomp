@@ -24,6 +24,15 @@ Edge and Brave work the same way. Firefox does not (no side panel API, different
 4. Nothing happens in Whatnot: the chip said `copied $42` only. Check that a whatnot.com tab is open
    and reload it once (content scripts attach on load).
 
+## Confirming the bid
+
+The tap is the confirm. Nothing is sent until you tap a number, and the number you tap is the one that goes
+in: the margin bid (exact or rounded), the b/e or profit bid, any condition row (NM / LP / MP ...), or a cart
+row. With the extension connected the chips' hover text reads "tap: this bid goes into Whatnot". After the
+tap you get two confirmations before any money moves: the chip flips to `Whatnot $42 ✓`, and the toast on
+the Whatnot page names the card and the amount. Whatnot's own Place bid button is the final step and it is
+always yours.
+
 ## What it does and does not do
 
 - Only ever types the amount. It never clicks Place bid, Bid, or Buy.

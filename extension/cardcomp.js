@@ -13,3 +13,6 @@ window.addEventListener("message", (e) => {
     window.postMessage({ type: "cardcomp-bid-ack", ok: false, why: "extension reloaded, refresh CardComp" }, location.origin);
   }
 });
+
+// Hello, so CardComp can label the bid chips "this bid goes into Whatnot".
+window.postMessage({ type: "cardcomp-ext-ready" }, location.origin);
