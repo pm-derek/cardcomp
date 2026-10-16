@@ -2,6 +2,7 @@
 // Checks for the auto-recognition experiment. No API key needed. Exits 1 on any failure.
 //   node scripts/recog-check.js
 // 1. fixtures:   autoMatch on the 20 confirmed frames as read by Opus / Haiku / Sonnet (docs/recog-reads).
+//    1b: Derek's first live test, 23 lots: Haiku as streamed, Sonnet / Opus on the same frames.
 //                Hard rule: a strong suggestion is never the wrong card.
 // 2. regression: manual search gives identical results with and without recog/automatch.js loaded.
 // 3. strip:      in a temp copy, scripts/strip-recog.js restores every touched file to main as it was before the
@@ -54,7 +55,7 @@ async function appPage(browser, base, blockRecog) {
   const byModel = {};
   for (const model of ["opus", "haiku", "sonnet"]) {
     const reads = fs.readFileSync(path.join(ROOT, "docs/recog-reads", model + ".jsonl"), "utf8").split("\n").filter((l) => l.trim().startsWith("{")).map((l) => JSON.parse(l));
-    const res = await app.evaluate((reads) => reads.map((r) => { const m = autoMatch(r); return { shot: r.shot, kind: m.kind, strength: m.strength, suggestion: m.suggestion, top: m.cards.slice(0, 5).map((c) => c.id), note: m.note }; }), reads);
+    const res = await app.evaluate(({ reads, model }) => reads.map((r) => { const m = autoMatch(r, { model: "claude-" + model }); return { shot: r.shot, kind: m.kind, strength: m.strength, suggestion: m.suggestion, top: m.cards.slice(0, 5).map((c) => c.id), note: m.note }; }), { reads, model });
     const s = { strongRight: 0, strongWrong: 0, weakRight: 0, weakWrong: 0, pickInTop5: 0, pickMissing: 0, notInCatalogQuiet: 0, notInCatalogSuggested: 0 };
     const rows = [];
     for (const r of res) {
@@ -84,6 +85,39 @@ async function appPage(browser, base, blockRecog) {
   ok(op[15].suggestion === "me2pt5-223" && op[16].suggestion === "me4-89", "IR reads with no number pick the one IR printing (Numel, Frogadier)");
   ok(byModel.sonnet.find((r) => r.shot === 19).suggestion !== "sv10-232", "Sonnet's SIR read on the Garchomp UR: no $185 SIR suggestion (price-spread guard)");
   ok(app.errors.length === 0, "no page errors (" + (app.errors[0] || "") + ")");
+
+  // ---------- 1b. Derek's first live test (2026-10-16): 23 lots, 3 sellers, Haiku live + Sonnet / Opus on the same frames
+  console.log("1b. live lots: Haiku (as streamed), Sonnet and Opus (same frames)");
+  const live = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/recog-reads/live-2026-10-16.json"), "utf8")).lots;
+  const altReads = (m) => Object.fromEntries(fs.readFileSync(path.join(ROOT, "docs/recog-reads/live-" + m + ".jsonl"), "utf8").split("\n").filter((l) => l.trim().startsWith("{")).map((l) => { const j = JSON.parse(l); return [j.shot, j]; }));
+  const liveRows = [];
+  for (const model of ["haiku", "sonnet", "opus"]) {
+    const alt = model === "haiku" ? null : altReads(model);
+    const res = await app.evaluate(({ live, alt, model }) => {
+      const RANK = { exact: 5, near: 4, unique: 3, ambiguous: 2, "number-miss": 1, none: 0 };
+      return live.map((l) => {
+        const short = l.frames[0] ? Math.min(...l.frames[0].split("x").map(Number)) : 0;
+        const reads = alt ? (alt[l.shot] ? [alt[l.shot]] : []) : l.reads.filter((r) => r.name && r.card_visible !== false);
+        let best = null;
+        for (const r of reads) { const m = autoMatch(r, { short, model: "claude-" + model }); if (!best || (RANK[m.kind] || 0) >= (RANK[best.kind] || 0)) best = m; }
+        return { shot: l.shot, truth: l.truth && l.truth.ids, sug: best && best.suggestion, strength: best && best.strength, ids: best ? best.cards.map((c) => c.id) : [] };
+      });
+    }, { live, alt, model });
+    const t = res.filter((r) => r.truth);
+    const row = { model, lots: t.length, strongRight: 0, strongWrong: 0, guessRight: 0, guessWrong: 0, listed: 0, notListed: 0 };
+    for (const r of t) {
+      if (r.sug) { const okk = r.truth.includes(r.sug); row[(r.strength === "strong" ? "strong" : "guess") + (okk ? "Right" : "Wrong")]++; }
+      else if (r.ids.some((id) => r.truth.includes(id))) row.listed++; else row.notListed++;
+    }
+    liveRows.push(row);
+    ok(row.strongWrong === 0, `${model}: no strong suggestion is the wrong card (${row.strongRight} strong)`);
+    if (model !== "haiku") ok(row.guessWrong === 0 && row.notListed === 0, `${model}: no wrong guess, every right card listed (${row.strongRight + row.guessRight} of ${row.lots} picked right)`);
+    else {
+      ok(!res.some((r) => r.sug === "neo1-9"), "haiku: Lugia set guess 'Neo Genesis' never suggests the $1,300 Neo Genesis Lugia");
+      ok(res.find((r) => r.shot === 4).sug === "tc:88750", "haiku: Rhyperior LV.X DP29 found (catalog spells it LVX)");
+    }
+  }
+  console.table(liveRows);
 
   // ---------- 2. regression ----------
   console.log("2. regression: manual search unchanged");

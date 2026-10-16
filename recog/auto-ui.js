@@ -12,7 +12,7 @@
   const fromExt = (e) => (e.source === window && e.origin === location.origin) || (window.parent !== window && e.source === window.parent);
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
   const RANK = { exact: 5, near: 4, unique: 3, ambiguous: 2, "number-miss": 1, none: 0 };
-  let EXT = false, STATE = { on: false, model: "haiku", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null;
+  let EXT = false, STATE = { on: false, model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null;
   const AUTO = {};   // lot key (whatnot startedAt) -> { best: {m, r, d} }
   const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
 
@@ -46,7 +46,7 @@
 
   const queryText = (r) => [r.name, r.number ? r.number + (r.total ? "/" + r.total : "") : ""].filter(Boolean).join(" ");
   function describe(m, r, d) {
-    const read = esc(queryText(r)) + (r.rarity ? ` <span style="color:var(--faint)">${esc(r.rarity)}</span>` : "");
+    const read = esc(queryText(r)) + (r.rarity ? ` <span style="color:var(--faint)">${esc(r.rarity)}${r.stamp ? " · " + esc(r.stamp) : ""}</span>` : "");
     const sug = m.suggestion && m.cards.find((c) => c.id === m.suggestion);
     let what;
     if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
@@ -88,7 +88,7 @@
       return;
     }
     if (typeof window.autoMatch !== "function") return;
-    const m = window.autoMatch(r);
+    const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
     const cards = m.cards.slice(0, 8).map((c) => ({ id: c.id, n: c.n, s: c.s, num: c.num, r: c.r, m: typeof bestMarket === "function" ? bestMarket(c) : 0 }));
     if (a.best && (RANK[m.kind] || 0) < (RANK[a.best.m.kind] || 0)) {   // keep the better of a lot's two readings
       post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: false });
@@ -117,7 +117,7 @@
   window.addEventListener("message", (e) => {
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
-    else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "haiku", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
+    else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
     else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
       ADOPT[d.from] = d.to;
