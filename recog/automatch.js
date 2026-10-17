@@ -208,6 +208,26 @@
     return out("ambiguous", null, null, (n.pool.length < nm.cards.length ? n.pool.length + " of " : "") + nm.cards.length + " printings, no number read: pick one");
   }
 
+  // Printing from the finish read (Prismatic Sylveon 040: Holofoil $0.38, Reverse $0.49, Poké Ball $2.78, Master Ball
+  // $30.51; the collapsed bid is priced from the top printing). Only for a card with several printings, only a key it has.
+  function finishKey(card, finish) {
+    const keys = Object.keys((card && card.px) || {}); if (keys.length < 2) return "";
+    const f = String(finish || "").toLowerCase(), plain = (k) => !/ball|reverse|1st|shadowless/i.test(k);
+    const pick = (re, ok) => keys.find((k) => re.test(k) && (!ok || ok(k))) || "";
+    if (/master/.test(f)) return pick(/master ball/i);
+    if (/pok/.test(f)) return pick(/pok[eé] ball/i);
+    if (/reverse/.test(f)) return pick(/^reverse holofoil$/i) || pick(/reverse/i, (k) => !/ball/i.test(k));
+    if (/^holo/.test(f)) return pick(/^holofoil$/i) || pick(/^unlimited holofoil$/i) || pick(/holofoil/i, plain);
+    if (/non/.test(f)) return pick(/^normal$/i) || pick(/^unlimited$/i);
+    return "";
+  }
+  const autoMatch0 = autoMatch;
+  autoMatch = function (read, ctx) {
+    const m = autoMatch0(read, ctx);
+    const c = m.suggestion && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === m.suggestion) : null;
+    m.printing = c && read ? finishKey(c, read.finish) : "";
+    return m;
+  };
   window.autoMatch = autoMatch;
-  window.__recog = { norm, cardTier, readTier, byName, stampTest };
+  window.__recog = { finishKey, norm, cardTier, readTier, byName, stampTest };
 })();

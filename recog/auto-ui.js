@@ -59,6 +59,12 @@
     let what;
     if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
+    if (sug && m.printing) {   // the finish read names a printing; warn when the collapsed bid is priced from another one
+      const c = typeof CARDS !== "undefined" && CARDS.find((x) => x.id === sug.id), top = c && typeof topPrint === "function" ? topPrint(c) : "";
+      const pm = (k) => { const v = c && c.px && c.px[k]; return v ? (v.m != null ? v.m : v.l) || 0 : 0; };
+      what += ` &middot; <b>${esc(m.printing)}</b>`;
+      if (top && top !== m.printing) what += ` <span class="bad">&middot; tile bid is ${esc(top)} $${pm(top).toFixed(2)}, read ${esc(m.printing)} $${pm(m.printing).toFixed(2)}: open the card</span>`;
+    }
     else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
     else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
@@ -129,7 +135,7 @@
     q.value = queryText(r);
     const qc = $("#qclear"); if (qc) qc.style.display = "block";
     try { if (typeof LANG !== "undefined" && m.lang && m.lang !== LANG && typeof setLang === "function") setLang(m.lang, true); } catch (_) {}
-    try { if (typeof PRINT_HINT !== "undefined") PRINT_HINT = ""; } catch (_) {}
+    try { if (typeof PRINT_HINT !== "undefined") PRINT_HINT = (m.printing || "").toLowerCase(); } catch (_) {}   // opening the card selects the printing read
     render(m.cards.map((c, i) => Object.assign({}, c, { score: 1000 - i })), false, false);
     const rd = $("#read"); if (rd) rd.textContent = "";
     const st = $("#status");
@@ -166,7 +172,7 @@
     const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
     const cards = m.cards.slice(0, 8).map((c) => ({ id: c.id, n: c.n, s: c.s, num: c.num, r: c.r, m: typeof bestMarket === "function" ? bestMarket(c) : 0 }));
     if (!d.manual && a.best && (RANK[m.kind] || 0) < (RANK[a.best.m.kind] || 0)) {   // keep the better of a lot's two readings (a read you asked for always shows)
-      post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: false });
+      post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: false });
       return;
     }
     a.best = { m, r, d };
@@ -179,7 +185,7 @@
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
     paint();
-    post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: !touched });
+    post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: !touched });
   }
 
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.

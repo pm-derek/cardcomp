@@ -439,6 +439,26 @@ async function appPage(browser, base, blockRecog) {
   await ap.fill("#q", "sylveon 040/131"); await ap.press("#q", "Enter"); await ap.waitForTimeout(400);
   const tp = await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8pt5-40"]:not(.open) .bm b.cpy'); if (!b) return null; b.click(); return LAST_TAP && LAST_TAP.printing; });
   ok(tp === "Master Ball Holofoil", "collapsed tap: printing recorded (" + tp + ")");
+  // a "Sold" flickering between lots must not wipe a bid tapped before the timer (gametower Sylveon, 2026-10-16)
+  await ap.evaluate(() => { window.__logs = []; window.addEventListener("message", (e) => { if (e.data && e.data.type === "cardcomp-log-save") window.__logs.push(e.data.rec); }); });
+  await send({ type: "cardcomp-lot-end", rec: { title: "#25", final: 5, bids: 6, startedAt: Date.now() - 30000, at: Date.now(), seller: "g" } });
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: true, sold: "x" }); await ap.waitForTimeout(2700);
+  await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8pt5-40"] .bm b.cpy').click()); await ap.waitForTimeout(150);
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: false }); await ap.waitForTimeout(80);
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: true, sold: "x" }); await ap.waitForTimeout(1800);
+  await send({ type: "cardcomp-lot-end", rec: { title: "#26", final: 21, bids: 12, me: true, startedAt: Date.now(), at: Date.now() + 300, seller: "g" } }); await ap.waitForTimeout(3100);
+  const fl = await ap.evaluate(() => window.__logs.filter((r) => r.title === "#26").pop());
+  // finish read -> printing: mapped per card, warned when the tile bid is another printing, preselected on open
+  const fk = await ap.evaluate(() => ["master ball pattern", "poke ball pattern", "reverse holo", "holo", "unknown"].map((f) => autoMatch({ card_visible: true, name: "Sylveon", number: "040", total: "131", language: "en", rarity: "Rare", stamp: "", finish: f, set: "Prismatic Evolutions", confidence: 0.9 }, { short: 1080, model: "claude-sonnet-5-5" }).printing));
+  ok(fk.join("|") === "Master Ball Holofoil|Poké Ball Holofoil|Reverse Holofoil|Holofoil|", "finish read -> printing (" + fk.join(", ") + ")");
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Sylveon", number: "040", total: "131", language: "en", rarity: "Rare", stamp: "", finish: "reverse holo", set: "Prismatic Evolutions", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1500, short: 1080 });
+  await ap.waitForTimeout(300);
+  const pl = await ap.textContent("#autoline");
+  ok(/Reverse Holofoil/.test(pl) && /tile bid is Master Ball Holofoil \$[\d.]+, read Reverse Holofoil/.test(pl), "auto line names the printing read and warns the tile bid is the Master Ball price");
+  await ap.click('#results .card[data-id="sv8pt5-40"] .row'); await ap.waitForTimeout(500);
+  ok((await ap.evaluate(() => { const c = document.querySelector('#results .card[data-id="sv8pt5-40"] .pchip.on'); return c && c.dataset.k; })) === "Reverse Holofoil", "opening the card selects the printing read");
+  await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(100);
+  ok(fl && fl.card && fl.card.label === "tap" && fl.card.printing === "Master Ball Holofoil" && fl.bidsSent.length === 1, "Sold flicker between lots keeps the pre-start tap (Sylveon Master Ball)");
   await ap.waitForTimeout(1700); await lotEnd();   // typing within 1.5 s of a frame counts as engaged
   // Chinese card: English printings for reference, nothing marked, warning in red
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });

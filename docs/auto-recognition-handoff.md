@@ -416,3 +416,13 @@ press within 1.5 s is one read. Not a click-anywhere zone: taps on results, chip
 - The model said "Reverse Holo" for the Master Ball Sylveon. Ball patterns are reverse holos, and the prompt does not
   ask for the pattern; the match (sv8pt5-40) was right. Picking the printing stays with Derek.
 - The results page shows the max (set in Whatnot, else the tapped bid) next to the card.
+- Derek did tap the Sylveon bid in CardComp (the extension filled $22; he led at $2 three seconds in). The tap was
+  wiped by the app's "Sold seen, no lot end" safety net: between lots the sold row flickered, the net fired, moved the
+  tap window past his pre-start tap and dropped it; the opened card survived because views have their own window.
+  The net now ignores a "Sold" whose lot end was already sent (`endSent` from whatnot.js, else the title of the lot that
+  just ended). Reproduced in headless Chromium before the fix, passing after.
+- Printing read: the prompt asks for `finish` (non-holo / holo / reverse holo / poke ball pattern / master ball pattern /
+  other pattern / unknown); `autoMatch` maps it to the suggested card's printing key (`m.printing`), only for cards with
+  2+ printings. The auto line names it and warns when the collapsed bid is priced from another printing ("tile bid is
+  Master Ball Holofoil $30.51, read Reverse Holofoil $0.49: open the card"); opening the card selects it (`PRINT_HINT`,
+  exact key first). The results page scores it against the printing Derek picked. Not yet tried on real frames.

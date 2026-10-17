@@ -115,14 +115,16 @@ const RECOG_ASK = `Return the card held in front:
 - language: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
 - rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
 - stamp: look closely for a stamp, a small logo printed on the art or text box, often in a corner: a set logo on a stamped promo reprint (e.g. "Prismatic Evolutions", "Journey Together", "Mega Evolution"), a Pikachu anniversary logo (read whether it says 25th or 30th), Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark. Sellers often circle a stamp or other detail with a marker: look inside any hand-drawn circle. Name what the stamp says; "" if there is none
+- finish: where the foil shine is. holo = shiny artwork only; reverse holo = the card body around the art shines and the art is flat; poke ball pattern / master ball pattern = a reverse holo whose shiny body is covered in repeated Poke Ball icons / Master Ball icons (purple ball with an M); other pattern = any other repeated icon pattern (energy symbols, etc); non-holo = no shine anywhere; unknown when glare, the sleeve or the resolution hides it. Full art and illustration cards are holo
 - set: the set if you can tell, else ""
 - confidence: 0 to 1 that the name is right`;
 const RECOG_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "set", "confidence"],
+  required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "finish", "set", "confidence"],
   properties: {
     card_visible: { type: "boolean" }, name: { type: "string" }, number: { type: "string" }, total: { type: "string" },
-    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" }, set: { type: "string" }, confidence: { type: "number" }
+    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" },
+    finish: { type: "string", enum: ["unknown", "non-holo", "holo", "reverse holo", "poke ball pattern", "master ball pattern", "other pattern"] }, set: { type: "string" }, confidence: { type: "number" }
   }
 };
 function recogErr(status, txt) {
@@ -285,7 +287,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     chrome.storage.local.set(set, () => recogState().then(recogToApp)); reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-match") {   // what CardComp made of a reading
-    recogLot(msg.key, (rec) => { (rec.matches = rec.matches || []).push({ n: msg.n, kind: msg.kind, strength: msg.strength, suggestion: msg.suggestion, cards: msg.cards, note: msg.note, filled: msg.filled, why: msg.why }); });
+    recogLot(msg.key, (rec) => { (rec.matches = rec.matches || []).push({ n: msg.n, kind: msg.kind, strength: msg.strength, suggestion: msg.suggestion, printing: msg.printing || "", cards: msg.cards, note: msg.note, filled: msg.filled, why: msg.why }); });
     reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-outcome") {   // lot ended: what Derek tapped or opened, the final price
