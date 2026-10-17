@@ -35,6 +35,12 @@ function verdict(L) {
   return { m, v: "todo", label: "to review" };
 }
 
+// Printing verdict: auto named a printing for the right card, and Derek picked one (tap or opened card).
+function pv(L) {
+  const m = L.V && L.V.m, c = L.outcome && L.outcome.card;
+  if (!m || !m.printing || !c || !c.printing || L.V.v !== "agree") return "";
+  return m.printing === c.printing ? "right" : "wrong (you: " + c.printing + ")";
+}
 async function paint() {
   const lots = (await all("lots")).filter((L) => (L.reads || []).length);
   const V = lots.map((L) => Object.assign(L, { V: verdict(L) }));
@@ -52,6 +58,7 @@ async function paint() {
     `<b>Strong suggestion wrong: <span class="${strongWrong ? "bad" : "ok"}">${strongWrong} of ${strong.length}</span></b> (the number to watch)`,
     `<b>To review: ${todo}</b> (at the top) · scored from the card you tapped or opened: ${fromTaps} · reviewed by hand: ${labeled.length - fromTaps}`,
     `Labeled ${labeled.length}: right pick <span class="ok">${pct(V.filter((L) => L.V.v === "agree").length, labeled.length)}</span> · right card listed, no pick ${pct(V.filter((L) => L.V.v === "listed").length, labeled.length)} · wrong or not listed <span class="bad">${pct(V.filter((L) => L.V.v === "miss").length, labeled.length)}</span>`,
+    `Printing read (right card, you picked a printing): <span class="ok">${V.filter((L) => pv(L) === "right").length}</span> right of ${V.filter((L) => pv(L)).length}`,
     `Outcomes: ${Object.entries(kinds).map(([k, n]) => esc(k) + " " + n).join(" · ")}`,
     `Read before the timer: ${lots.filter((L) => (L.frames || []).some((f) => f.trigger === "pre")).length} lots (${lots.filter((L) => L.adopted).length} reused at start, no second call)`,
     `Time to reading (1st frame): median ${(q(first.map((r) => r.ms), 0.5) / 1000).toFixed(1)} s · slow (p90) ${(q(first.map((r) => r.ms), 0.9) / 1000).toFixed(1)} s · errors ${reads.filter((r) => r.error).length}`,
@@ -62,11 +69,11 @@ async function paint() {
   document.getElementById("list").innerHTML = V.map((L) => {
     const f = (L.frames || [])[0], m = L.V.m, o = L.outcome;
     const rd = (L.reads || []).map((r) => r.error ? `<div class="bad">frame ${r.n}: ${esc(r.error)}</div>` :
-      `<div>${(() => { const f = (L.frames || []).find((x) => x.n === r.n && x.img) || {}; return f.trigger === "pre" ? "before start" + (L.adopted ? ", " + (L.adopted.earlyMs / 1000).toFixed(1) + " s early" : "") + (f.diff != null ? ", change " + f.diff : "") : "frame " + r.n + (f.sinceStart != null ? " (" + (f.sinceStart / 1000).toFixed(1) + " s in)" : ""); })()}: <b>${esc(r.read && r.read.card_visible === false ? "no card" : [r.read && r.read.name, r.read && r.read.number ? r.read.number + (r.read.total ? "/" + r.read.total : "") : ""].join(" "))}</b> <span class="k">${esc(r.read && r.read.rarity)} · conf ${r.read ? r.read.confidence : "-"} · ${esc((r.model || "").replace("claude-", ""))} ${((r.ms || 0) / 1000).toFixed(1)} s ${money(r.cost)}</span></div>`).join("");
+      `<div>${(() => { const f = (L.frames || []).find((x) => x.n === r.n && x.img) || {}; return f.trigger === "pre" ? "before start" + (L.adopted ? ", " + (L.adopted.earlyMs / 1000).toFixed(1) + " s early" : "") + (f.diff != null ? ", change " + f.diff : "") : "frame " + r.n + (f.sinceStart != null ? " (" + (f.sinceStart / 1000).toFixed(1) + " s in)" : ""); })()}: <b>${esc(r.read && r.read.card_visible === false ? "no card" : [r.read && r.read.name, r.read && r.read.number ? r.read.number + (r.read.total ? "/" + r.read.total : "") : ""].join(" "))}</b> <span class="k">${esc(r.read && r.read.rarity)}${r.read && r.read.finish && r.read.finish !== "unknown" ? " · " + esc(r.read.finish) : ""} · conf ${r.read ? r.read.confidence : "-"} · ${esc((r.model || "").replace("claude-", ""))} ${((r.ms || 0) / 1000).toFixed(1)} s ${money(r.cost)}</span></div>`).join("");
     const sug = m && m.suggestion && (m.cards || []).find((c) => c.id === m.suggestion);
-    const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
+    const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + (m.printing ? " · " + esc(m.printing) : "") + "</span>" : ""}${pv(L) ? " · printing <span class=" + (pv(L) === "right" ? "ok" : "bad") + ">" + pv(L) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
       <div class="k">listed: ${(m.cards || []).slice(0, 4).map((c) => esc(c.n) + " #" + esc(c.num) + " $" + (c.m || 0).toFixed(2)).join(", ")}</div>` : "";
-    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
+    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"}${o.placedMax ? " · your max $" + esc(o.placedMax) : o.card && o.card.myMax ? " · your max $" + esc(o.card.myMax) : ""} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
     const rv = L.V.truth ? "" : `<div><button class="sm" data-k="${L.key}" data-r="right">right</button><button class="sm" data-k="${L.key}" data-r="listed">listed, not picked</button><button class="sm" data-k="${L.key}" data-r="wrong">wrong</button><button class="sm" data-k="${L.key}" data-r="nocard">no card</button></div>`;
     return `<div class="row">${f ? `<img src="${f.img}" title="${f.w}x${f.h}, ${f.kb} KB">` : `<div style="width:150px" class="bad">no frame</div>`}<div>
       <div><span class="tag t-${L.V.v}">${esc(L.V.label)}</span>${[new Date(L.at).toLocaleString(), L.seller, L.title].filter(Boolean).map(esc).join(" · ")}</div>${rd}${mt}${oc}${rv}</div></div>`;

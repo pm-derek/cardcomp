@@ -59,6 +59,27 @@ async function recogLot(key, fn) {
     tx.oncomplete = () => res(out); tx.onerror = () => res(null);
   });
 }
+// Lot outcome on the reading's record. Every open CardComp copy (side panel, CardComp tabs) reports each lot, and
+// only the copy Derek used knows the card: keep the richest report (tap > opened card > nothing) so a copy that saw
+// nothing cannot wipe it (live 2026-10-16: the won Master Ball Sylveon showed "did not tap or open" here while the
+// log had it). onlyExisting: never create a record for a lot that was not read.
+const recogRank = (o) => !o ? -1 : !o.card ? 0 : o.card.label === "tap" ? 2 : 1;
+function recogOutcomeOf(rec) {
+  const c = rec.card || null;
+  return { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null,
+    placedMax: rec.placedMax != null ? rec.placedMax : null, final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() };
+}
+async function recogOutcome(key, outcome, onlyExisting) {
+  key = RECOG_ADOPT[key] || key;
+  const db = await recogDb();
+  return new Promise((res) => {
+    const tx = db.transaction("lots", "readwrite"), st = tx.objectStore("lots"), g = st.get(key);
+    g.onsuccess = () => { const rec = g.result; if (!rec && onlyExisting) return;
+      const r = rec || { key, at: key, frames: [], reads: [] };
+      if (recogRank(outcome) >= recogRank(r.outcome)) { r.outcome = outcome; st.put(r); } };
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
 async function recogPrune() {
   const cut = Date.now() - RECOG_KEEP_DAYS * 864e5;
   for (const store of ["lots", "frames"]) {
@@ -94,14 +115,16 @@ const RECOG_ASK = `Return the card held in front:
 - language: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
 - rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
 - stamp: look closely for a stamp, a small logo printed on the art or text box, often in a corner: a set logo on a stamped promo reprint (e.g. "Prismatic Evolutions", "Journey Together", "Mega Evolution"), a Pikachu anniversary logo (read whether it says 25th or 30th), Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark. Sellers often circle a stamp or other detail with a marker: look inside any hand-drawn circle. Name what the stamp says; "" if there is none
+- finish: where the foil shine is. holo = shiny artwork only; reverse holo = the card body around the art shines and the art is flat; poke ball pattern / master ball pattern = a reverse holo whose shiny body is covered in repeated Poke Ball icons / Master Ball icons (purple ball with an M); other pattern = any other repeated icon pattern (energy symbols, etc); non-holo = no shine anywhere; unknown when glare, the sleeve or the resolution hides it. Full art and illustration cards are holo
 - set: the set if you can tell, else ""
 - confidence: 0 to 1 that the name is right`;
 const RECOG_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "set", "confidence"],
+  required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "finish", "set", "confidence"],
   properties: {
     card_visible: { type: "boolean" }, name: { type: "string" }, number: { type: "string" }, total: { type: "string" },
-    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" }, set: { type: "string" }, confidence: { type: "number" }
+    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" },
+    finish: { type: "string", enum: ["unknown", "non-holo", "holo", "reverse holo", "poke ball pattern", "master ball pattern", "other pattern"] }, set: { type: "string" }, confidence: { type: "number" }
   }
 };
 function recogErr(status, txt) {
@@ -264,13 +287,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     chrome.storage.local.set(set, () => recogState().then(recogToApp)); reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-match") {   // what CardComp made of a reading
-    recogLot(msg.key, (rec) => { (rec.matches = rec.matches || []).push({ n: msg.n, kind: msg.kind, strength: msg.strength, suggestion: msg.suggestion, cards: msg.cards, note: msg.note, filled: msg.filled, why: msg.why }); });
+    recogLot(msg.key, (rec) => { (rec.matches = rec.matches || []).push({ n: msg.n, kind: msg.kind, strength: msg.strength, suggestion: msg.suggestion, printing: msg.printing || "", cards: msg.cards, note: msg.note, filled: msg.filled, why: msg.why }); });
     reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-outcome") {   // lot ended: what Derek tapped or opened, the final price
-    recogLot(msg.key, (rec) => { rec.outcome = msg.outcome; });
-    reply({ ok: true }); return;
+    recogOutcome(msg.key, msg.outcome, false); reply({ ok: true }); return;
   }
+  // The auction log row is the record (it is what stats use): copy its card onto the lot's reading too, so the
+  // results page shows the same card, printing and max as the log. No reply: bg.js stores the row.
+  if (msg.type === "cardcomp-log-save" && msg.rec && msg.rec.startedAt) { recogOutcome(msg.rec.startedAt, recogOutcomeOf(msg.rec), true); return; }
   if (msg.type === "recog-key-test") {   // Options page: tiny text-only call to prove the key works
     recogGet().then(async (s) => {
       if (!s.recogKey) return reply({ ok: false, why: "no key saved" });

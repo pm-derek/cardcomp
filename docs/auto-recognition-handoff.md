@@ -396,3 +396,33 @@ Fixture: `docs/recog-reads/live-2026-10-16b.json` (19 lots with a known card).
   printing (Haiku called the Celebrations Lugia "Reverse Holo").
 - CardComp: pictures bigger on desktop / side panel (list 60x84, opened card 120x168); phone unchanged (a bigger
   picture squeezed card names from 76 px to 24 px); tiles keep their crop.
+
+## Read triggers (Derek: presses read now every lot; small target, mouse lives mid-screen, Ctrl+Shift+Y awkward)
+
+Right-click anywhere in CardComp (text fields keep their menu, Shift+right-click keeps the browser menu), the mouse's
+thumb back button, the ` key (works while typing in the search box, types nothing), a 66x52 "read" button left of the
+search box (sticky row, shows "reading" until the reply), and Ctrl+Shift+Y. A ring under the pointer confirms. A double
+press within 1.5 s is one read. Not a click-anywhere zone: taps on results, chips and bids would fire reads.
+
+## Printing and outcome fixes (export 2026-10-16_2, gametower Master Ball Sylveon won at $21)
+
+- The results page said "you did not tap or open a card" for 10 of 12 lots where the auction log has the opened card
+  (the Sylveon win included: log = Sylveon Master Ball Holofoil NM, opened, max $22 set in Whatnot, no CardComp tap).
+  Not reproducible with one CardComp copy, so the likely cause is a second copy reporting the same lot with nothing,
+  last write winning. Now the richest report wins (tap > opened card > nothing), and the log row itself
+  (`cardcomp-log-save`) also fills the outcome of a lot that was read, so the results page matches the log.
+- Taps on a collapsed result recorded printing "". They now record the top printing, which is what the collapsed bid
+  is priced from (Sylveon 040: Master Ball $30.51; Holofoil $0.38, Reverse $0.49, Poké Ball $2.78).
+- The model said "Reverse Holo" for the Master Ball Sylveon. Ball patterns are reverse holos, and the prompt does not
+  ask for the pattern; the match (sv8pt5-40) was right. Picking the printing stays with Derek.
+- The results page shows the max (set in Whatnot, else the tapped bid) next to the card.
+- Derek did tap the Sylveon bid in CardComp (the extension filled $22; he led at $2 three seconds in). The tap was
+  wiped by the app's "Sold seen, no lot end" safety net: between lots the sold row flickered, the net fired, moved the
+  tap window past his pre-start tap and dropped it; the opened card survived because views have their own window.
+  The net now ignores a "Sold" whose lot end was already sent (`endSent` from whatnot.js, else the title of the lot that
+  just ended). Reproduced in headless Chromium before the fix, passing after.
+- Printing read: the prompt asks for `finish` (non-holo / holo / reverse holo / poke ball pattern / master ball pattern /
+  other pattern / unknown); `autoMatch` maps it to the suggested card's printing key (`m.printing`), only for cards with
+  2+ printings. The auto line names it and warns when the collapsed bid is priced from another printing ("tile bid is
+  Master Ball Holofoil $30.51, read Reverse Holofoil $0.49: open the card"); opening the card selects it (`PRINT_HINT`,
+  exact key first). The results page scores it against the printing Derek picked. Not yet tried on real frames.

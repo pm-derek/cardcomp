@@ -44,11 +44,10 @@
     if (!STATE.on) msg = "reads the card on stream at each lot (experiment)";
     else if (!STATE.hasKey) msg = '<span class="bad">add your API key on the extension\'s Options page</span>';
     else if (!msg) msg = "waiting for the next lot";
-    const rn = STATE.on && STATE.hasKey ? `<span class="rn" id="autoread" title="read the card on stream now (hotkey Ctrl+Shift+Y on the Whatnot tab)">read now</span>` : "";
     const w = STATE.on && WATCH && Date.now() - WATCH.at < 6000 ? ` <span class="wt" title="what auto is doing between lots (picture change ${WATCH.mean} / ${WATCH.peak})">&middot; ${esc(WATCH.why)}</span>` : "";
-    el.innerHTML = `<span class="sw${STATE.on ? " on" : ""}" id="autosw" title="turn auto-recognition ${STATE.on ? "off" : "on"}">auto ${STATE.on ? "on" : "off"}</span>${STATE.on ? sel : ""}${rn}<span id="automsg">${msg}</span>${w}`;
+    el.innerHTML = `<span class="sw${STATE.on ? " on" : ""}" id="autosw" title="turn auto-recognition ${STATE.on ? "off" : "on"}">auto ${STATE.on ? "on" : "off"}</span>${STATE.on ? sel : ""}<span id="automsg">${msg}</span>${w}`;
     $("#autosw").onclick = () => post({ type: "cardcomp-auto-config", on: !STATE.on });
-    const rb = $("#autoread"); if (rb) rb.onclick = () => { MSG = "reading the card on stream..."; paint(); post({ type: "cardcomp-auto-read" }); };
+    paintRead();
     const ms = $("#automodel"); if (ms) ms.onchange = () => post({ type: "cardcomp-auto-config", model: ms.value });
     const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); };
   }
@@ -60,17 +59,83 @@
     let what;
     if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
+    if (sug && m.printing) {   // the finish read names a printing; warn when the collapsed bid is priced from another one
+      const c = typeof CARDS !== "undefined" && CARDS.find((x) => x.id === sug.id), top = c && typeof topPrint === "function" ? topPrint(c) : "";
+      const pm = (k) => { const v = c && c.px && c.px[k]; return v ? (v.m != null ? v.m : v.l) || 0 : 0; };
+      what += ` &middot; <b>${esc(m.printing)}</b>`;
+      if (top && top !== m.printing) what += ` <span class="bad">&middot; tile bid is ${esc(top)} $${pm(top).toFixed(2)}, read ${esc(m.printing)} $${pm(m.printing).toFixed(2)}: open the card</span>`;
+    }
     else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
     else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
     return `${d.pre ? "before start: " : d.manual ? "read now: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
+  // The read button (Derek, 2026-10: "read now" was too small a target, and he presses it every lot because he is
+  // faster than the automatic trigger). A tall button left of the search box, in the sticky row, so it never moves.
+  // Backtick (the key under Esc) does the same from anywhere in CardComp, even while typing in the search box: no card
+  // name has a backtick. Ctrl+Shift+Y does it from anywhere in Chrome (extension shortcut).
+  let READING = 0;
+  css.textContent += "#readbig{flex:none;align-self:stretch;width:66px;max-height:56px;overflow:hidden;border-radius:9px;border:2px solid var(--gold);background:rgba(245,179,1,.12);" +
+    "color:var(--gold);font:700 12px/1 'JetBrains Mono',monospace;cursor:pointer;display:none;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px}" +
+    "#readbig .ico{font-size:15px;line-height:1}#readbig .k{font-size:8px;font-weight:400;color:var(--dim)}#readbig:active{transform:scale(.96)}" +
+    "#readbig.busy{background:var(--gold);color:#000;animation:rbpulse .8s ease-in-out infinite alternate}#readbig.busy .k{color:#000}" +
+    "#readbig.bad{border-color:var(--red);color:var(--red)}@keyframes rbpulse{from{opacity:1}to{opacity:.55}}";
+  function readBtn() {
+    let b = $("#readbig");
+    if (!b) {
+      const q = $("#q"), box = q && q.parentElement, row = box && box.parentElement; if (!row) return null;
+      b = document.createElement("button"); b.id = "readbig"; b.type = "button";
+      b.title = "read the card on stream now. Also: right-click anywhere in CardComp, the mouse's thumb back button, or the ` key";
+      b.addEventListener("click", (e) => { e.preventDefault(); readNow(); });
+      row.insertBefore(b, box);
+    }
+    return b;
+  }
+  function paintRead(state) {
+    const b = readBtn(); if (!b) return;
+    const show = EXT && STATE.on && STATE.hasKey;
+    b.style.display = show ? "flex" : "none";
+    const busy = READING && Date.now() - READING < 12000;
+    b.classList.toggle("busy", !!busy); b.classList.toggle("bad", state === "bad");
+    b.innerHTML = busy ? '<span class="ico">&#9673;</span>reading' : state === "bad" ? '<span class="ico">!</span>retry<span class="k">right-click</span>' : '<span class="ico">&#9673;</span>read<span class="k">right-click</span>';
+  }
+  function readNow() {
+    if (!(EXT && STATE.on && STATE.hasKey)) return;
+    if (READING && Date.now() - READING < 1500) return;   // a double tap is one read
+    READING = Date.now(); MSG = "reading the card on stream..."; paint();
+    post({ type: "cardcomp-auto-read" });
+    setTimeout(() => { if (READING && Date.now() - READING >= 12000) { READING = 0; paintRead(); } }, 12100);
+  }
+  // Zero-travel triggers (Derek: the mouse lives mid-screen on cards and prices; going to the top is slow, Ctrl+Shift+Y
+  // is awkward): right-click anywhere in CardComp (not in a text field, which keeps its paste menu), or the mouse's
+  // thumb "back" button. A ring under the pointer confirms the read without looking up.
+  css.textContent += ".readring{position:fixed;z-index:2147483646;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid var(--gold);border-radius:50%;" +
+    "pointer-events:none;animation:readring .7s ease-out forwards}@keyframes readring{from{transform:scale(.4);opacity:1}to{transform:scale(1.6);opacity:0}}";
+  function ring(x, y) { const r = document.createElement("div"); r.className = "readring"; r.style.left = x + "px"; r.style.top = y + "px"; document.body.appendChild(r); setTimeout(() => r.remove(), 750); }
+  const armed = () => EXT && STATE.on && STATE.hasKey;
+  const typingField = (t) => t && t.closest && t.closest("input,textarea,select,[contenteditable]");
+  document.addEventListener("contextmenu", (e) => {
+    if (!armed() || typingField(e.target) || e.shiftKey) return;   // Shift+right-click still opens the browser menu
+    e.preventDefault(); ring(e.clientX, e.clientY); readNow();
+  }, true);
+  const thumb = (e) => e.button === 3 || e.button === 4;
+  for (const ev of ["mousedown", "mouseup", "auxclick"]) document.addEventListener(ev, (e) => {
+    if (!armed() || !thumb(e)) return;
+    e.preventDefault(); e.stopPropagation();   // no back / forward navigation inside CardComp
+    if (ev === "mouseup") { ring(e.clientX, e.clientY); readNow(); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "`" || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!(EXT && STATE.on && STATE.hasKey)) return;
+    e.preventDefault(); readNow();
+  }, true);
+
   function fill(m, r) {
     const q = $("#q"); if (!q || typeof render !== "function") return;
     q.value = queryText(r);
     const qc = $("#qclear"); if (qc) qc.style.display = "block";
     try { if (typeof LANG !== "undefined" && m.lang && m.lang !== LANG && typeof setLang === "function") setLang(m.lang, true); } catch (_) {}
-    try { if (typeof PRINT_HINT !== "undefined") PRINT_HINT = ""; } catch (_) {}
+    try { if (typeof PRINT_HINT !== "undefined") PRINT_HINT = (m.printing || "").toLowerCase(); } catch (_) {}   // opening the card selects the printing read
     render(m.cards.map((c, i) => Object.assign({}, c, { score: 1000 - i })), false, false);
     const rd = $("#read"); if (rd) rd.textContent = "";
     const st = $("#status");
@@ -91,6 +156,7 @@
   }
 
   function onAuto(d) {
+    if (d.manual) { READING = 0; paintRead(d.error ? "bad" : ""); }   // a read you asked for came back (any outcome)
     const at = d.capAt || d.key || 0;   // capture time: a lot's key can be older than a pre-start reading
     LATEST = Math.max(LATEST, at);
     if (at < LATEST) return;   // a late reply for an older frame
@@ -106,7 +172,7 @@
     const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
     const cards = m.cards.slice(0, 8).map((c) => ({ id: c.id, n: c.n, s: c.s, num: c.num, r: c.r, m: typeof bestMarket === "function" ? bestMarket(c) : 0 }));
     if (!d.manual && a.best && (RANK[m.kind] || 0) < (RANK[a.best.m.kind] || 0)) {   // keep the better of a lot's two readings (a read you asked for always shows)
-      post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: false });
+      post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: false });
       return;
     }
     a.best = { m, r, d };
@@ -119,14 +185,14 @@
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
     paint();
-    post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, note: m.note, why: m.why, cards, filled: !touched });
+    post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: !touched });
   }
 
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.
   window.recogLotDone = (rec) => {
     const key = rec && rec.startedAt; if (!key || !AUTO[key]) return;
     const c = rec.card || null;
-    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi } : null,
+    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
     delete AUTO[key];
   };
@@ -140,7 +206,7 @@
     else if (d.type === "cardcomp-auto-state") { EXT = true; STATE = { on: !!d.on, model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
     else if (d.type === "cardcomp-auto-watch") { WATCH = { why: d.phase === "watching" || d.phase === "live" || d.phase === "paused" || d.phase === "off" ? d.why : d.phase, mean: d.mean, peak: d.peak, at: Date.now() }; if (STATE.on) { const m = $("#autoline .wt"); if (m) m.innerHTML = "&middot; " + esc(WATCH.why); else paint(); } }
-    else if (d.type === "cardcomp-auto-readack" && !d.ok) { MSG = `<span class="bad">read now: ${esc(d.why || "failed")}</span>`; paint(); }
+    else if (d.type === "cardcomp-auto-readack" && !d.ok) { READING = 0; MSG = `<span class="bad">read now: ${esc(d.why || "failed")}</span>`; paint(); paintRead("bad"); }
     else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
       ADOPT[d.from] = d.to;
       if (AUTO[d.from]) { AUTO[d.to] = AUTO[d.from]; delete AUTO[d.from]; }

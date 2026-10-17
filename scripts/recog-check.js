@@ -349,6 +349,18 @@ async function appPage(browser, base, blockRecog) {
   await mp.waitForTimeout(400);
   r1 = await lotRec(k1);
   ok(r1.matches && r1.matches.length === 1 && r1.outcome && r1.outcome.card.id === "sv10pt5-165", "match and outcome saved on the lot");
+  // two CardComp copies report the same lot: the one that saw nothing must not wipe the opened card; a tap beats a view;
+  // the auction log row (cardcomp-log-save) also fills the outcome, but never creates a record for a lot that was not read
+  await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
+    send({ type: "cardcomp-auto-outcome", key: k, outcome: { card: null, final: 3, me: false } }); }, k1);
+  await mp.waitForTimeout(300);
+  ok(((await lotRec(k1)).outcome.card || {}).id === "sv10pt5-165", "outcome: a copy that saw nothing does not wipe the opened card");
+  await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
+    send({ type: "cardcomp-log-save", rec: { startedAt: k, at: k + 20000, final: 21, me: true, placedMax: 22, card: { id: "sv10pt5-165", n: "Kyurem ex", label: "tap", printing: "Holofoil", cond: "NM", myMax: 22 } } });
+    send({ type: "cardcomp-log-save", rec: { startedAt: 12345, at: 12399, final: 1, card: null } }); }, k1);
+  await mp.waitForTimeout(300);
+  r1 = await lotRec(k1);
+  ok(r1.outcome.card.label === "tap" && r1.outcome.card.printing === "Holofoil" && r1.outcome.placedMax === 22 && !(await lotRec(12345)), "outcome from the log row: tap with printing and max; unread lots get no record");
   ok(merr.length === 0, "no page errors (" + (merr[0] || "") + ")");
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
@@ -368,6 +380,7 @@ async function appPage(browser, base, blockRecog) {
   const lotEnd = async () => { await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(80); };
   const posted = () => ap.evaluate(() => window.__posted);
   ok(await ap.evaluate(() => !document.querySelector("#autoline") || getComputedStyle(document.querySelector("#autoline")).display === "none"), "no extension: no auto line (phone / plain tab unchanged)");
+  ok(await ap.evaluate(() => { const b = document.querySelector("#readbig"); return !b || getComputedStyle(b).display === "none"; }), "no extension: no read button, right-click stays normal");
   await send({ type: "cardcomp-ext-ready" }); await ap.waitForTimeout(200);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-hello") && /auto off/.test(await ap.textContent("#autoline")), "extension present: line shows 'auto off' and asks for state");
   await send({ type: "cardcomp-auto-state", on: true, model: "haiku", hasKey: true }); await ap.waitForTimeout(100);
@@ -422,6 +435,31 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me4-89", "a tap on the previous card does not block the next card (Frogadier IR filled)");
   await lotEnd();
+  // a tap on a collapsed result records the printing its bid was priced from (the top printing), not ""
+  await ap.fill("#q", "sylveon 040/131"); await ap.press("#q", "Enter"); await ap.waitForTimeout(400);
+  const tp = await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8pt5-40"]:not(.open) .bm b.cpy'); if (!b) return null; b.click(); return LAST_TAP && LAST_TAP.printing; });
+  ok(tp === "Master Ball Holofoil", "collapsed tap: printing recorded (" + tp + ")");
+  // a "Sold" flickering between lots must not wipe a bid tapped before the timer (gametower Sylveon, 2026-10-16)
+  await ap.evaluate(() => { window.__logs = []; window.addEventListener("message", (e) => { if (e.data && e.data.type === "cardcomp-log-save") window.__logs.push(e.data.rec); }); });
+  await send({ type: "cardcomp-lot-end", rec: { title: "#25", final: 5, bids: 6, startedAt: Date.now() - 30000, at: Date.now(), seller: "g" } });
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: true, sold: "x" }); await ap.waitForTimeout(2700);
+  await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8pt5-40"] .bm b.cpy').click()); await ap.waitForTimeout(150);
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: false }); await ap.waitForTimeout(80);
+  await send({ type: "cardcomp-lot", title: "#25", cur: 5, ended: true, sold: "x" }); await ap.waitForTimeout(1800);
+  await send({ type: "cardcomp-lot-end", rec: { title: "#26", final: 21, bids: 12, me: true, startedAt: Date.now(), at: Date.now() + 300, seller: "g" } }); await ap.waitForTimeout(3100);
+  const fl = await ap.evaluate(() => window.__logs.filter((r) => r.title === "#26").pop());
+  // finish read -> printing: mapped per card, warned when the tile bid is another printing, preselected on open
+  const fk = await ap.evaluate(() => ["master ball pattern", "poke ball pattern", "reverse holo", "holo", "unknown"].map((f) => autoMatch({ card_visible: true, name: "Sylveon", number: "040", total: "131", language: "en", rarity: "Rare", stamp: "", finish: f, set: "Prismatic Evolutions", confidence: 0.9 }, { short: 1080, model: "claude-sonnet-5-5" }).printing));
+  ok(fk.join("|") === "Master Ball Holofoil|Poké Ball Holofoil|Reverse Holofoil|Holofoil|", "finish read -> printing (" + fk.join(", ") + ")");
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Sylveon", number: "040", total: "131", language: "en", rarity: "Rare", stamp: "", finish: "reverse holo", set: "Prismatic Evolutions", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1500, short: 1080 });
+  await ap.waitForTimeout(300);
+  const pl = await ap.textContent("#autoline");
+  ok(/Reverse Holofoil/.test(pl) && /tile bid is Master Ball Holofoil \$[\d.]+, read Reverse Holofoil/.test(pl), "auto line names the printing read and warns the tile bid is the Master Ball price");
+  await ap.click('#results .card[data-id="sv8pt5-40"] .row'); await ap.waitForTimeout(500);
+  ok((await ap.evaluate(() => { const c = document.querySelector('#results .card[data-id="sv8pt5-40"] .pchip.on'); return c && c.dataset.k; })) === "Reverse Holofoil", "opening the card selects the printing read");
+  await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(100);
+  ok(fl && fl.card && fl.card.label === "tap" && fl.card.printing === "Master Ball Holofoil" && fl.bidsSent.length === 1, "Sold flicker between lots keeps the pre-start tap (Sylveon Master Ball)");
+  await ap.waitForTimeout(1700); await lotEnd();   // typing within 1.5 s of a frame counts as engaged
   // Chinese card: English printings for reference, nothing marked, warning in red
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
   await ap.waitForTimeout(250);
@@ -430,8 +468,29 @@ async function appPage(browser, base, blockRecog) {
   // read now button and watcher status on the line
   await send({ type: "cardcomp-auto-watch", phase: "watching", why: "waiting for the card to hold still", mean: 9, peak: 60 }); await ap.waitForTimeout(150);
   ok(/waiting for the card to hold still/.test(await ap.textContent("#autoline")), "watcher status shown on the auto line");
-  await ap.click("#autoread"); await ap.waitForTimeout(150);
-  ok((await posted()).some((m) => m.type === "cardcomp-auto-read"), "read now button asks the extension for a read");
+  // read triggers: the big button, right-click anywhere (not in a text field), the mouse thumb button, the ` key
+  const reads = async () => (await posted()).filter((m) => m.type === "cardcomp-auto-read").length;
+  let n0 = await reads();
+  const rbBox = await ap.evaluate(() => { const b = document.querySelector("#readbig"), q = document.querySelector("#q"); const r = b && b.getBoundingClientRect(), rq = q.getBoundingClientRect(); return b ? { w: Math.round(r.width), h: Math.round(r.height), qh: Math.round(rq.height), left: r.right <= rq.left + 1, disp: getComputedStyle(b).display } : null; });
+  ok(rbBox && rbBox.disp === "flex" && rbBox.w >= 60 && Math.abs(rbBox.h - rbBox.qh) <= 4 && rbBox.left, `read button left of the search box, ${rbBox && rbBox.w}x${rbBox && rbBox.h} (search box ${rbBox && rbBox.qh} tall)`);
+  await ap.click("#readbig"); await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1 && /reading/.test(await ap.textContent("#readbig")), "read button asks the extension for a read and shows 'reading'");
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, manual: true, read: { card_visible: false, name: "" }, model: "claude-sonnet-5-5", ms: 800 }); await ap.waitForTimeout(150);
+  ok(/read/.test(await ap.textContent("#readbig")) && !/reading/.test(await ap.textContent("#readbig")), "button returns to 'read' when the reading comes back (even 'no card')");
+  await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.click("#results", { button: "right", position: { x: 120, y: 60 } }); await ap.waitForTimeout(120);
+  const ringed = await ap.evaluate(() => !!document.querySelector(".readring"));
+  ok((await reads()) === n0 + 1 && ringed, "right-click in the results reads (ring under the pointer)");
+  await send({ type: "cardcomp-auto-readack", ok: true }); await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.click("#q", { button: "right" }); await ap.waitForTimeout(120);
+  ok((await reads()) === n0, "right-click in the search box keeps its normal menu (no read)");
+  await ap.evaluate(() => { const o = { bubbles: true, button: 3, clientX: 200, clientY: 300 }; document.querySelector("#results").dispatchEvent(new MouseEvent("mousedown", o)); document.querySelector("#results").dispatchEvent(new MouseEvent("mouseup", o)); });
+  await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1, "mouse thumb (back) button reads");
+  await ap.waitForTimeout(1600); n0 = await reads();
+  await ap.fill("#q", "pika"); await ap.focus("#q"); await ap.keyboard.press("Backquote"); await ap.waitForTimeout(120);
+  ok((await reads()) === n0 + 1 && (await ap.evaluate(() => document.querySelector("#q").value)) === "pika", "` key reads, even while typing, and types nothing");
+  await ap.screenshot({ path: path.join(OUT, "recog-readbutton.png") });
   await ap.fill("#q", "typing something"); await ap.waitForTimeout(100);
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, manual: true, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
   await ap.waitForTimeout(250);
@@ -452,6 +511,25 @@ async function appPage(browser, base, blockRecog) {
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   await ap.click("#autosw"); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
+  // dashboard (not part of the experiment): made-up lots, two sellers, a win without a card
+  const dash = await ap.evaluate(() => {
+    const t = Date.now() - 3600e3, mk = (o) => Object.assign({ startedAt: o.at - 20000, bids: 5 }, o);
+    localStorage.setItem("cardcomp_lots", "[]");
+    storeLotRows([
+      mk({ seller: "sellerA", at: t, final: 21, me: true, ship: 0.78, placedMax: 22, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", printing: "Master Ball Holofoil", condMarket: 30.51, label: "tap", myMax: 22 } }),
+      mk({ seller: "sellerA", at: t + 60000, final: 40, me: false, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", printing: "Master Ball Holofoil", condMarket: 30.51, label: "view" } }),
+      mk({ seller: "sellerB", at: t + 120000, final: 5, me: true, ship: 1.2 }),
+    ].map(lotRow));
+    DASH.per = "7"; dashOpen(true);
+    const d = document.querySelector("#dash"), txt = d.innerText;
+    const out = { open: getComputedStyle(d).display === "block", hash: location.hash, won: /Won\s+2/.test(txt), unl: /1 without a card/.test(txt),
+      sellers: d.querySelectorAll("tr[data-s]").length, worth: /Worth today\s+\$30\.51/.test(txt), best: /Sylveon/.test(d.querySelector(".d2").innerText) };
+    d.querySelector('tr[data-s="sellerB"]').click(); out.filtered = /sellerB ✕/.test(d.innerText) && /Won\s+1/.test(d.innerText);
+    return out;
+  });
+  ok(dash.open && dash.hash === "#dash" && dash.won && dash.unl && dash.sellers === 2 && dash.worth && dash.best && dash.filtered, "dashboard: tiles, worth today at the bought printing, streamers, seller filter " + JSON.stringify(dash));
+  await ap.keyboard.press("Escape"); await ap.waitForTimeout(100);
+  ok(await ap.evaluate(() => getComputedStyle(document.querySelector("#dash")).display === "none" && location.hash === ""), "dashboard: Esc closes it");
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");
   console.log("  app screenshot: " + path.join(OUT, "recog-app-auto.png"));
   await ap.close();
