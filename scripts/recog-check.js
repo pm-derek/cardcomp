@@ -511,6 +511,25 @@ async function appPage(browser, base, blockRecog) {
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   await ap.click("#autosw"); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
+  // dashboard (not part of the experiment): made-up lots, two sellers, a win without a card
+  const dash = await ap.evaluate(() => {
+    const t = Date.now() - 3600e3, mk = (o) => Object.assign({ startedAt: o.at - 20000, bids: 5 }, o);
+    localStorage.setItem("cardcomp_lots", "[]");
+    storeLotRows([
+      mk({ seller: "sellerA", at: t, final: 21, me: true, ship: 0.78, placedMax: 22, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", printing: "Master Ball Holofoil", condMarket: 30.51, label: "tap", myMax: 22 } }),
+      mk({ seller: "sellerA", at: t + 60000, final: 40, me: false, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", printing: "Master Ball Holofoil", condMarket: 30.51, label: "view" } }),
+      mk({ seller: "sellerB", at: t + 120000, final: 5, me: true, ship: 1.2 }),
+    ].map(lotRow));
+    DASH.per = "7"; dashOpen(true);
+    const d = document.querySelector("#dash"), txt = d.innerText;
+    const out = { open: getComputedStyle(d).display === "block", hash: location.hash, won: /Won\s+2/.test(txt), unl: /1 without a card/.test(txt),
+      sellers: d.querySelectorAll("tr[data-s]").length, worth: /Worth today\s+\$30\.51/.test(txt), best: /Sylveon/.test(d.querySelector(".d2").innerText) };
+    d.querySelector('tr[data-s="sellerB"]').click(); out.filtered = /sellerB ✕/.test(d.innerText) && /Won\s+1/.test(d.innerText);
+    return out;
+  });
+  ok(dash.open && dash.hash === "#dash" && dash.won && dash.unl && dash.sellers === 2 && dash.worth && dash.best && dash.filtered, "dashboard: tiles, worth today at the bought printing, streamers, seller filter " + JSON.stringify(dash));
+  await ap.keyboard.press("Escape"); await ap.waitForTimeout(100);
+  ok(await ap.evaluate(() => getComputedStyle(document.querySelector("#dash")).display === "none" && location.hash === ""), "dashboard: Esc closes it");
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");
   console.log("  app screenshot: " + path.join(OUT, "recog-app-auto.png"));
   await ap.close();

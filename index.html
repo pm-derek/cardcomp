@@ -83,6 +83,7 @@
   #lotstats .lsclose{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:4px 9px;cursor:pointer}
   #lotstats .lshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
   #lotstats .lshead b{font-size:13.5px;color:var(--ink)}
+  #lotstats .lsdash{color:var(--gold);font-size:12px;cursor:pointer;text-decoration:underline dotted;padding:4px 2px}
   #lotstats .lssel{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 6px;max-width:170px}
   #lotstats .lschips{margin-left:auto;display:flex;gap:4px}
   #lotstats .lschips span{cursor:pointer;padding:5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);font-size:11.5px}
@@ -2422,7 +2423,7 @@ async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
   try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
-  buildIndex(); window.__ready=true; setGame(GAME); checkStale();
+  buildIndex(); window.__ready=true; setGame(GAME); checkStale(); if(location.hash==="#dash") dashOpen(true);
   if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
   loadLive(); setInterval(loadLive, 5*60*1000);   // verified condition prices from the live branch; re-read every 5 min while open
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
@@ -2817,7 +2818,7 @@ window.addEventListener("message", e=>{
     localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(logRows.concat(local));
   }catch(_){ }
   try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
-  paintLot(); if(LOTSTATS_OPEN) paintLotStats();
+  paintLot(); if(LOTSTATS_OPEN) paintLotStats(); if(DASH.on) paintDash();
 });
 function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
 function lotRow(rec){
@@ -2826,7 +2827,8 @@ function lotRow(rec){
     const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
-      mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null };
+      mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null,
+      id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null };   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2846,6 +2848,7 @@ function recordLotStat(rec){
   try{ storeLotRows([lotRow(rec)]); }catch(_){ }
   try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
+  if(DASH.on) paintDash();
 }
 const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
 function lotStats(seller, scope){
@@ -2907,7 +2910,7 @@ function paintLotStats(){
     tile("Your margin", S.winMargin==null?"–":P(S.winMargin), `${S.wins.length?D(S.winNet)+" net · ":""}target ${P(S.target)}`)+
     tile("Left on table", S.under.length+S.above.length?D(S.underSum+S.aboveSum):"$0", `${S.under.length} under your max · ${S.above.length} past it`);
   el.innerHTML=`
-    <div class="lshead"><b>Stream stats</b>
+    <div class="lshead"><b>Stream stats</b> <a class="lsdash" title="every stream: buys, net, streamers">dashboard</a>
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
       <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
@@ -2919,9 +2922,168 @@ function paintLotStats(){
   wireClear(el); wireLotTable(el);
   const xb=el.querySelector(".lsclose"); if(xb) xb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=false; paintLot(); paintLotStats(); };
   el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
+  const db=el.querySelector(".lsdash"); if(db) db.onclick=(e)=>{ e.stopPropagation(); dashOpen(true); };
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
   lotDotStrip(el.querySelector(".lschart"), S);
 }
+// ---- Dashboard (Derek, 2026-10: "daily cards bought, biggest wins, biggest losses, average margin, total margin,
+// total net, which streamers perform best"). A full page over the app, opened from the stats sheet or in its own tab
+// at #dash. Same rows as the stats sheet (localStorage, replaced from the private log on every load), today's prices
+// from the catalog already loaded (no extra data.json fetch). Net = proceeds if listed at the condition market (fees in)
+// minus the price paid; margin = net / spent on wins that carry a card.
+let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
+(function(){ const st=document.createElement("style"); st.textContent=`
+  #dash{position:fixed;inset:0;z-index:60;background:var(--bg);overflow:auto;display:none;font-size:13px;color:var(--dim)}
+  #dash .dw{max-width:980px;margin:0 auto;padding:0 16px 40px}
+  #dash .dh{position:sticky;top:0;z-index:2;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  #dash .dh b.t{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:18px;color:var(--ink);margin-right:4px}
+  #dash .dchips{display:flex;gap:4px;flex-wrap:wrap}
+  #dash .dchips span,#dash .dsel{cursor:pointer;padding:6px 11px;border-radius:999px;border:1px solid var(--line);color:var(--dim);font-size:12px;white-space:nowrap}
+  #dash .dchips span.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
+  #dash .dsel{border-color:var(--gold);color:var(--ink)}
+  #dash .dx{margin-left:auto;display:flex;gap:6px;align-items:center}
+  #dash .dx a,#dash .dx button{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:12.5px;padding:6px 11px;cursor:pointer;text-decoration:none}
+  #dash .dtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin-bottom:16px}
+  #dash .dt{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;min-width:0}
+  #dash .dl{font-size:11px;color:var(--faint)}
+  #dash .dv{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:800;font-size:26px;color:var(--ink);line-height:1.15;margin:2px 0;font-variant-numeric:tabular-nums}
+  #dash .ds{font-size:11.5px;color:var(--dim)}
+  #dash h3{font-size:12px;font-weight:600;color:var(--ink);margin:18px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+  #dash h3 span{text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint);margin-left:6px}
+  #dash .dtab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+  #dash .dtab th{text-align:right;font-weight:500;color:var(--faint);font-size:11px;padding:5px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+  #dash .dtab td{text-align:right;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+  #dash .dtab th:first-child,#dash .dtab td:first-child{text-align:left}
+  #dash .dtab td:first-child{color:var(--ink);white-space:normal}
+  #dash .dtab tr.click{cursor:pointer}
+  #dash .dtab tr.click:hover td{background:var(--panel)}
+  #dash .scroll{overflow-x:auto}
+  #dash .d2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  #dash .buy{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  #dash .buy .n{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+  #dash .buy .m{font-size:11.5px;color:var(--faint)}
+  #dash .buy .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  #dash .buy .r b{font-size:15px}
+  #dash .note{list-style:none;padding:0;margin:0}
+  #dash .note li{padding:7px 0;border-bottom:1px solid var(--line);line-height:1.45}
+  #dash .note li b{color:var(--ink)}
+  #dash .pos{color:var(--green)} #dash .neg{color:var(--red)} #dash .mut{color:var(--faint)}
+  #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
+  @media (max-width:640px){ #dash .d2{grid-template-columns:1fr} #dash .dv{font-size:22px} #dash .hide-s{display:none} }
+`; document.head.appendChild(st); })();
+function dashOpen(on){
+  DASH.on=!!on;
+  let el=$("#dash"); if(!el){ el=document.createElement("div"); el.id="dash"; document.body.appendChild(el); }
+  el.style.display=on?"block":"none"; document.body.style.overflow=on?"hidden":"";
+  if(on){ if(location.hash!=="#dash") history.replaceState(null, "", "#dash"); paintDash(); }
+  else if(location.hash==="#dash") history.replaceState(null, "", location.pathname+location.search);
+}
+function dashNow(r){   // today's price for a won card at its printing and condition, or null
+  if(!r.id || typeof CARDS==="undefined") return null;
+  if(!DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
+  const c=DASH_IDX.get(r.id); if(!c || !c.px) return null;
+  const k=r.pr && c.px[r.pr] ? r.pr : topPrint(c), v=c.px[k], nm=v ? (v.m!=null?v.m:v.l)||0 : 0; if(!(nm>0)) return null;
+  return c.sealed || r.c==="sealed" || !r.c ? nm : nm*condMult(r.c, c.y, nm);
+}
+function dashData(){
+  const all=loadLots().filter(r=>r && r.at), now=new Date(), day0=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const from=DASH.per==="1" ? day0 : DASH.per==="all" ? 0 : Date.now()-(+DASH.per)*86400000;
+  // streams: one seller, gaps under 45 min (same rule as "this stream" in the stats sheet)
+  const last={}; let sid=0;
+  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{ const L=last[r.s]; if(!L || r.at-L.at>=45*60000) last[r.s]={at:r.at, id:++sid}; else L.at=r.at; r._st=last[r.s].id; });
+  const rows=all.filter(r=>r.at>=from && (!DASH.seller || r.s===DASH.seller));
+  return { rows, sellers:[...new Set(all.map(r=>r.s))] };
+}
+function dashSum(rows){
+  const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
+  const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f,0), net=priced.reduce((a,r)=>a+(r.np-r.f),0);
+  const ship={}; wins.forEach(r=>{ if(r.sh>0) ship[r.s+"|"+r._st]=Math.max(ship[r.s+"|"+r._st]||0, r.sh); });
+  const lab=rows.filter(r=>r.m>0 && r.f>0);
+  return { wins, priced, spent, pSpent, net, margin:pSpent>0?net/pSpent:null, mkt:priced.reduce((a,r)=>a+r.m,0), unl:wins.length-priced.length,
+    ship:Object.values(ship).reduce((a,x)=>a+x,0), buyPct:med(priced.map(r=>r.f/r.m)), sellPct:med(lab.map(r=>r.f/r.m)), lab, seen:rows.length };
+}
+function paintDash(){
+  const el=$("#dash"); if(!el || !DASH.on) return;
+  const P=v=>v==null?"–":Math.round(v*100)+"%", D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2), D0=v=>"$"+Math.round(v).toLocaleString();
+  const cls=v=>v>0.005?"pos":v<-0.005?"neg":"mut", tgt=getNum("tgtmargin",10)/100;
+  const day=t=>new Date(t).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  const { rows, sellers }=dashData(), S=dashSum(rows);
+  const per=[["1","today"],["7","7 days"],["30","30 days"],["all","all"]];
+  const head=`<div class="dh"><b class="t">Dashboard</b>
+    <span class="dchips">${per.map(([k,l])=>`<span data-per="${k}" class="${DASH.per===k?"on":""}">${l}</span>`).join("")}</span>
+    ${DASH.seller?`<span class="dsel" data-clr="1" title="show every seller">${escH(DASH.seller)} ✕</span>`:""}
+    <span class="dx">${window.parent!==window?`<a href="./#dash" target="_blank" rel="noopener">new tab ↗</a>`:""}<button class="dclose" title="close (Esc)">✕</button></span></div>`;
+  if(!rows.length){
+    el.innerHTML=`<div class="dw">${head}<div class="empty">No lots ${DASH.per==="1"?"today":"in this period"}${DASH.seller?" for "+escH(DASH.seller):""}.<br>Lots are logged on desktop while a Whatnot tab is open with the extension.${sellers.length?"":"<br>This device has none yet."}</div></div>`;
+    dashWire(el); return;
+  }
+  // tiles
+  const nowRows=S.wins.map(r=>({r, v:dashNow(r)})).filter(x=>x.v!=null);
+  const nowSum=nowRows.reduce((a,x)=>a+x.v,0), nowWas=nowRows.reduce((a,x)=>a+(x.r.m||0),0);
+  const tile=(l,v,s,c)=>`<div class="dt"><div class="dl">${l}</div><div class="dv ${c||""}">${v}</div><div class="ds">${s}</div></div>`;
+  const tiles=
+    tile("Won", String(S.wins.length), `${D(S.spent)} spent${S.unl?` · <span class="neg">${S.unl} without a card</span>`:""}`)+
+    tile("Net if listed", S.priced.length?D(S.net):"–", `margin <b class="${S.margin!=null&&S.margin<tgt?"neg":"pos"}">${P(S.margin)}</b> · target ${P(tgt)}`, S.priced.length?cls(S.net):"")+
+    tile("After shipping", S.priced.length?D(S.net-S.ship):"–", `${D(S.ship)} shipping, one charge per seller per stream (est.)`, S.priced.length?cls(S.net-S.ship):"")+
+    tile("Bought at", P(S.buyPct), `of market (median) · rooms sold at ${P(S.sellPct)}`)+
+    tile("Worth today", nowRows.length?D(nowSum):"–", nowRows.length?`was ${D(nowWas)} when bought · <span class="${cls(nowSum-nowWas)}">${nowSum>=nowWas?"+":""}${D(nowSum-nowWas)}</span>`:"no priced wins");
+  // by day
+  const days={}; rows.forEach(r=>{ const k=new Date(r.at).toDateString(); (days[k]=days[k]||[]).push(r); });
+  const dayRows=Object.keys(days).sort((a,b)=>new Date(b)-new Date(a)).map(k=>{ const s=dashSum(days[k]);
+    return `<tr><td>${day(new Date(k).getTime())}</td><td class="hide-s">${s.seen}</td><td>${s.wins.length}</td><td>${D(s.spent)}</td><td class="${cls(s.net)}">${s.priced.length?D(s.net):"–"}</td><td>${P(s.margin)}</td></tr>`; }).join("");
+  // best / worst buys
+  const buy=r=>{ const n=r.np-r.f, v=dashNow(r), ch=v!=null&&r.m>0?(v-r.m)/r.m:null;
+    return `<div class="buy"><div style="min-width:0"><div class="n">${escH(r.n||"?")} <span class="mut">${escH(r.c||"")}</span></div>
+      <div class="m">paid ${D(r.f)} · market ${D(r.m)}${v!=null?` · today ${D(v)}${ch!=null&&Math.abs(ch)>=0.05?` <span class="${cls(ch)}">${ch>0?"↑":"↓"}${Math.round(Math.abs(ch)*100)}%</span>`:""}`:""}</div>
+      <div class="m">${escH(r.s)} · ${day(r.at)}</div></div><div class="r"><b class="${cls(n)}">${n>=0?"+":""}${D(n)}</b><div class="m">${P(r.f/r.m)} of mkt</div></div></div>`; };
+  const byNet=S.priced.slice().sort((a,b)=>(b.np-b.f)-(a.np-a.f));
+  const best=byNet.slice(0,5), worst=byNet.slice().reverse().filter(r=>!best.includes(r)).slice(0,5);
+  // streamers
+  const bySeller={}; rows.forEach(r=>{ (bySeller[r.s]=bySeller[r.s]||[]).push(r); });
+  const mine=r=>Math.max(r.mx||0, r.pm||0);
+  const sRows=Object.entries(bySeller).map(([s,rs])=>{ const x=dashSum(rs), bid=rs.filter(r=>mine(r)>0 && r.f>0), bw=bid.filter(r=>r.me).length;
+      return { s, x, streams:new Set(rs.map(r=>r._st)).size, bid:bid.length, bw }; })
+    .sort((a,b)=>(b.x.net-a.x.net) || (b.x.wins.length-a.x.wins.length) || (b.x.seen-a.x.seen));
+  const minor=sRows.filter(o=>!o.x.wins.length && o.x.seen<5 && o.s!==DASH.seller);   // one line for drive-by sellers
+  const sHtml=sRows.filter(o=>!minor.includes(o)).map(o=>`<tr class="click" data-s="${escH(o.s)}"><td>${escH(o.s)}</td><td class="hide-s">${o.streams}</td><td class="hide-s">${o.x.seen}</td><td>${o.x.wins.length}</td><td>${D(o.x.spent)}</td><td class="${cls(o.x.net)}">${o.x.priced.length?D(o.x.net):"–"}</td><td>${P(o.x.margin)}</td><td>${P(o.x.sellPct)}<span class="mut"> /${o.x.lab.length}</span></td><td class="hide-s">${o.bid?o.bw+" of "+o.bid:"–"}</td></tr>`).join("")+
+    (minor.length?`<tr><td colspan="9" class="mut" style="color:var(--faint)">+ ${minor.length} seller${minor.length===1?"":"s"} with under 5 lots and no wins (${minor.reduce((a,o)=>a+o.x.seen,0)} lots)</td></tr>`:"");
+  // discipline
+  const over=S.wins.filter(r=>r.mx>0 && r.f>r.mx), lostUnder=rows.filter(r=>!r.me && mine(r)>0 && r.f>0 && r.f<mine(r) && r.np!=null && r.np-r.f>0);
+  // lots you only looked up: one that sold under 40% of market is most likely another printing than the one opened
+  // (a $209 Cosmos Holo Gyarados "sold" at $66), so it is not a missed deal
+  const passed=rows.filter(r=>!r.me && !mine(r) && r.m>0 && r.f>0 && r.f>=0.4*r.m && r.np!=null && r.np-r.f>0);
+  const sumN=a=>a.reduce((s,r)=>s+(r.np-r.f),0);
+  const notes=[];
+  if(over.length) notes.push(`<b>Paid over your CardComp max</b> on ${over.length} win${over.length===1?"":"s"}, ${D(over.reduce((s,r)=>s+r.f-r.mx,0))} over in total (max raised in Whatnot).`);
+  if(lostUnder.length) notes.push(`<b>Lost under your max</b> ${lostUnder.length} time${lostUnder.length===1?"":"s"}, ${D(sumN(lostUnder))} of profit: the max was tapped but not in Whatnot in time.`);
+  if(passed.length) notes.push(`<b>Passed on ${passed.length} profitable lot${passed.length===1?"":"s"}</b> you looked up: ${D(sumN(passed))} net at the prices they sold for (lots under 40% of market left out: likely another printing).`);
+  if(S.unl) notes.push(`<b>${S.unl} win${S.unl===1?"":"s"} without a card</b> (${D(S.wins.filter(r=>!(r.m>0)).reduce((s,r)=>s+r.f,0))}): not in net or margin. Tap the bid or open the card during the lot.`);
+  // timing: softest hours (median sale % of market, 3+ labeled lots)
+  const hrs={}; S.lab.forEach(r=>{ const h=new Date(r.at).getHours(); (hrs[h]=hrs[h]||[]).push(r.f/r.m); });
+  const hl=h=>{ const a=h%12||12; return a+(h<12?" am":" pm"); };
+  const soft=Object.entries(hrs).filter(([,a])=>a.length>=3).map(([h,a])=>({h:+h, p:med(a), n:a.length})).sort((a,b)=>a.p-b.p).slice(0,3);
+  if(soft.length) notes.push(`<b>Softest hours</b>: ${soft.map(o=>`${hl(o.h)} ${P(o.p)} of market (${o.n} lots)`).join(" · ")}.`);
+  el.innerHTML=`<div class="dw">${head}
+    <div class="dtiles">${tiles}</div>
+    <div class="d2"><div><h3>Best buys<span>net if listed at market</span></h3>${best.map(buy).join("")||'<div class="mut">no priced wins</div>'}</div>
+      <div><h3>${worst.some(r=>r.np-r.f<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
+    <h3>Streamers<span>tap one to filter${DASH.seller?"":", best net first"}</span></h3>
+    <div class="scroll"><table class="dtab"><thead><tr><th>Seller</th><th class="hide-s">Streams</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th><th title="median sale price as a share of market, over lots with a card">Sells at</th><th class="hide-s" title="lots you put a max on that you won">Your bids won</th></tr></thead><tbody>${sHtml}</tbody></table></div>
+    <h3>By day</h3>
+    <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
+    ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
+    <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
+  </div>`;
+  dashWire(el);
+}
+function dashWire(el){
+  el.querySelectorAll("[data-per]").forEach(c=>c.onclick=()=>{ DASH.per=c.dataset.per; paintDash(); });
+  el.querySelectorAll("tr[data-s]").forEach(t=>t.onclick=()=>{ DASH.seller=t.dataset.s; paintDash(); el.scrollTop=0; });
+  const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
+  const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
+}
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
+window.addEventListener("hashchange", ()=>{ if(location.hash==="#dash" && !DASH.on && window.__ready) dashOpen(true); });
 window.addEventListener("message", e=>{   // "copy debug" reply: put it on the clipboard for Derek to paste
   const d=e.data; if(!d || d.type!=="cardcomp-snapshot-ack" || !lotFromExt(e)) return;
   if(!d.ok){ DBG_NOTE="debug failed: "+(d.why||"no reply"); paintLot(); return; }
