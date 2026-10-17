@@ -59,6 +59,27 @@ async function recogLot(key, fn) {
     tx.oncomplete = () => res(out); tx.onerror = () => res(null);
   });
 }
+// Lot outcome on the reading's record. Every open CardComp copy (side panel, CardComp tabs) reports each lot, and
+// only the copy Derek used knows the card: keep the richest report (tap > opened card > nothing) so a copy that saw
+// nothing cannot wipe it (live 2026-10-16: the won Master Ball Sylveon showed "did not tap or open" here while the
+// log had it). onlyExisting: never create a record for a lot that was not read.
+const recogRank = (o) => !o ? -1 : !o.card ? 0 : o.card.label === "tap" ? 2 : 1;
+function recogOutcomeOf(rec) {
+  const c = rec.card || null;
+  return { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null,
+    placedMax: rec.placedMax != null ? rec.placedMax : null, final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() };
+}
+async function recogOutcome(key, outcome, onlyExisting) {
+  key = RECOG_ADOPT[key] || key;
+  const db = await recogDb();
+  return new Promise((res) => {
+    const tx = db.transaction("lots", "readwrite"), st = tx.objectStore("lots"), g = st.get(key);
+    g.onsuccess = () => { const rec = g.result; if (!rec && onlyExisting) return;
+      const r = rec || { key, at: key, frames: [], reads: [] };
+      if (recogRank(outcome) >= recogRank(r.outcome)) { r.outcome = outcome; st.put(r); } };
+    tx.oncomplete = () => res(); tx.onerror = () => res();
+  });
+}
 async function recogPrune() {
   const cut = Date.now() - RECOG_KEEP_DAYS * 864e5;
   for (const store of ["lots", "frames"]) {
@@ -268,9 +289,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-outcome") {   // lot ended: what Derek tapped or opened, the final price
-    recogLot(msg.key, (rec) => { rec.outcome = msg.outcome; });
-    reply({ ok: true }); return;
+    recogOutcome(msg.key, msg.outcome, false); reply({ ok: true }); return;
   }
+  // The auction log row is the record (it is what stats use): copy its card onto the lot's reading too, so the
+  // results page shows the same card, printing and max as the log. No reply: bg.js stores the row.
+  if (msg.type === "cardcomp-log-save" && msg.rec && msg.rec.startedAt) { recogOutcome(msg.rec.startedAt, recogOutcomeOf(msg.rec), true); return; }
   if (msg.type === "recog-key-test") {   // Options page: tiny text-only call to prove the key works
     recogGet().then(async (s) => {
       if (!s.recogKey) return reply({ ok: false, why: "no key saved" });

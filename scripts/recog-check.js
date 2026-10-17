@@ -349,6 +349,18 @@ async function appPage(browser, base, blockRecog) {
   await mp.waitForTimeout(400);
   r1 = await lotRec(k1);
   ok(r1.matches && r1.matches.length === 1 && r1.outcome && r1.outcome.card.id === "sv10pt5-165", "match and outcome saved on the lot");
+  // two CardComp copies report the same lot: the one that saw nothing must not wipe the opened card; a tap beats a view;
+  // the auction log row (cardcomp-log-save) also fills the outcome, but never creates a record for a lot that was not read
+  await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
+    send({ type: "cardcomp-auto-outcome", key: k, outcome: { card: null, final: 3, me: false } }); }, k1);
+  await mp.waitForTimeout(300);
+  ok(((await lotRec(k1)).outcome.card || {}).id === "sv10pt5-165", "outcome: a copy that saw nothing does not wipe the opened card");
+  await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
+    send({ type: "cardcomp-log-save", rec: { startedAt: k, at: k + 20000, final: 21, me: true, placedMax: 22, card: { id: "sv10pt5-165", n: "Kyurem ex", label: "tap", printing: "Holofoil", cond: "NM", myMax: 22 } } });
+    send({ type: "cardcomp-log-save", rec: { startedAt: 12345, at: 12399, final: 1, card: null } }); }, k1);
+  await mp.waitForTimeout(300);
+  r1 = await lotRec(k1);
+  ok(r1.outcome.card.label === "tap" && r1.outcome.card.printing === "Holofoil" && r1.outcome.placedMax === 22 && !(await lotRec(12345)), "outcome from the log row: tap with printing and max; unread lots get no record");
   ok(merr.length === 0, "no page errors (" + (merr[0] || "") + ")");
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
@@ -423,6 +435,11 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   ok((await ap.evaluate(() => (document.querySelector("#results .card") || {}).dataset.id)) === "me4-89", "a tap on the previous card does not block the next card (Frogadier IR filled)");
   await lotEnd();
+  // a tap on a collapsed result records the printing its bid was priced from (the top printing), not ""
+  await ap.fill("#q", "sylveon 040/131"); await ap.press("#q", "Enter"); await ap.waitForTimeout(400);
+  const tp = await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8pt5-40"]:not(.open) .bm b.cpy'); if (!b) return null; b.click(); return LAST_TAP && LAST_TAP.printing; });
+  ok(tp === "Master Ball Holofoil", "collapsed tap: printing recorded (" + tp + ")");
+  await ap.waitForTimeout(1700); await lotEnd();   // typing within 1.5 s of a frame counts as engaged
   // Chinese card: English printings for reference, nothing marked, warning in red
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
   await ap.waitForTimeout(250);

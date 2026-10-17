@@ -2604,6 +2604,7 @@ function bestMarket(r){   // top printing market for the collapsed card
   let best=0; for(const k in e){ const v=e[k]; const p=(v.m!=null?v.m:v.l)||0; if(p>best) best=p; }
   return best;
 }
+function topPrint(r){ let k="", best=-1; for(const p in (r&&r.px)||{}){ const v=r.px[p], m=(v.m!=null?v.m:v.l)||0; if(m>best){ best=m; k=p; } } return k; }   // the printing bestMarket prices (collapsed bids use it)
 function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, speedOf(r,b,"NM").margin) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
@@ -2654,7 +2655,8 @@ function sendToWhatnot(s, el, show, labelOnly){
       const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id), pk=c&&c.querySelector(".pchip.on");
       // the "your bid" send has no condition of its own: keep the condition last tapped on this card
       const cond=ds.cond || (LAST_TAP && r && LAST_TAP.id===r.id && LAST_TAP.cond) || "NM";
-      LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:"", ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
+      // printing: the chip selected in the open card, else the top printing the collapsed bid was priced from
+      LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:topPrint(r), ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
     }
     TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n, snap:Object.assign({}, LAST_TAP)}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     if(Date.now()<LOT_START){   // inside the grace window: counted for the lot that just sold
@@ -2732,7 +2734,7 @@ function viewLabel(from, to, sellerCond){   // snapshot of the last card opened 
   const v=LAST_VIEW; if(!v || v.at<from || v.at>to || to-v.at>LABEL_MAX_MS) return null;
   const r=CARDS.find(x=>x.id===v.id); if(!r || !r.px) return null;
   const pk=v.el && v.el.querySelector(".pchip.on");
-  let k=pk ? pk.dataset.k : ""; if(!k || !r.px[k]){ let best=-1; for(const p in r.px){ const m=(r.px[p].m!=null?r.px[p].m:r.px[p].l)||0; if(m>best){ best=m; k=p; } } }
+  let k=pk ? pk.dataset.k : ""; if(!k || !r.px[k]) k=topPrint(r);
   const cond=r.sealed ? "sealed" : (sellerCond||"NM"), nm=(r.px[k].m!=null?r.px[k].m:r.px[k].l)||0;
   const s=cardSnap(r, cond, k, r.sealed ? nm : nm*condMult(cond, r.y, nm));
   s.label="view"; s.viewAt=v.at; s.condFrom=sellerCond?"seller":"assumed NM";

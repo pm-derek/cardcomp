@@ -403,3 +403,16 @@ Right-click anywhere in CardComp (text fields keep their menu, Shift+right-click
 thumb back button, the ` key (works while typing in the search box, types nothing), a 66x52 "read" button left of the
 search box (sticky row, shows "reading" until the reply), and Ctrl+Shift+Y. A ring under the pointer confirms. A double
 press within 1.5 s is one read. Not a click-anywhere zone: taps on results, chips and bids would fire reads.
+
+## Printing and outcome fixes (export 2026-10-16_2, gametower Master Ball Sylveon won at $21)
+
+- The results page said "you did not tap or open a card" for 10 of 12 lots where the auction log has the opened card
+  (the Sylveon win included: log = Sylveon Master Ball Holofoil NM, opened, max $22 set in Whatnot, no CardComp tap).
+  Not reproducible with one CardComp copy, so the likely cause is a second copy reporting the same lot with nothing,
+  last write winning. Now the richest report wins (tap > opened card > nothing), and the log row itself
+  (`cardcomp-log-save`) also fills the outcome of a lot that was read, so the results page matches the log.
+- Taps on a collapsed result recorded printing "". They now record the top printing, which is what the collapsed bid
+  is priced from (Sylveon 040: Master Ball $30.51; Holofoil $0.38, Reverse $0.49, Poké Ball $2.78).
+- The model said "Reverse Holo" for the Master Ball Sylveon. Ball patterns are reverse holos, and the prompt does not
+  ask for the pattern; the match (sv8pt5-40) was right. Picking the printing stays with Derek.
+- The results page shows the max (set in Whatnot, else the tapped bid) next to the card.
