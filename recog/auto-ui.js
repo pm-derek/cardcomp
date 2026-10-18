@@ -191,8 +191,17 @@
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.
   window.recogLotDone = (rec) => {
     const key = rec && rec.startedAt; if (!key || !AUTO[key]) return;
-    const c = rec.card || null;
-    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
+    const c = rec.card || null, b = AUTO[key].best;
+    // The auto reading rides on the auction log row (private log repo), so results are scored from the log: no
+    // export to upload (it had reached 109 MB with frames) and no hand review for lots with a tapped / opened card.
+    if (b) try {
+      const sg = b.m.suggestion && b.m.cards.find((x) => x.id === b.m.suggestion), rd = b.r || {};
+      rec.recog = { model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, short: b.d.short || 0,
+        read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
+        kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
+        sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id) };
+    } catch (_) {}
+    post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
     delete AUTO[key];
   };

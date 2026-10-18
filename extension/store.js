@@ -139,6 +139,7 @@ function mergeRows(rows) {
   for (const r of rows) {
     const k = lotKey(r);
     if (k == null || !at.has(k)) { if (k != null) at.set(k, out.length); out.push(r); continue; }
+    { const o = out[at.get(k)]; if (!r.recog && o.recog) r.recog = o.recog; else if (r.recog && !o.recog) o.recog = r.recog; }   // RECOG keep the auto reading whichever CardComp copy logged it, removed by scripts/strip-recog.js
     const i = at.get(k); if (richness(r) > richness(out[i])) out[i] = r;
   }
   return out;

@@ -365,7 +365,10 @@ async function appPage(browser, base, blockRecog) {
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
   const sum2 = await dbg2.textContent("#sum");
-  ok(/\d+ lots read/.test(sum2) && /To review: \d+/.test(sum2) && /Read before the timer: \d+ lots \(\d+ reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  ok(/\d+ lots read/.test(sum2) && /unscored \(no card picked/.test(sum2) && /Read before the timer: \d+ lots \(\d+ reused/.test(sum2) && /Strong suggestion wrong: 0 of 0/.test(sum2) && /Spent \$/.test(sum2), "results page summary: " + sum2.replace(/\s+/g, " ").slice(0, 160));
+  const [dl] = await Promise.all([dbg2.waitForEvent("download"), dbg2.click("#exp")]);
+  const ex = JSON.parse(fs.readFileSync(await dl.path(), "utf8")), exKB = Math.round(fs.statSync(await dl.path()).size / 1024);
+  ok(ex.lots.length > 0 && ex.lots.every((L) => (L.frames || []).every((f) => !f.img)) && ex.lots.some((L) => /^data:image\/jpeg/.test(L.thumb || "")), "small export: no full frames, one small picture per lot (" + exKB + " KB for " + ex.lots.length + " lots)");
   await dbg2.screenshot({ path: path.join(OUT, "recog-debug-page.png"), fullPage: true });
   console.log("  results page screenshot: " + path.join(OUT, "recog-debug-page.png"));
   await dbg2.close(); await mp.close();
@@ -409,10 +412,11 @@ async function appPage(browser, base, blockRecog) {
   ok(!st.badge && /no #157/.test(st.line), "Kyurem ex 157 (not in catalog): note shown, nothing marked");
   await send({ type: "cardcomp-auto", key: key + 1, n: 1, error: "API key rejected (Options page)" }); await ap.waitForTimeout(150);
   ok(/key rejected/.test(await ap.textContent("#autoline")), "API error shown on the line");
-  await ap.evaluate((k) => window.recogLotDone({ startedAt: k, card: { id: "me5-85", n: "Fomantis", label: "tap", cond: "NM" }, final: 3, me: true, title: "#8" }), key);
+  const lrec = await ap.evaluate((k) => { const rec = { startedAt: k, card: { id: "me5-85", n: "Fomantis", r: "Illustration Rare", label: "tap", cond: "NM" }, final: 3, me: true, title: "#8" }; window.recogLotDone(rec); return rec; }, key);
   await ap.waitForTimeout(150);
   const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
-  ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true, "lot end: tapped card reported as the outcome");
+  ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true && oc.outcome.card.r === "Illustration Rare", "lot end: tapped card reported as the outcome, with its rarity");
+  ok(lrec.recog && lrec.recog.read.name === "Kyurem ex" && lrec.recog.read.number === "157" && lrec.recog.kind === "number-miss" && lrec.recog.sug === null && lrec.recog.ids.length > 0 && /opus/.test(lrec.recog.model), "the auction log row carries the lot's auto reading (Kyurem ex 157, no pick, listed ids)");
   // read before the timer: shown as "before start"; the lot (created earlier, older key) reuses it; outcome maps to the lot
   await lotEnd(); await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();
   await send({ type: "cardcomp-auto", key: preKey, capAt: preKey, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1100 });
@@ -420,10 +424,12 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, first: (document.querySelector("#results .card") || {}).dataset }));
   ok(/^auto on.*before start: read Numel/.test(st.line.replace(/\s+/g, " ")) && st.first && st.first.id === "me2pt5-223", "read before the timer: shown as 'before start', Numel IR first");
   await send({ type: "cardcomp-auto-adopt", from: preKey, to: lotKey }); await ap.waitForTimeout(100);
-  await ap.evaluate((k) => window.recogLotDone({ startedAt: k, card: { id: "me2pt5-223", n: "Numel", label: "view" }, final: 4, me: false }), lotKey);
+  await ap.evaluate((k) => { const rec = { startedAt: k, card: { id: "me2pt5-223", n: "Numel", label: "view" }, final: 4, me: false }; window.recogLotDone(rec); window.__lastRecog = rec.recog; }, lotKey);
   await ap.waitForTimeout(150);
   const oc2 = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
+  const lrec2 = await ap.evaluate(() => window.__lastRecog || null);
   ok(oc2 && oc2.key === lotKey && oc2.outcome.card.id === "me2pt5-223", "reused reading: the lot's outcome is reported under the lot");
+  ok(lrec2 && lrec2.sug && lrec2.sug.id === "me2pt5-223" && /Illustration/.test(lrec2.sug.r) && lrec2.pre === true, "log row reading: suggested card with its rarity (" + (lrec2 && lrec2.sug ? lrec2.sug.n + ", " + lrec2.sug.r : "none") + "), read before the timer");
   const later = Date.now();
   await send({ type: "cardcomp-auto", key: lotKey, capAt: later, n: 1, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 900 });
   await ap.waitForTimeout(250);
@@ -530,6 +536,12 @@ async function appPage(browser, base, blockRecog) {
   ok(dash.open && dash.hash === "#dash" && dash.won && dash.unl && dash.sellers === 2 && dash.worth && dash.best && dash.filtered, "dashboard: tiles, worth today at the bought printing, streamers, seller filter " + JSON.stringify(dash));
   await ap.keyboard.press("Escape"); await ap.waitForTimeout(100);
   ok(await ap.evaluate(() => getComputedStyle(document.querySelector("#dash")).display === "none" && location.hash === ""), "dashboard: Esc closes it");
+  // wide window with stats open: the cart bar sits in the app column, not under the stats panel
+  const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
+  await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);
+  const cp = await ap.evaluate(() => ({ cart: document.querySelector("#cart").getBoundingClientRect().right, stats: document.querySelector("#lotstats").getBoundingClientRect().left }));
+  ok(cartPos && cp.cart <= cp.stats, "wide window: cart bar ends at " + Math.round(cp.cart) + " px, stats panel starts at " + Math.round(cp.stats) + " px");
+  await ap.evaluate(() => { LOTSTATS_OPEN = false; paintLotStats(); CART.length = 0; try { renderCart(); } catch (_) {} }); await ap.setViewportSize({ width: 660, height: 900 });
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");
   console.log("  app screenshot: " + path.join(OUT, "recog-app-auto.png"));
   await ap.close();

@@ -56,7 +56,7 @@ async function paint() {
   document.getElementById("sum").innerHTML = lots.length ? [
     `<b>${lots.length} lots read</b> · ${reads.length} frames (${lots.filter((L) => (L.reads || []).length > 1).length} lots needed a 2nd) · ${Object.entries(models).map(([m, n]) => esc(m) + " " + n).join(", ")}`,
     `<b>Strong suggestion wrong: <span class="${strongWrong ? "bad" : "ok"}">${strongWrong} of ${strong.length}</span></b> (the number to watch)`,
-    `<b>To review: ${todo}</b> (at the top) · scored from the card you tapped or opened: ${fromTaps} · reviewed by hand: ${labeled.length - fromTaps}`,
+    `Scored from the card you tapped or opened: <b>${fromTaps}</b> · reviewed by hand: ${labeled.length - fromTaps} · unscored (no card picked, review optional, at the bottom): ${todo}`,
     `Labeled ${labeled.length}: right pick <span class="ok">${pct(V.filter((L) => L.V.v === "agree").length, labeled.length)}</span> · right card listed, no pick ${pct(V.filter((L) => L.V.v === "listed").length, labeled.length)} · wrong or not listed <span class="bad">${pct(V.filter((L) => L.V.v === "miss").length, labeled.length)}</span>`,
     `Printing read (right card, you picked a printing): <span class="ok">${V.filter((L) => pv(L) === "right").length}</span> right of ${V.filter((L) => pv(L)).length}`,
     `Outcomes: ${Object.entries(kinds).map(([k, n]) => esc(k) + " " + n).join(" · ")}`,
@@ -64,16 +64,17 @@ async function paint() {
     `Time to reading (1st frame): median ${(q(first.map((r) => r.ms), 0.5) / 1000).toFixed(1)} s · slow (p90) ${(q(first.map((r) => r.ms), 0.9) / 1000).toFixed(1)} s · errors ${reads.filter((r) => r.error).length}`,
     `Spent ${money(cost)} · ${money(lots.length ? cost / lots.length : 0)} per lot`
   ].join("<br>") : "No lots yet. Turn auto on in the CardComp panel and watch a stream.";
-  const order = { todo: 0, miss: 1, listed: 2, agree: 3, none: 4 };   // a backlog: lots still to review first
+  // Lots with a tapped / opened card score themselves; the rest (no card picked) are optional to review, listed last.
+  const order = { miss: 0, listed: 1, agree: 2, todo: 3, none: 4 };
   V.sort((a, b) => (order[a.V.v] - order[b.V.v]) || (b.at - a.at));
   document.getElementById("list").innerHTML = V.map((L) => {
     const f = (L.frames || [])[0], m = L.V.m, o = L.outcome;
     const rd = (L.reads || []).map((r) => r.error ? `<div class="bad">frame ${r.n}: ${esc(r.error)}</div>` :
       `<div>${(() => { const f = (L.frames || []).find((x) => x.n === r.n && x.img) || {}; return f.trigger === "pre" ? "before start" + (L.adopted ? ", " + (L.adopted.earlyMs / 1000).toFixed(1) + " s early" : "") + (f.diff != null ? ", change " + f.diff : "") : "frame " + r.n + (f.sinceStart != null ? " (" + (f.sinceStart / 1000).toFixed(1) + " s in)" : ""); })()}: <b>${esc(r.read && r.read.card_visible === false ? "no card" : [r.read && r.read.name, r.read && r.read.number ? r.read.number + (r.read.total ? "/" + r.read.total : "") : ""].join(" "))}</b> <span class="k">${esc(r.read && r.read.rarity)}${r.read && r.read.finish && r.read.finish !== "unknown" ? " · " + esc(r.read.finish) : ""} · conf ${r.read ? r.read.confidence : "-"} · ${esc((r.model || "").replace("claude-", ""))} ${((r.ms || 0) / 1000).toFixed(1)} s ${money(r.cost)}</span></div>`).join("");
     const sug = m && m.suggestion && (m.cards || []).find((c) => c.id === m.suggestion);
-    const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + (m.printing ? " · " + esc(m.printing) : "") + "</span>" : ""}${pv(L) ? " · printing <span class=" + (pv(L) === "right" ? "ok" : "bad") + ">" + pv(L) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
-      <div class="k">listed: ${(m.cards || []).slice(0, 4).map((c) => esc(c.n) + " #" + esc(c.num) + " $" + (c.m || 0).toFixed(2)).join(", ")}</div>` : "";
-    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"}${o.placedMax ? " · your max $" + esc(o.placedMax) : o.card && o.card.myMax ? " · your max $" + esc(o.card.myMax) : ""} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
+    const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + (sug.r ? " · " + esc(sug.r) : "") + (m.printing ? " · " + esc(m.printing) : "") + "</span>" : ""}${pv(L) ? " · printing <span class=" + (pv(L) === "right" ? "ok" : "bad") + ">" + pv(L) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
+      <div class="k">listed: ${(m.cards || []).slice(0, 4).map((c) => esc(c.n) + " #" + esc(c.num) + (c.r ? " " + esc(c.r) : "") + " $" + (c.m || 0).toFixed(2)).join(", ")}</div>` : "";
+    const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + (o.card.r ? " · " + esc(o.card.r) : "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"}${o.placedMax ? " · your max $" + esc(o.placedMax) : o.card && o.card.myMax ? " · your max $" + esc(o.card.myMax) : ""} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
     const rv = L.V.truth ? "" : `<div><button class="sm" data-k="${L.key}" data-r="right">right</button><button class="sm" data-k="${L.key}" data-r="listed">listed, not picked</button><button class="sm" data-k="${L.key}" data-r="wrong">wrong</button><button class="sm" data-k="${L.key}" data-r="nocard">no card</button></div>`;
     return `<div class="row">${f ? `<img src="${f.img}" title="${f.w}x${f.h}, ${f.kb} KB">` : `<div style="width:150px" class="bad">no frame</div>`}<div>
       <div><span class="tag t-${L.V.v}">${esc(L.V.label)}</span>${[new Date(L.at).toLocaleString(), L.seller, L.title].filter(Boolean).map(esc).join(" · ")}</div>${rd}${mt}${oc}${rv}</div></div>`;
@@ -92,11 +93,22 @@ async function paint() {
     <div class="k">${r.w}x${r.h} · ${r.kb} KB · ${r.ms} ms · brightness ${r.luma == null ? "-" : r.luma} · 5 s later: ${esc(r.later)}</div>
     ${r.tries && r.tries.length ? `<div class="k">${r.tries.map(esc).join("<br>")}</div>` : ""}<div><code>${esc(JSON.stringify(r.video))}</code></div></div></div>`).join("");
 }
-document.getElementById("exp").onclick = async () => {
+// Export: small by default (one 320 px picture per lot, about 15 KB). Full frames made the file 109 MB, too big to upload.
+const shrink = (src, edge) => new Promise((res) => { const im = new Image(); im.onload = () => { const k = Math.min(1, edge / Math.max(im.width, im.height)), c = document.createElement("canvas");
+  c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL("image/jpeg", 0.6)); }; im.onerror = () => res(""); im.src = src; });
+async function save(full) {
+  let lots = await all("lots"), frames = await all("frames");
+  if (!full) {
+    lots = await Promise.all(lots.map(async (L) => { const f = (L.frames || []).find((x) => x.img); const thumb = f ? await shrink(f.img, 320) : "";
+      return Object.assign({}, L, { frames: (L.frames || []).map((x) => Object.assign({}, x, { img: undefined })), thumb }); }));
+    frames = frames.map((x) => Object.assign({}, x, { img: undefined }));
+  }
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify({ lots: await all("lots"), frames: await all("frames") })], { type: "application/json" }));
-  a.download = "cardcomp-recog-" + new Date().toISOString().slice(0, 10) + ".json"; a.click();
-};
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ lots, frames })], { type: "application/json" }));
+  a.download = "cardcomp-recog-" + new Date().toISOString().slice(0, 10) + (full ? "-full" : "") + ".json"; a.click();
+}
+document.getElementById("exp").onclick = () => save(false);
+document.getElementById("expfull").onclick = () => save(true);
 document.getElementById("wipe").onclick = () => {
   if (!confirm("Delete every recognition lot and frame?")) return;
   const r = indexedDB.deleteDatabase("cardcomp-recog"); r.onsuccess = r.onerror = r.onblocked = () => setTimeout(paint, 300);
