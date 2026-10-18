@@ -426,3 +426,11 @@ press within 1.5 s is one read. Not a click-anywhere zone: taps on results, chip
   2+ printings. The auto line names it and warns when the collapsed bid is priced from another printing ("tile bid is
   Master Ball Holofoil $30.51, read Reverse Holofoil $0.49: open the card"); opening the card selects it (`PRINT_HINT`,
   exact key first). The results page scores it against the printing Derek picked. Not yet tried on real frames.
+
+## Scoring from the log (2026-10-18)
+
+Derek's export reached 109 MB (full frames) and could not be uploaded; reviewing lots by hand was getting tiring.
+Each logged lot now carries the auto reading (`recog`), so scoring runs on the private log with
+`node scripts/recog-score-log.js <cardcomp-data dir> [since]` (strong wrong, right / listed / not listed, printing read,
+every miss with what was read, what was suggested with its rarity, and the card Derek picked). No uploads, no hand
+review: lots where he tapped or opened a card score themselves; the rest are optional and listed last on the results page.

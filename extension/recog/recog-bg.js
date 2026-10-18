@@ -66,7 +66,7 @@ async function recogLot(key, fn) {
 const recogRank = (o) => !o ? -1 : !o.card ? 0 : o.card.label === "tap" ? 2 : 1;
 function recogOutcomeOf(rec) {
   const c = rec.card || null;
-  return { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null,
+  return { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null,
     placedMax: rec.placedMax != null ? rec.placedMax : null, final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() };
 }
 async function recogOutcome(key, outcome, onlyExisting) {

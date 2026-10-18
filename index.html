@@ -124,7 +124,7 @@
     #lotstats .lstiles{grid-template-columns:repeat(2,1fr)}
     #lotstats .lssel{max-width:120px}
     body.lsopen .wrap{margin-right:max(16px,calc((100vw - 430px - 680px)/2 + 430px));margin-left:max(0px,calc((100vw - 430px - 680px)/2))}
-    body.lsopen #cart{right:430px}
+    body.lsopen #cart{right:430px !important}   /* !important: #cart carries an inline right:0 (the bar slid under the stats column) */
   }
   @media (max-width:440px){ #lotstats .lstiles{grid-template-columns:repeat(2,1fr)} #lotstats .lstab th:nth-child(4),#lotstats .lstab td:nth-child(4){display:none} }
   /* condition grid: the max bid is the thing tapped live, so it is a wide button filling the middle;
