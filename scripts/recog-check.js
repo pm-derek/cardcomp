@@ -243,6 +243,13 @@ async function appPage(browser, base, blockRecog) {
     const body = JSON.parse(req.postData() || "{}"); apiCalls.push(body);
     if (apiMode === "nothink" && body.thinking) return route.fulfill({ status: 400, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "thinking.type: between_tools is not supported for this model" } }) });
     if (apiMode === "401") return route.fulfill({ status: 401, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) });
+    if (body.stream) {   // the real API streams: short keys in answer order, split into pieces like text deltas
+      const R = READS.first, txt = JSON.stringify({ visible: R.card_visible, name: R.name, lang: R.language, num: R.number, total: R.total, rarity: R.rarity, stamp: R.stamp || "", finish: R.finish || "unknown", set: R.set || "", conf: R.confidence });
+      const ev = (o) => "event: " + o.type + "\ndata: " + JSON.stringify(o) + "\n\n", parts = [txt.slice(0, 20), txt.slice(20, 70), txt.slice(70)];
+      return route.fulfill({ status: 200, headers: cors, contentType: "text/event-stream", body: ev({ type: "message_start", message: { model: body.model, usage: { input_tokens: 2900, output_tokens: 1 } } }) +
+        parts.map((t) => ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })).join("") +
+        ev({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 60 } }) + ev({ type: "message_stop" }) });
+    }
     return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ model: body.model, stop_reason: "end_turn",
       usage: { input_tokens: 2900, output_tokens: 120 }, content: [{ type: "text", text: JSON.stringify(READS.first) }] }) });
   });
@@ -260,19 +267,23 @@ async function appPage(browser, base, blockRecog) {
   }, key);
   const sold = () => mp.evaluate(() => { clearInterval(window.__clock); window.__lot.ended = true; window.__recogTick({ timer: "", sold: "Sold", ended: true }, window.__lot); });
   const scene = (n) => mp.evaluate((n) => { window.__scene = n; }, n);
-  const toApp = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto"));
+  const toAppAll = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto"));
+  const toApp = () => mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto" && !m.partial));   // full readings (early streamed ones checked on their own)
   const lotRec = (key) => mp.evaluate((key) => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("lots").objectStore("lots").get(key); q.onsuccess = () => res(q.result); }; }), key);
   // off: nothing happens
   await tick(Date.now()); await mp.waitForTimeout(1500);
   ok((await toApp()).length === 0 && apiCalls.length === 0, "switch off: no frame, no API call");
   await mp.evaluate(() => chrome.storage.local.set({ recogOn: true, recogKey: "sk-ant-test", recogModel: "haiku" }));
   const k1 = Date.now(); await tick(k1); await mp.waitForTimeout(2200);
-  let msgs = await toApp(), r1 = await lotRec(k1);
-  ok(msgs.length === 1 && msgs[0].key === k1 && msgs[0].read && msgs[0].read.name === "Kyurem ex" && msgs[0].model === "claude-haiku-5-5", "lot start: one reading sent to CardComp (" + (msgs[0] && msgs[0].read && msgs[0].read.name) + ")");
+  let msgs = await toAppAll(), r1 = await lotRec(k1);
+  const fin = msgs.filter((m) => !m.partial), part = msgs.filter((m) => m.partial);
+  ok(fin.length === 1 && fin[0].key === k1 && fin[0].read && fin[0].read.name === "Kyurem ex" && fin[0].read.number === "157" && fin[0].read.language === "en" && fin[0].model === "claude-haiku-5-5", "lot start: one reading sent to CardComp (" + (fin[0] && fin[0].read && fin[0].read.name) + ", short keys mapped back)");
+  ok(part.length === 1 && msgs.indexOf(part[0]) < msgs.indexOf(fin[0]) && part[0].read.name === "Kyurem ex" && part[0].read.number === "157" && part[0].read.total === "086" && !part[0].read.rarity, "streamed reply: name / number / total sent early, before the rest is written");
+  msgs = fin;
   const c0 = apiCalls[0] || {};
   ok(c0.model === "claude-haiku-5-5" && c0.output_config && c0.output_config.format && c0.output_config.effort === "low" && c0.messages[0].content[0].type === "image", "API request: Haiku, image first, structured output, low effort");
   ok(c0.thinking && c0.thinking.type === "disabled" && !c0.fallbacks, "API request: Haiku thinking off, no fallback option (faster)");
-  ok(/zh/.test(JSON.stringify(c0.output_config.format.schema.properties.language.enum)) && /stamp/.test(JSON.stringify(c0.output_config.format.schema.required)), "API request: asks for the stamp and allows Chinese / Korean");
+  ok(c0.stream === true && /zh/.test(JSON.stringify(c0.output_config.format.schema.properties.lang.enum)) && /stamp/.test(JSON.stringify(c0.output_config.format.schema.required)), "API request: streamed, asks for the stamp, allows Chinese / Korean");
   ok(r1 && r1.frames.length === 1 && r1.frames[0].w === 1280 && r1.frames[0].sinceStart >= 900 && r1.reads[0].cost > 0, `lot recorded: frame ${r1 && r1.frames[0].w}x${r1 && r1.frames[0].h} at ${r1 && r1.frames[0].sinceStart} ms, $${r1 && r1.reads[0].cost.toFixed(5)}`);
   await tick(k1); await mp.waitForTimeout(1500);
   ok(apiCalls.length === 1, "same lot ticking on: no second capture");
@@ -393,6 +404,20 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(300);
   let st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
   ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /Fomantis/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
+  // early (streamed) reading for the next lot: fills now, nothing logged; the full reply then marks the best guess
+  await lotEnd(); const pk = Date.now();
+  const nMatch = (await posted()).filter((m) => m.type === "cardcomp-auto-match").length;
+  await send({ type: "cardcomp-auto", key: pk, capAt: pk, n: 1, partial: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "", stamp: "", finish: "", set: "" }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, line: document.querySelector("#autoline").textContent, first: (document.querySelector("#results .card") || {}).dataset }));
+  ok(st.q === "Numel" && /reading Numel.*rest coming/.test(st.line) && st.first && (await posted()).filter((m) => m.type === "cardcomp-auto-match").length === nMatch, "early reading: search filled at once (" + st.line.replace(/\s+/g, " ").slice(0, 60) + "), not logged");
+  await send({ type: "cardcomp-auto", key: pk, capAt: pk, n: 1, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1700 });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent }));
+  ok(st.first && st.first.id === "me2pt5-223" && /auto/.test(st.badge || ""), "full reply after it: Numel IR marked as the best guess");
+  await lotEnd(); key = Date.now();
+  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
+  await ap.waitForTimeout(300);
   let mp1 = (await posted()).filter((m) => m.type === "cardcomp-auto-match").pop();
   ok(mp1 && mp1.kind === "exact" && mp1.strength === "strong" && mp1.filled === true, "match reported to the extension (exact, strong, shown)");
   await ap.screenshot({ path: path.join(OUT, "recog-app-auto.png") });
@@ -529,13 +554,23 @@ async function appPage(browser, base, blockRecog) {
     DASH.per = "7"; dashOpen(true);
     const d = document.querySelector("#dash"), txt = d.innerText;
     const out = { open: getComputedStyle(d).display === "block", hash: location.hash, won: /Won\s+2/.test(txt), unl: /1 without a card/.test(txt),
-      sellers: d.querySelectorAll("tr[data-s]").length, worth: /Worth today\s+\$30\.51/.test(txt), best: /Sylveon/.test(d.querySelector(".d2").innerText) };
+      sellers: d.querySelectorAll("tr[data-s]").length, worth: (() => { const v = CARDS.find((c) => c.id === "sv8pt5-40").px["Master Ball Holofoil"]; return new RegExp("Worth today\\s+\\$" + (v.m != null ? v.m : v.l).toFixed(2).replace(".", "\\.")).test(txt); })(), best: /Sylveon/.test(d.querySelector(".d2").innerText) };
     d.querySelector('tr[data-s="sellerB"]').click(); out.filtered = /sellerB ✕/.test(d.innerText) && /Won\s+1/.test(d.innerText);
     return out;
   });
   ok(dash.open && dash.hash === "#dash" && dash.won && dash.unl && dash.sellers === 2 && dash.worth && dash.best && dash.filtered, "dashboard: tiles, worth today at the bought printing, streamers, seller filter " + JSON.stringify(dash));
   await ap.keyboard.press("Escape"); await ap.waitForTimeout(100);
   ok(await ap.evaluate(() => getComputedStyle(document.querySelector("#dash")).display === "none" && location.hash === ""), "dashboard: Esc closes it");
+  // a win without a card: "+ card" from the dashboard, search, open, tap the condition -> stats row and log edit
+  await ap.evaluate(() => { window.__edits = []; window.addEventListener("message", (e) => { if (e.data && e.data.type === "cardcomp-log-edit") window.__edits.push(e.data); }); dashOpen(true); });
+  await ap.waitForTimeout(150); await ap.click("#dash .dadd"); await ap.waitForTimeout(200);
+  await ap.fill("#q", "sylveon 040/131"); await ap.press("#q", "Enter"); await ap.waitForTimeout(400);
+  await ap.click('#results .card[data-id="sv8pt5-40"] .row'); await ap.waitForTimeout(500);
+  await ap.click('#results .card[data-id="sv8pt5-40"] .pickrow button[data-pc="LP"]'); await ap.waitForTimeout(300);
+  const fx = await ap.evaluate(() => ({ row: loadLots().find((r) => r.s === "sellerB"), ed: window.__edits[0], dash: DASH.on, bar: document.querySelector("#pickbar").innerText }));
+  ok(fx.row && fx.row.n === "Sylveon" && fx.row.c === "LP" && fx.row.lab === "fixed" && fx.row.m > 0 && fx.ed && fx.ed.key.seller === "sellerB" && fx.ed.card.label === "fixed" && fx.dash && /Added Sylveon LP/.test(fx.bar),
+    "win without a card: + card, search, open, tap LP -> stats row and log edit (" + (fx.row && fx.row.n + " " + fx.row.c + " $" + fx.row.m) + ")");
+  await ap.evaluate(() => dashOpen(false));
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);

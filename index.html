@@ -113,6 +113,11 @@
   #lotstats .lstab tbody tr{cursor:pointer}
   #lotstats .lstab tr.pick td{background:rgba(255,107,107,.08)}
   #lotstats .lstab td.lsdel{width:1%;padding:0 2px;text-align:right}
+  #lotstats .lsaddb{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 9px;cursor:pointer;white-space:nowrap}
+  #pickbar{display:none;position:sticky;top:0;z-index:20;margin:0 0 10px;padding:10px 12px;border:1px solid var(--gold);border-left-width:4px;border-radius:10px;background:var(--panel);font-size:13px;line-height:1.45;color:var(--dim)}
+  #pickbar b{color:var(--ink)} #pickbar button{background:none;border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;margin-left:6px}
+  .pickrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:9px 10px;border:1px dashed var(--gold);border-radius:9px;font-size:12.5px;color:var(--dim)}
+  .pickrow b{color:var(--ink)} .pickrow button{background:rgba(245,179,1,.14);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-weight:700;font-size:13px;min-width:48px;padding:9px 10px;cursor:pointer}
   #lotstats .lsdelb{background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 9px;cursor:pointer;white-space:nowrap}
   #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -334,6 +339,7 @@
   <div id="read"></div>
   <div id="status"></div>
   <div id="wnstat" style="display:none;font-size:11px;color:var(--faint);margin:2px 0 4px"></div>
+  <div id="pickbar"></div>
   <div id="results"></div>
 </div>
 <div id="cart" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--panel);border-top:1px solid var(--gold);padding:10px 16px;max-width:680px;margin:0 auto">
@@ -2968,6 +2974,7 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .note li{padding:7px 0;border-bottom:1px solid var(--line);line-height:1.45}
   #dash .note li b{color:var(--ink)}
   #dash .pos{color:var(--green)} #dash .neg{color:var(--red)} #dash .mut{color:var(--faint)}
+  #dash .dadd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
   #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
   @media (max-width:640px){ #dash .d2{grid-template-columns:1fr} #dash .dv{font-size:22px} #dash .hide-s{display:none} }
 `; document.head.appendChild(st); })();
@@ -3071,6 +3078,7 @@ function paintDash(){
     <div class="scroll"><table class="dtab"><thead><tr><th>Seller</th><th class="hide-s">Streams</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th><th title="median sale price as a share of market, over lots with a card">Sells at</th><th class="hide-s" title="lots you put a max on that you won">Your bids won</th></tr></thead><tbody>${sHtml}</tbody></table></div>
     <h3>By day</h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
+    ${S.unl?`<h3>Wins without a card<span>add the card so net and margin count them</span></h3>${S.wins.filter(r=>!(r.m>0)).slice().sort((a,b)=>b.at-a.at).map(r=>`<div class="buy"><div style="min-width:0"><div class="n">$${r.f} win · ${escH(r.s)}</div><div class="m">${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</div></div><div class="r"><button class="dadd" data-k="${escH(r.k||"")}">+ card</button></div></div>`).join("")}`:""}
     ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
     <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
   </div>`;
@@ -3081,6 +3089,7 @@ function dashWire(el){
   el.querySelectorAll("tr[data-s]").forEach(t=>t.onclick=()=>{ DASH.seller=t.dataset.s; paintDash(); el.scrollTop=0; });
   const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
+  el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
 window.addEventListener("hashchange", ()=>{ if(location.hash==="#dash" && !DASH.on && window.__ready) dashOpen(true); });
@@ -3153,15 +3162,68 @@ let LOT_PICK=null;   // stats table: the row tapped to show its ✕ (one-off rem
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null, pick=LOT_PICK!=null && LOT_PICK===r.at;
-    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td><td class="lsdel">${pick?`<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button>`:""}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td><td class="lsdel">${pick?`${r.me && !r.n?`<button class="lsaddb" title="search the card you won and tap its condition">+ card</button> `:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button>`:""}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
   el.querySelectorAll(".lstab tbody tr").forEach(tr=>tr.onclick=(e)=>{
     e.stopPropagation(); const at=+tr.dataset.at;
     if(e.target.closest(".lsdelb")){ removeLot(at); return; }
+    if(e.target.closest(".lsaddb")){ const r=loadLots().find(x=>x.at===at); if(r) pickFor(r, "stats"); return; }
     LOT_PICK = LOT_PICK===at ? null : at; paintLotStats();
   });
 }
+// Add the card to a past win (Derek, 2026-10-20: wins where no card was registered). "+ card" on a win (stats table,
+// dashboard) starts it: search as usual, open the card, tap its condition. The lot gets the card at today's price
+// (label "fixed"), in this browser's stats and in the private log, so the dashboard and haul count it.
+let PICK=null, PICK_MSG="", PICK_MSG_T=null;
+function pickFor(r, from){
+  const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
+  PICK={ k:r.k, s:r.s, at:at||r.at, startedAt:st===""||st==null?null:+st, f:r.f, from };
+  PICK_MSG=""; if(DASH.on) dashOpen(false); LOTSTATS_OPEN=false; paintLot(); paintLotStats();
+  document.querySelectorAll("#results .card.open .detail").forEach(det=>{ const c=CARDS.find(x=>x.id===det.closest(".card").dataset.id); if(c && !det.querySelector(".pickrow")) addPickRow(det, c); });
+  paintPick(); const q=$("#q"); if(q){ q.focus(); q.select(); }
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+function paintPick(){
+  const el=$("#pickbar"); if(!el) return;
+  if(!PICK && !PICK_MSG){ el.style.display="none"; return; }
+  el.style.display="block";
+  if(PICK){
+    const when=new Date(PICK.at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+    el.innerHTML=`<b>Adding the card to your $${PICK.f} win</b> (${escH(PICK.s)}, ${when}). Search it, open it, tap its condition.<button class="pickx">cancel</button>`;
+    el.querySelector(".pickx").onclick=()=>{ PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove()); paintPick(); };
+  } else el.innerHTML=PICK_MSG;
+}
+function addPickRow(host, card){
+  if(!PICK || !card || host.querySelector(".pickrow")) return;
+  const conds=card.sealed?["sealed"]:CONDS, row=document.createElement("div"); row.className="pickrow";
+  row.innerHTML=`<span>use for your <b>$${PICK.f}</b> win, at the printing picked below:</span>`+conds.map(c=>`<button data-pc="${c}">${c==="sealed"?"this one":c}</button>`).join("");
+  row.querySelectorAll("button").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const pk=host.querySelector(".pchip.on"); assignPick(card, b.dataset.pc, pk?pk.dataset.k:topPrint(card)); });
+  host.prepend(row);
+}
+function assignPick(card, cond, k){
+  const P=PICK; if(!P) return;
+  const v=card.px&&card.px[k], nm=v?((v.m!=null?v.m:v.l)||0):0, condM=card.sealed||cond==="sealed"?nm:nm*condMult(cond, card.y, nm);
+  const snap=Object.assign(cardSnap(card, cond, k, condM), { label:"fixed", fixedAt:Date.now() });
+  try{
+    const rows=loadLots(), r=rows.find(x=>x.k===P.k);
+    if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
+  }catch(_){ }
+  PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
+  const net=condM>0?netProceeds(listSale(condM))-P.f:null;
+  PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to your $${P.f} win${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
+  if(WN_EXT && P.startedAt!=null) extPost({type:"cardcomp-log-edit", key:{seller:P.s, startedAt:P.startedAt, at:P.at}, card:snap});
+  clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
+  paintPick();
+  try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
+  paintLot();
+  if(P.from==="dash") dashOpen(true); else if(P.from==="stats"){ LOTSTATS_OPEN=true; paintLotStats(); }
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-log-edit-ack" || !lotFromExt(e)) return;
+  const st=document.querySelector("#pickbar .pickst"); if(st) st.textContent=d.ok?"· saved to your log ✓":"· not saved to the log: "+(d.why||"error");
+  if(PICK_MSG) PICK_MSG=PICK_MSG.replace(/<span class="pickst">.*?<\/span>/, `<span class="pickst">${d.ok?"· saved to your log ✓":"· not saved to the log: "+escH(d.why||"error")}</span>`);
+});
 function removeLot(at){
   try{ localStorage.setItem(LOTS_KEY, JSON.stringify(loadLots().filter(r=>r.at!==at))); }catch(_){ }
   LOT_PICK=null;
@@ -3343,6 +3405,7 @@ async function loadPrices(card, host){
     renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
   }
   addDetailFlags(host, card);
+  if(PICK) addPickRow(host, card);
 }
 function renderPrices(host, data, prices, src){
   const mf=getNum("tgtmargin",10)/100, td=getNum("tgtprofit",0);
@@ -4208,7 +4271,7 @@ function render(res, literal, newestFirst){
     // Opening a tile expanded it in place, so a card in the second row put the bid table below the
     // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
     // Anchoring on the card's top is height-independent, so it works before the detail has painted.
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } else if(open && PICK) addPickRow(det, r); if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.

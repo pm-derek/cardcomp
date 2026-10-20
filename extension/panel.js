@@ -6,7 +6,7 @@ window.addEventListener("message", (e) => {
   if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }   // RECOG app -> extension
   if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
   if (d.type === "cardcomp-snapshot") { chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
-  if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read") {
+  if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read" || d.type === "cardcomp-log-edit") {
     chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: d.type + "-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*"));
     return;
   }

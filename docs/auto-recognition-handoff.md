@@ -434,3 +434,13 @@ Each logged lot now carries the auto reading (`recog`), so scoring runs on the p
 `node scripts/recog-score-log.js <cardcomp-data dir> [since]` (strong wrong, right / listed / not listed, printing read,
 every miss with what was read, what was suggested with its rarity, and the card Derek picked). No uploads, no hand
 review: lots where he tapped or opened a card score themselves; the rest are optional and listed last on the results page.
+
+## pullsafaritcg, 2026-10-20 (cheap JP Art Rares, 1080p)
+
+13 lots read (Sonnet), 5 with an opened card: 0 right. Numbers were read on 2 of 13 (cards held far / in toploaders),
+so matches leaned on rarity, and the rarity check was broken: "Illustration Rare" contained the word "rare", so plain
+Rares passed as rarity matches and beat the Art Rares (Ninjask picked its Rare; Sunflora narrowed to two Rares). Fixed:
+replayed, Sunflora and Ninjask now pick the Art Rare (Sunflora matches the card Derek opened). Still open: language
+(Rowlet read as JP, Derek opened the EN Perfect Order twin), and numbers on far cards. Opened cards are weak truth (one
+"Budew" lot was Derek looking up the Braviary he had just won).
+Speed: streamed replies fill the search once name / number are written (about 0.5-0.8 s sooner); short keys trim output.

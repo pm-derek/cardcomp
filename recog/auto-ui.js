@@ -155,7 +155,25 @@
     if (document.activeElement === q) q.select();
   }
 
+  // Early reading (streamed: name, language, number, total; rarity / stamp / set / finish still being written): fill
+  // the search now, mark the best guess when the full reply lands. Never over a lot Derek is working, never logged.
+  function onPartial(d) {
+    const at = d.capAt || d.key || 0; if (at < LATEST) return;
+    const ak = ADOPT[d.key] || d.key, a = AUTO[ak];
+    if (!d.manual && a && a.best) return;   // this lot already shows a full reading
+    const r = d.read; if (!r || !r.name || typeof window.autoMatch !== "function") return;
+    if (/^(zh|ko|other)/.test(String(r.language || ""))) return;   // the foreign warning waits for the full reply
+    if (!d.manual && (engaged() || TOUCH > at - 1500)) return;
+    const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
+    if (!m.cards.length) return;
+    LATEST = Math.max(LATEST, at);
+    fill(m, r);
+    MSG = `${d.pre ? "before start: " : d.manual ? "read now: " : ""}reading <b>${esc(queryText(r))}</b> <span style="color:var(--faint)">&middot; ${((d.ms || 0) / 1000).toFixed(1)}s, rest coming</span>`;
+    paint();
+  }
+
   function onAuto(d) {
+    if (d.partial) { onPartial(d); return; }
     if (d.manual) { READING = 0; paintRead(d.error ? "bad" : ""); }   // a read you asked for came back (any outcome)
     const at = d.capAt || d.key || 0;   // capture time: a lot's key can be older than a pre-start reading
     LATEST = Math.max(LATEST, at);

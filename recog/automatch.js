@@ -142,7 +142,9 @@
     const isNum = c => num && depad(c.num) === num;
     const isNear = c => num && /^\d+$/.test(num) && /^\d+$/.test(depad(c.num)) && Math.abs(+depad(c.num) - +num) === 1;
     const tierOK = c => rt && cardTier(c.r) === rt;
-    const rarityOK = c => { const r = norm(c.r); return rq && r && r.length > 3 && (rq.includes(r) || r === rq); };
+    // Exact rarity, or a longer rarity name inside the read of the same tier ("double rare" in "Double Rare holo").
+    // Not a bare word: "illustration rare" contains "rare", which once picked a plain Rare Ninjask over its Art Rare (2026-10-20).
+    const rarityOK = c => { const r = norm(c.r); return !!(rq && r && (r === rq || (r.length > 4 && rq.includes(r) && cardTier(c.r) === rt))); };
     const setExact = c => setQ.length > 2 && norm(c.s) === setQ;
     const setNear = c => setQ.length > 2 && (norm(c.s).includes(setQ) || setQ.includes(norm(c.s)));
     const stampOK = c => !!(stampF && stampF(c));
