@@ -246,7 +246,9 @@ the picture tag"): the line shows "picture: matching..." while it runs, "no repl
 "needs extension 0.7" when the state carries no `ver` (extension state reports its version since 0.7.1). First live
 bug: the relays merged the reply over `{key, n}` and the reply carried `n` = candidate count, so every ranking was
 dropped as another reading's; now the reading's key / n are applied last, the reply carries `cands` instead, and the
-app matches on key (n only for replies with `cands`). recog-check 4b runs the real relays.
+app matches on key (n only for replies with `cands`). recog-check 4b runs the real relays. Mark colors (Derek): gold border = the auto
+read's pick, blue = the picture alone ("picture"), green = both agree ("auto + picture"). The line's "best guess X"
+used to read "no match" whenever no printing was read (branch order in `describe`); fixed.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

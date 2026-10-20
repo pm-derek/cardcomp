@@ -31,7 +31,9 @@
     "#autoline a{color:var(--blue);cursor:pointer}#autoline .bad{color:var(--red)}#autoline .gold{color:var(--gold)}" +
     ".autobadge{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:700;vertical-align:middle}" +
     ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}" +
-    ".autobadge.pic{background:rgba(245,179,1,.18);border:1px solid var(--gold);color:var(--gold)}";
+    // the mark says who picked (Derek, 2026-10-20): gold = the auto read, blue = the picture alone, green = both agree
+    ".card.autosug{box-shadow:0 0 0 1px var(--gold)}.card.autosug.bypic{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}.card.autosug.byboth{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}" +
+    ".autobadge.pic{border:1px solid var(--blue);color:var(--blue)}.autobadge.both{background:var(--green);color:#000}";
   document.head.appendChild(css);
 
   function lineEl() {
@@ -62,7 +64,11 @@
     const read = esc(queryText(r)) + (r.rarity ? ` <span style="color:var(--faint)">${esc(r.rarity)}${r.stamp ? " · " + esc(r.stamp) : ""}</span>` : "");
     const sug = m.suggestion && m.cards.find((c) => c.id === m.suggestion);
     let what;
-    if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
+    // (until 2026-10-20 the foreign / note branch hung off the printing check, so a pick without a printing read showed
+    // "no match": Derek's Mewtwo V SWSH229 said "no match" while marked "auto + picture")
+    if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
+    else if (!sug) what = esc(m.note || "no match");
+    else if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
     if (sug && m.printing) {   // the finish read names a printing; warn when the collapsed bid is priced from another one
       const c = typeof CARDS !== "undefined" && CARDS.find((x) => x.id === sug.id), top = c && typeof topPrint === "function" ? topPrint(c) : "";
@@ -70,8 +76,6 @@
       what += ` &middot; <b>${esc(m.printing)}</b>`;
       if (top && top !== m.printing) what += ` <span class="bad">&middot; tile bid is ${esc(top)} $${pm(top).toFixed(2)}, read ${esc(m.printing)} $${pm(m.printing).toFixed(2)}: open the card</span>`;
     }
-    else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
-    else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
     return `${d.pre ? "before start: " : d.manual ? "read now: " : ""}${d.zoom ? "zoomed " + d.zoom + "x: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
@@ -153,9 +157,10 @@
       const el = document.querySelector(`#results .card[data-id="${CSS.escape(m.suggestion)}"]`);
       if (el) {
         el.classList.add("autosug");
+        if (m.pic === "pick") el.classList.add("bypic"); else if (m.pic === "agree") el.classList.add("byboth");
         const nm = el.querySelector(".nm");
         if (nm) nm.insertAdjacentHTML("beforeend", m.strength === "strong" ? '<span class="autobadge strong">&#10003; auto</span>' :
-          m.pic === "agree" ? '<span class="autobadge pic">auto + picture</span>' : m.pic === "pick" ? '<span class="autobadge pic">picture</span>' : '<span class="autobadge weak">auto?</span>');
+          m.pic === "agree" ? '<span class="autobadge both">auto + picture</span>' : m.pic === "pick" ? '<span class="autobadge pic">picture</span>' : '<span class="autobadge weak">auto?</span>');
       }
     }
     if (document.activeElement === q) q.select();

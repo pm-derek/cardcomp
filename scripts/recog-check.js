@@ -473,7 +473,7 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
   await ap.waitForTimeout(300);
   let st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
-  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /Fomantis/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
+  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /✓ Fomantis/.test(st.line) && !/no match/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
   // early (streamed) reading for the next lot: fills now, nothing logged; the full reply then marks the best guess
   await lotEnd(); const pk = Date.now();
   const nMatch = (await posted()).filter((m) => m.type === "cardcomp-auto-match").length;
@@ -640,8 +640,9 @@ async function appPage(browser, base, blockRecog) {
   const want = ask.cands[7].id;
   // as extension 0.7.0-0.7.1 delivered it: the reply's own n (candidate count) over the reading's n
   await send(Object.assign(ackFor(pk2, want, ask.cands[0].id, true), { n: ask.cands.length })); await ap.waitForTimeout(250);
-  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
-  ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
+  st = await ap.evaluate(() => { const c = document.querySelector("#results .card"); return { first: (c || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent, blue: c && c.classList.contains("bypic") && getComputedStyle(c).borderTopColor === "rgb(109, 181, 255)" }; });
+  ok(st.blue, "picture-only pick: blue border");
+  ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line) && /best guess Charizard/.test(st.line) && !/no match/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
   // pointer over the results: nothing moves, "show" is offered
   await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const pk3 = Date.now() + 21000; await send(rdChar(pk3)); await ap.waitForTimeout(300);
@@ -660,6 +661,18 @@ async function appPage(browser, base, blockRecog) {
   await send(ackFor(pk4, ask4.cands[5].id, ask4.cands[6].id, false)); await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ first: document.querySelector("#results .card").dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent || "", line: document.querySelector("#autoline").textContent }));
   ok(st.first === ask4.cands[5].id && st.badge !== "picture" && /picture unsure/.test(st.line), "picture match unsure: sorted by likeness, no 'picture' mark");
+  // the picture agrees with the auto pick: green border, "auto + picture"; the auto pick alone stays gold
+  await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
+  const pk5 = Date.now() + 23000;
+  await send({ type: "cardcomp-auto", key: pk5, capAt: pk5, n: 1, manual: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(300);
+  const sug5 = ((await posted()).find((m) => m.type === "cardcomp-auto-match") || {}).suggestion, ask5 = (await posted()).find((m) => m.type === "cardcomp-auto-img");
+  const gold = await ap.evaluate(() => { const c = document.querySelector("#results .card.autosug"); return c && getComputedStyle(c).borderTopColor; });
+  await send({ type: "cardcomp-auto-img-ack", key: pk5, n: 1, ok: true, cands: 3, ranked: [{ id: sug5, s: 0.7 }], v: { top: sug5, s: 0.7, group: [sug5], next: null, ns: null, sure: true }, pics: 3, ms: 90, box: true });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => { const c = document.querySelector("#results .card.autosug"); return { id: c && c.dataset.id, both: c && c.classList.contains("byboth"), color: c && getComputedStyle(c).borderTopColor, badge: c && (c.querySelector(".autobadge") || {}).textContent }; });
+  ok(sug5 && ask5 && gold === "rgb(245, 179, 1)" && st.id === sug5 && st.both && st.color === "rgb(95, 214, 160)" && st.badge === "auto + picture", "auto pick alone: gold border; picture agrees: green border, 'auto + picture' (" + JSON.stringify(st) + ")");
+  await ap.screenshot({ path: path.join(OUT, "recog-pic-both.png") });
   await ap.click('#automodes span[data-m="manual"]'); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.mode === "manual"), "mode switch posts 'manual' to the extension");
   await send({ type: "cardcomp-auto-state", on: true, mode: "manual", model: "sonnet", hasKey: true }); await ap.waitForTimeout(100);
