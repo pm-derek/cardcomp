@@ -459,3 +459,19 @@ right-click menu and its `contextMenus` permission, the results page's capture-c
 `scripts/recog-test.js` (the one-off screenshot harness above; in git history if a model comparison is ever re-run).
 Ctrl+Shift+Y now only means read now. The capture tests in recog-check.js go through read now instead.
 The watcher status is sent to CardComp when its words change (or every 20 s), not every 2 s.
+
+## Picture match (2026-10-20)
+
+Derek: "sometimes there are just too many results and it takes extra brainpower to find the right match", and for
+scouting other streams a cheap model is enough if the version can be picked another way. From the log (31 lots with a
+tapped / opened card): text pick right 10, card listed but not picked 8, wrong pick with the card listed 2, wrong 5,
+not listed 6. The name is nearly always right; the version is what fails (numbers unreadable on 720p / far cameras,
+Haiku invents numbers, set guesses). Same-name cards mostly differ in art, and art is what moves the price.
+
+Built: `extension/recog/imgmatch.js` (template correlation at 24 x 33 in opponent colors, search inside the model's box),
+`picRank` in recog-bg.js, `askPic` / `onPic` in auto-ui.js, a replay button on the results page. Synthetic check on real
+720p stream frames (a card-shaped patch, color shifted and noisy, among 39 decoys from the same stream): 10 of 10 with
+the box, 9 of 10 on the whole frame, ~0.4 s for 40 candidates. Not yet measured on real card photos vs stream frames:
+the sandbox has no route to the image hosts. Next: Derek runs the replay, pastes the rows, thresholds get tuned; then
+scout mode (Haiku + picture) for 2-3 background stream windows.
+

@@ -151,8 +151,9 @@
     const stampRank = c => { for (let i = 0; i < stampTs.length; i++) if (stampTs[i](c)) return stampTs.length - i; return 0; };
     const score = c => (isNum(c) ? 100 : 0) + (isNear(c) ? 50 : 0) + (stampOK(c) ? 30 + stampRank(c) : 0) + (setExact(c) ? 20 : setNear(c) ? 8 : 0) +
       (rarityOK(c) ? 12 : 0) + (tierOK(c) ? 10 : 0) + (totalOK(c) ? 4 : 0);
-    const cards = nm.cards.slice().sort((a, b) => (score(b) - score(a)) || ((b.y || 0) - (a.y || 0)) || ((b.o || 0) - (a.o || 0))).slice(0, 16);
-    const out = (kind, strength, sug, note) => ({ kind, strength, suggestion: sug ? sug.id : null, cards, note: note || "", why, lang });
+    const sorted = nm.cards.slice().sort((a, b) => (score(b) - score(a)) || ((b.y || 0) - (a.y || 0)) || ((b.o || 0) - (a.o || 0)));
+    const cards = sorted.slice(0, 16), pool = sorted.slice(0, 80);   // pool: every printing of the name, for the picture match
+    const out = (kind, strength, sug, note) => ({ kind, strength, suggestion: sug ? sug.id : null, cards, pool, note: note || "", why, lang });
     const nameSure = nm.level <= 2;
     // Narrow a pool by the clues in order (stamp, set, exact rarity, rarity tier); each step only if it keeps someone.
     const narrow = (pool) => {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CardComp to Whatnot",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Tap a bid in CardComp and it lands in Whatnot's Custom bid box. You still place the bid.",
   "permissions": [
     "sidePanel",
@@ -13,7 +13,9 @@
     "https://www.tcgplayer.com/*",
     "https://pm-derek.github.io/*",
     "https://api.github.com/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://tcgplayer-cdn.tcgplayer.com/*",
+    "https://images.pokemontcg.io/*"
   ],
   "options_page": "options.html",
   "background": {

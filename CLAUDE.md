@@ -227,6 +227,21 @@ scores it against the tapped / opened card. The results page shows rarity on the
 lots with no card picked are optional and listed last; "Export (small)" drops full frames (one 320 px picture per lot).
 `node scripts/strip-recog.js` removes all of it. `node scripts/recog-check.js` runs fixtures (20 confirmed frames), a
 258-search regression, the strip test, capture tests and the auto flow on a mock Whatnot page with a mocked API.
+Picture match (Derek, 2026-10-20: too many results to scan by eye; text pick right on 10 of 31 logged lots, another 10
+had the card listed but not picked): after each full reading that is not an exact strong number match, `auto-ui.js`
+`askPic` sends every printing of the name read (`m.pool`, up to 80) as `cardcomp-auto-img` (ack relay in panel.js /
+cardcomp.js); `recog-bg.js` `picRank` ranks the frame that was read (`PIC_FRAMES`, kept 5 min) against each one's
+TCGplayer photo (`product/<pid>_200w.jpg`, templates cached in IndexedDB `cardcomp-pics`) with `extension/recog/imgmatch.js`:
+24 x 33 opponent-color cells, normalized correlation over small shifts and 4 scales inside the model's card box (whole
+frame when no box, slower and less sure). Same-art printings (sim >= 0.9: holo / reverse, 1st Ed / Unlimited, identical
+reprints) form one group ordered by the text clues; ids sharing one photo ("image coming soon") are dropped. `onPic`
+reorders the results (top group first, then by likeness), marks a clear winner "picture" (or "auto + picture" when it
+agrees with the text pick); a number match stays the pick and a disagreeing picture is only named; never reorders after
+the pointer touched or hovered the results (offers "show"). Thresholds in `IM.verdict` (top >= 0.45, 0.06 over the next
+different picture) are first guesses: the results page button "Test picture match on saved lots" replays saved frames
+against the card Derek bid on or opened, and "Copy picture results" gives the rows to tune from; `rec.recog.pic` rides on
+the log row and `recog-score-log.js` scores it. Host permissions for tcgplayer-cdn.tcgplayer.com / images.pokemontcg.io
+(the cloud sandbox cannot reach them, so tuning happens from Derek's replay).
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

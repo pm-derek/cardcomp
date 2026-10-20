@@ -16,7 +16,7 @@ const DRY = process.argv.includes("--dry");
 const DIRS = ["recog", "extension/recog"];
 const FILES = ["scripts/recog-score-log.js", "scripts/recog-check.js", "scripts/recog-mock.html", "scripts/strip-recog.js"];
 const MANIFEST_PERMS = ["activeTab"];                 // permissions added only for the experiment
-const MANIFEST_HOSTS = ["https://api.anthropic.com/*"];
+const MANIFEST_HOSTS = ["https://api.anthropic.com/*", "https://tcgplayer-cdn.tcgplayer.com/*", "https://images.pokemontcg.io/*"];
 const SKIP = new Set([".git", "node_modules", "docs"]);
 const log = [];
 const rel = (p) => path.relative(ROOT, p);

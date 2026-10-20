@@ -17,6 +17,11 @@ console.log(`${rows.length} lots logged, ${read.length} with an auto reading, ${
 console.log(`strong wrong: ${strongWrong.length} of ${strong.length}`);
 console.log(Object.entries(by).map(([k, n]) => `${k} ${n} (${pct(n, truth.length)})`).join(" · "));
 console.log(`printing read right: ${pr.filter((r) => r.recog.printing === r.card.printing).length} of ${pr.length}`);
+// picture match (extension 0.7+): did the picture's top group hold the card, and was "sure" ever wrong
+const pk = truth.filter((r) => r.recog.pic && r.recog.pic.top), inG = (r) => (r.recog.pic.group || [r.recog.pic.top]).includes(r.card.id);
+const pkSure = pk.filter((r) => r.recog.pic.sure);
+console.log(`picture: your card on top ${pk.filter(inG).length} of ${pk.length} (${pct(pk.filter(inG).length, pk.length)}) · sure ${pkSure.length}, wrong ${pkSure.filter((r) => !inG(r)).length} · ` +
+  `lots where the text pick missed and the picture got it: ${pk.filter((r) => v(r) !== "right" && inG(r)).length}`);
 const models = {}; read.forEach((r) => { models[r.recog.model] = (models[r.recog.model] || 0) + 1; }); console.log("models: " + JSON.stringify(models));
 console.log("\nmisses:");
 truth.filter((r) => v(r) !== "right").forEach((r) => { const g = r.recog, d = g.read;
