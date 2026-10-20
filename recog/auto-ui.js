@@ -245,7 +245,9 @@
   const cardTxt = (c) => c ? `${esc(c.n)} &middot; ${esc(c.s)} #${esc(c.num)}` : "";
   function onPic(d) {
     const ak = ADOPT[d.key] || d.key, a = AUTO[ak];
-    if (!a || !a.best || !a.picAsk || a.picAsk.key !== d.key || a.picAsk.n !== (d.n || 1)) return;
+    // matched on the reading's key: extension 0.7.0-0.7.1 replied with n = the candidate count, which dropped every
+    // ranking (Derek, live 2026-10-20: "no reply from the extension"); n is only checked on replies from 0.7.2+ (they carry cands)
+    if (!a || !a.best || !a.picAsk || a.picAsk.key !== d.key || (d.cands != null && a.picAsk.n !== (d.n || 1))) return;
     const { m, r } = a.best, bd = a.best.d;
     if (!d.ok) { a.pic = { err: d.why || "failed" }; MSG = describe(m, r, bd) + ` <span style="color:var(--faint)">&middot; picture: ${esc(d.why || "failed")}</span>`; paint(); return; }
     const v = d.v, S = new Map(d.ranked.map((x) => [x.id, x.s])), grp = new Set(v.group), pool = m.pool || m.cards;

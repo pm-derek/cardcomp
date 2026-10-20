@@ -14,7 +14,7 @@ window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
   if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { send(d); return; }   // RECOG app -> extension
-  if (d.type === "cardcomp-auto-img") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n, q: d.q }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }   // RECOG picture match
+  if (d.type === "cardcomp-auto-img") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r, { type: "cardcomp-auto-img-ack", key: d.key, n: d.n }), "*")); return; }   // RECOG picture match (the reading's key / n win over the reply's fields)
   if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { send(d); return; }
   if (d.type === "cardcomp-snapshot") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
   if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read" || d.type === "cardcomp-log-edit") {

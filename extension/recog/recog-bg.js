@@ -409,7 +409,7 @@ async function picRank(msg) {
   if (!usable.length) return { ok: false, why: "no pictures" };
   const ranked = IM.match(f.px, f.box, usable);
   const v = IM.verdict(ranked, usable);
-  const out = { ok: true, ranked: ranked.slice(0, 40), v, box: !!f.box, n: cands.length, pics: usable.length, ms: Date.now() - t0, dl };
+  const out = { ok: true, ranked: ranked.slice(0, 40), v, box: !!f.box, cands: cands.length, pics: usable.length, ms: Date.now() - t0, dl };   // no "n" / "key": the relays put the reading's own
   recogLot(msg.key, (rec) => { (rec.pics = rec.pics || []).push({ n: msg.n || 1, at: Date.now(), ms: out.ms, dl, box: out.box, cands: cands.length, pics: usable.length, top: v.top, s: v.s, sure: v.sure, group: v.group.slice(0, 6), next: v.next, ns: v.ns, ranked: ranked.slice(0, 8) }); });
   return out;
 }
