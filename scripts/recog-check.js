@@ -618,6 +618,17 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(200);
   ok(/Changing the card on your \$21 win \(now Sylveon\)/.test(await ap.textContent("#pickbar")), "change: pick mode names the card it replaces");
   await ap.click("#pickbar .pickx"); await ap.evaluate(() => dashOpen(false));
+  // buyers: 3 known-card wins at ~80% of market -> sharp; in the room and leading -> the strip says so
+  const by = await ap.evaluate(() => {
+    const t = Date.now() - 7200e3, rows = [0, 1, 2].map((i) => lotRow({ seller: "s9", startedAt: t + i * 60000 - 20000, at: t + i * 60000, final: 8, bids: 6, winner: "sharpie", me: false, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 10, label: "view" } }));
+    storeLotRows(rows); const b = buyerProfiles().get("sharpie"); return b && b.tags.join(",");
+  });
+  await send({ type: "cardcomp-lot-end", rec: { title: "#90", final: 2, bids: 2, startedAt: Date.now() - 20000, at: Date.now(), seller: "s9", room: { sharpie: { ago: 2 } }, leaders: [] } });
+  await send({ type: "cardcomp-lot", title: "#91", cur: 3, bids: 2, timer: "00:10", lead: "sharpie", seller: "s9", ended: false, lotStart: Date.now() });
+  await ap.waitForTimeout(200);
+  const strip = await ap.evaluate(() => document.querySelector("#lotstrip").innerText.replace(/\s+/g, " "));
+  ok(by === "sharp" && /sharp buyer leads: sharpie/.test(strip) && /here: sharp 1/.test(strip), "buyers: 3 wins at 80% of market tag 'sharp'; in the room and leading, the strip says so (" + strip.slice(0, 80) + ")");
+  await send({ type: "cardcomp-lot-end", rec: { title: "#91", final: 3, bids: 2, startedAt: Date.now() - 20000, at: Date.now(), seller: "s9", room: {} } }); await ap.waitForTimeout(2800);
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);

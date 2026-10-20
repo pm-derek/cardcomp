@@ -1867,6 +1867,46 @@ function viewLabel(from, to, sellerCond){   // snapshot of the last card opened 
   s.label="view"; s.viewAt=v.at; s.condFrom=sellerCond?"seller":"assumed NM";
   return s;
 }
+// ---- Buyers (Derek, 2026-10-20: "who is sharp, alert me when sharp buyers are in a stream"). Profiles from every
+// logged lot (this browser's rows, synced from the private log): wins, wins on known cards and their median price
+// as a share of market, lots they took from a max you set. Tags need BUYER_MIN known-card wins:
+//   sharp = median <= 85% of market (knows values, stops in time), whale = median >= 105% (pays over market),
+//   rival = beat your max RIVAL_MIN+ times. Presence: the room list each lot end carries (seen in the last 30 min)
+//   plus whoever leads now.
+const BUYER_MIN=3, SHARP_MAX=0.85, WHALE_MIN=1.05, RIVAL_MIN=3;
+let BUYERS=null, BUYERS_AT=0, ROOM={seller:"", users:new Map()};
+function buyerProfiles(){
+  if(BUYERS && Date.now()-BUYERS_AT<60000) return BUYERS;
+  const M=new Map();
+  for(const r of loadLots()){
+    const w=r.w; if(!w || r.me || w==="me" || w==="?" || w===r.s) continue;
+    const u=M.get(w)||{wins:0, lab:0, pcts:[], beat:0, sellers:new Set()};
+    u.wins++; u.sellers.add(r.s);
+    if(r.m>0 && r.f>0){ u.lab++; u.pcts.push(r.f/r.m); }
+    if(Math.max(r.mx||0, r.pm||0)>0) u.beat++;
+    M.set(w, u);
+  }
+  for(const u of M.values()){
+    u.med=med(u.pcts); u.tags=[];
+    if(u.lab>=BUYER_MIN && u.med<=SHARP_MAX) u.tags.push("sharp");
+    if(u.lab>=BUYER_MIN && u.med>=WHALE_MIN) u.tags.push("whale");
+    if(u.beat>=RIVAL_MIN) u.tags.push("rival");
+    delete u.pcts;
+  }
+  BUYERS=M; BUYERS_AT=Date.now(); return M;
+}
+function roomSee(seller, users){   // users: [[name, msAgo]]
+  if(seller && ROOM.seller!==seller) ROOM={seller, users:new Map()};
+  const now=Date.now();
+  for(const [u, ago] of users) if(u && u!==seller){ const t=now-(ago||0); if(t>(ROOM.users.get(u)||0)) ROOM.users.set(u, t); }
+}
+function taggedHere(){   // tagged buyers seen in this stream in the last 30 min, sharp first
+  const B=buyerProfiles(), cut=Date.now()-30*60000, out=[];
+  for(const [u, t] of ROOM.users){ const b=B.get(u); if(t>=cut && b && b.tags.length) out.push(Object.assign({u}, b)); }
+  return out.sort((a,b)=>(b.tags.includes("sharp")-a.tags.includes("sharp")) || (b.lab-a.lab));
+}
+const TAG_COL={sharp:"var(--red)", rival:"var(--gold)", whale:"var(--blue)"};
+const buyerTxt=b=>`${b.u}: ${b.tags.join(", ")}${b.med!=null?`, wins at ${Math.round(b.med*100)}% of market`:""} (${b.lab} known wins)${b.beat?`, beat your max ${b.beat}x`:""}`;
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
@@ -1887,7 +1927,11 @@ function paintLot(){
   if(d.bids!=null) parts.push(`${d.bids} bids`);
   if(d.ship!=null) parts.push(`ship $${d.ship.toFixed(2)}`);
   if(d.ended){ const w=d.sold==="me"||d.me ? `<span style="color:var(--green)">you won</span>` : `sold${d.sold&&d.sold!=="?"?" to "+escH(d.sold).slice(0,14):""}`; parts.push(w); }
-  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
+  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`);
+  else if(d.lead){ const b=buyerProfiles().get(d.lead), tg=b&&b.tags.length?b.tags[0]:"";   // a tagged buyer leading: the price is probably near value (sharp) or past it (whale)
+    parts.push(tg ? `<span title="${escH(buyerTxt(Object.assign({u:d.lead}, b)))}" style="color:${TAG_COL[tg]}">⚠ ${tg} buyer leads: ${escH(d.lead).slice(0,14)}</span>` : `lead ${escH(d.lead).slice(0,14)}`); }
+  { const here=taggedHere(); if(here.length){ const n=t=>here.filter(b=>b.tags.includes(t)).length;
+    parts.push(`<span title="${escH(here.map(buyerTxt).join("\n"))}" style="color:var(--dim)">here: ${["sharp","rival","whale"].filter(n).map(t=>`<b style="color:${TAG_COL[t]}">${t} ${n(t)}</b>`).join(" · ")}</span>`); } }
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
@@ -1958,6 +2002,7 @@ function lotRow(rec){
     return row;
 }
 function storeLotRows(add){   // merge rows into this browser's stats by lot key
+  BUYERS=null;
   const cut=Date.now()-120*86400000;
   let rows=loadLots().filter(r=>r.at>=cut);
   const at=new Map(rows.map((r,i)=>[r.k,i]));
@@ -2039,6 +2084,7 @@ function paintLotStats(){
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
       <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
+    ${(()=>{ const here=seller===ROOM.seller?taggedHere():[]; return here.length?`<div class="lsx" style="color:var(--dim);margin:-4px 0 9px">In this stream: ${here.map(b=>`<b style="color:${TAG_COL[b.tags[0]]}">${escH(b.u)}</b> ${b.tags.join("/")}${b.med!=null?` ${Math.round(b.med*100)}%`:""}${b.beat?` · beat you ${b.beat}x`:""}`).join(" · ")}</div>`:""; })()}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
@@ -2196,10 +2242,14 @@ function paintDash(){
       <div><h3>${worst.some(r=>r.np-r.f<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
     <h3>Streamers<span>tap one to filter${DASH.seller?"":", best net first"}</span></h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Seller</th><th class="hide-s">Streams</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th><th title="median sale price as a share of market, over lots with a card">Sells at</th><th class="hide-s" title="lots you put a max on that you won">Your bids won</th></tr></thead><tbody>${sHtml}</tbody></table></div>
+    ${(()=>{ const B=[...buyerProfiles().entries()].filter(([u,b])=>!DASH.seller || b.sellers.has(DASH.seller)).map(([u,b])=>Object.assign({u},b)).filter(b=>b.lab>=1 || b.beat>=1)
+        .sort((a,b)=>(b.tags.length-a.tags.length) || (b.lab-a.lab) || (b.wins-a.wins)).slice(0,15);
+      return B.length?`<h3>Buyers<span>sharp: ${BUYER_MIN}+ known wins at ${Math.round(SHARP_MAX*100)}% of market or less · whale: ${Math.round(WHALE_MIN*100)}%+ · rival: beat your max ${RIVAL_MIN}+ times</span></h3>
+        <div class="scroll"><table class="dtab"><thead><tr><th>Buyer</th><th>Tag</th><th>Wins</th><th title="wins where the card is known">Known</th><th title="median price paid as a share of market">Pays</th><th>Beat you</th><th class="hide-s">Sellers</th></tr></thead><tbody>${B.map(b=>`<tr><td>${escH(b.u)}</td><td>${b.tags.map(t=>`<b style="color:${TAG_COL[t]}">${t}</b>`).join(" ")||'<span class="mut">–</span>'}</td><td>${b.wins}</td><td>${b.lab}</td><td>${b.med!=null?Math.round(b.med*100)+"%":"–"}</td><td>${b.beat||"–"}</td><td class="hide-s">${b.sellers.size}</td></tr>`).join("")}</tbody></table></div>`:""; })()}
     <h3>By day</h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
-    ${S.wins.length?`<h3>Your wins<span>${S.unl?S.unl+" without a card · ":""}change or clear a card that is wrong</span></h3>${S.wins.slice().sort((a,b)=>b.at-a.at).map(r=>{ const has=r.m>0||!!r.n;
-      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f} · ${has?escH(r.n||"?")+` <span class="mut">${escH(r.c||"")}${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}`:""}
+    ${S.wins.length?`<h3>Your wins<span>${S.unl?S.unl+" without a card · ":""}change or clear a card that is wrong</span></h3>${S.wins.slice().sort((a,b)=>b.at-a.at).slice(0, DASH.allWins?1e9:30).map(r=>{ const has=r.m>0||!!r.n;
+      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f} · ${has?escH(r.n||"?")+` <span class="mut">${escH(r.c||"")}${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
     ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
     <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
   </div>`;
@@ -2211,6 +2261,7 @@ function dashWire(el){
   const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
+  const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
   el.querySelectorAll(".dclr").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r && confirm(`Remove ${r.n||"the card"} from your $${r.f} win?`)) clearLotCard(r); });
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
@@ -2331,7 +2382,7 @@ function assignPick(card, cond, k){
     const rows=loadLots(), r=rows.find(x=>x.k===P.k);
     if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
   }catch(_){ }
-  PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
+  PICK=null; BUYERS=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
   const net=condM>0?netProceeds(listSale(condM))-P.f:null;
   PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to your $${P.f} win${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
   if(WN_EXT && P.startedAt!=null) extPost({type:"cardcomp-log-edit", key:{seller:P.s, startedAt:P.startedAt, at:P.at}, card:snap});
@@ -2342,6 +2393,7 @@ function assignPick(card, cond, k){
   if(P.from==="dash") dashOpen(true); else if(P.from==="stats"){ LOTSTATS_OPEN=true; paintLotStats(); }
 }
 function clearLotCard(r){   // a card added to the wrong win: back to "no card", here and in the log
+  BUYERS=null;
   try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n:"", c:"", lab:"", m:0, np:null, id:"", pr:"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
   const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
   PICK_MSG=`<b>Removed ${escH(r.n||"the card")}</b> from your $${r.f} win <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
@@ -2371,6 +2423,7 @@ window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
     LOT=d;
+    if(d.lead) roomSee(d.seller, [[d.lead, 0]]);
     // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
     // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
     if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
@@ -2387,6 +2440,7 @@ window.addEventListener("message", e=>{
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
     LOT_END_SEEN_AT=Date.now(); LOT_END_TITLE=d.rec.title||"";
+    if(!d.rec.empty) roomSee(d.rec.seller, Object.entries(d.rec.room||{}).map(([u,x])=>[u, ((x&&x.ago)||0)*60000]).concat((d.rec.leaders||[]).map(u=>[u,0])));
     // Card label: the last bid sent since the previous lot ended (pre-start taps included, at most 3 min
     // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
     // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
