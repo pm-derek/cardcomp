@@ -36,10 +36,12 @@
   }
 
   // ---------- auto mode
-  let on = false;
+  // on = auto mode (the watcher reads lots by itself); canRead = manual or auto (read now works)
+  let on = false, canRead = false, MODE_S = {};
+  const setMode = () => { const m = ["off", "manual", "auto"].includes(MODE_S.recogMode) ? MODE_S.recogMode : MODE_S.recogOn ? "auto" : "off"; on = m === "auto"; canRead = m !== "off"; };
   try {
-    chrome.storage.local.get("recogOn", (r) => { on = !!(r && r.recogOn); });
-    chrome.storage.onChanged.addListener((c, area) => { if (area === "local" && c.recogOn) on = !!c.recogOn.newValue; });
+    chrome.storage.local.get(["recogOn", "recogMode"], (r) => { MODE_S = r || {}; setMode(); });
+    chrome.storage.onChanged.addListener((c, area) => { if (area !== "local") return; if (c.recogOn) MODE_S.recogOn = c.recogOn.newValue; if (c.recogMode) MODE_S.recogMode = c.recogMode.newValue; setMode(); });
   } catch (_) {}
   const lots = new Map();   // lot.startedAt -> lot (whatnot.js's live object: .ended flips when it sells)
   const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
@@ -70,7 +72,7 @@
   // the peak by 80+. Tune from the "diff" stored on each pre-start read.
   const CHANGE = 14, CHANGE_PEAK = 70, STILL = 8, SAME = 40, REUSE = 30;
   const SETTLE_MS = 3500, STEADY = 14;   // a card held in a moving hand never goes fully still: read it anyway after 3.5 s if roughly steady
-  const PRE_MAX = 4, PRE_GAP_MS = 3000;      // pre-start reads per gap between lots, and the minimum spacing
+  const PRE_MAX = 2, PRE_GAP_MS = 3000;      // pre-start reads per gap between lots, and the minimum spacing
   let tc = null;
   function thumb() {
     const v = streamVideo(); if (!v) return null;
@@ -147,7 +149,8 @@
     // lot over, or a new lot object (a seller whose timer is never read still gets a fresh pre-start allowance)
     if (wasLive && !live(st, lot)) PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot && lot.startedAt };
     else if (lot && PRE.lot !== lot.startedAt) { PRE.n = 0; PRE.lot = lot.startedAt; }   // a new lot: fresh pre-start allowance, keep a recent read for reuse
-    if (!on || !lot || lots.has(lot.startedAt) || !live(st, lot)) return;
+    // manual mode: nothing automatic, but a read-now made before the timer still becomes that lot's reading
+    if (!(on || (canRead && PRE.manual && PRE.at)) || !lot || lots.has(lot.startedAt) || !live(st, lot)) return;
     lots.set(lot.startedAt, lot);
     if (lots.size > 50) lots.delete(lots.keys().next().value);
     const now = thumb(), d = peak(now, PRE.thumb);
@@ -158,6 +161,7 @@
       MANUAL[lot.startedAt] = Date.now();   // reused: no automatic read for this lot (also blocks the 2nd-frame retry)
       return;
     }
+    if (!on) return;   // manual mode: the card changed since the read-now, so no reading for this lot unless asked
     setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt }; }, 600);   // live is seen ~1 s after the timer starts (it must tick once)
   };
 
@@ -179,7 +183,7 @@
     if (!msg) return;
     if (msg.type === "recog-grab") { reply(grab(1000)); return; }
     if (msg.type === "recog-grab-again") { sendFrame(msg.key, msg.n || 2); return; }
-    if (msg.type === "recog-read-now") { if (on) readNow("manual"); reply({ ok: on }); return; }   // "read now" button / hotkey
+    if (msg.type === "recog-read-now") { if (canRead) readNow("manual"); reply({ ok: canRead }); return; }   // "read now" button / hotkey
     if (msg.type === "recog-grab-result") {
       if (msg.ok) show(`Frame grabbed by ${msg.method === "video" ? "video copy" : "screenshot"}: ${msg.w}x${msg.h}, ${msg.kb} KB, ${msg.ms} ms.` +
         (msg.luma < 12 ? "\nWarning: the frame is black (protected video?)." : "") + "\nChecking automatic capture in 5 s...", msg.luma >= 12);

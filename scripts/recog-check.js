@@ -235,7 +235,7 @@ async function appPage(browser, base, blockRecog) {
 
   // ---------- 5. auto mode, extension side: lot timer -> frame -> API (mocked) -> CardComp message + lot record
   console.log("5. auto mode: lot start -> frame -> model (mocked API) -> CardComp, recorded per lot");
-  let apiMode = "ok", apiCalls = [];
+  let apiMode = "ok", apiCalls = [], zoomSeen = 0;
   const READS = { first: { card_visible: true, name: "Kyurem ex", number: "157", total: "086", language: "en", rarity: "Ultra Rare full art", set: "", confidence: 0.9 } };
   await ctx.route("https://api.anthropic.com/v1/messages", async (route) => {
     const req = route.request(), cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "POST, OPTIONS" };
@@ -244,7 +244,8 @@ async function appPage(browser, base, blockRecog) {
     if (apiMode === "nothink" && body.thinking) return route.fulfill({ status: 400, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "thinking.type: between_tools is not supported for this model" } }) });
     if (apiMode === "401") return route.fulfill({ status: 401, headers: cors, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) });
     if (body.stream) {   // the real API streams: short keys in answer order, split into pieces like text deltas
-      const R = READS.first, txt = JSON.stringify({ visible: R.card_visible, name: R.name, lang: R.language, num: R.number, total: R.total, rarity: R.rarity, stamp: R.stamp || "", finish: R.finish || "unknown", set: R.set || "", conf: R.confidence });
+      const far = apiMode === "zoom" && !(zoomSeen++ % 2);   // zoom mode: the frame gives no number and a small box, the enlarged crop gives the number
+      const R = READS.first, txt = JSON.stringify({ visible: R.card_visible, name: R.name, lang: R.language, num: far ? "" : R.number, total: far ? "" : R.total, rarity: R.rarity, stamp: R.stamp || "", finish: R.finish || "unknown", set: R.set || "", conf: far ? 0.6 : R.confidence, box: far ? [300, 420, 700, 720] : [] });
       const ev = (o) => "event: " + o.type + "\ndata: " + JSON.stringify(o) + "\n\n", parts = [txt.slice(0, 20), txt.slice(20, 70), txt.slice(70)];
       return route.fulfill({ status: 200, headers: cors, contentType: "text/event-stream", body: ev({ type: "message_start", message: { model: body.model, usage: { input_tokens: 2900, output_tokens: 1 } } }) +
         parts.map((t) => ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })).join("") +
@@ -314,6 +315,28 @@ async function appPage(browser, base, blockRecog) {
   msgs = await toApp();
   ok(msgs.some((m) => m.key === k5 && /key rejected/.test(m.error)), "bad key: CardComp told 'API key rejected'");
   apiMode = "ok";
+  // far, small card with no number read: the card box from the same frame is enlarged and read again
+  apiMode = "zoom"; zoomSeen = 0; let zb = apiCalls.length; const kz = Date.now(); await tick(kz); await mp.waitForTimeout(3000);
+  const zm = (await toApp()).filter((m) => m.key === kz), zrec = await lotRec(kz), zcall = apiCalls[zb + 1];
+  const zimg = zcall && zcall.messages[0].content[0].source.data, zdim = zimg ? await mp.evaluate(async (d) => { const b = await createImageBitmap(await (await fetch("data:image/jpeg;base64," + d)).blob()); return [b.width, b.height]; }, zimg) : null;
+  ok(zm.length === 2 && !zm[0].read.number && zm[1].zoom > 1 && zm[1].read.number === "157" && zrec && zrec.frames.some((f) => f.trigger === "zoom") && zdim && Math.max(...zdim) >= 1300,
+    "no number on a small card: zoomed re-read of the same frame (" + (zm[1] && zm[1].zoom) + "x, " + (zdim && zdim.join("x")) + ") finds #157");
+  await sold(); apiMode = "ok";
+  // manual mode: a lot starts, nothing is read; read now still reads
+  await mp.evaluate(() => chrome.storage.local.set({ recogMode: "manual" })); await mp.waitForTimeout(100);
+  let mb = apiCalls.length; const km = Date.now(); await tick(km); await mp.waitForTimeout(2500);
+  ok(apiCalls.length === mb, "manual mode: a lot starts, no automatic read");
+  await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {}))); await mp.waitForTimeout(2000);
+  ok(apiCalls.length === mb + 1, "manual mode: read now reads");
+  await sold(); await mp.evaluate(() => chrome.storage.local.set({ recogMode: "auto" })); await mp.waitForTimeout(100);
+  // auto used up its hour: automatic reads pause quietly, read now still works
+  await mp.evaluate(() => { for (let i = 0; i < 240; i++) recogCalls.auto.push(Date.now()); });
+  mb = apiCalls.length; const kc = Date.now(); await tick(kc); await mp.waitForTimeout(2500);
+  const capMsgs = await mp.evaluate((k) => window.__runtime.filter((m) => (m.type === "cardcomp-auto" && m.key === k && m.error) || (m.type === "cardcomp-auto-watch" && /auto paused/.test(m.why || ""))), kc);
+  ok(apiCalls.length === mb && capMsgs.length > 0 && capMsgs.every((m) => m.type === "cardcomp-auto-watch"), "auto cap reached: no read, 'auto paused' on the watcher line, no error over the results");
+  await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {}))); await mp.waitForTimeout(2000);
+  ok(apiCalls.length === mb + 1, "auto cap reached: read now still reads (its own allowance)");
+  await sold(); await mp.evaluate(() => { recogCalls.auto.length = 0; });
   // far camera: a small card swapped for another in the same spot (missed live by the old whole-frame check)
   await sold(); await scene(3); await mp.waitForTimeout(3600);
   let before = apiCalls.length;
@@ -322,6 +345,7 @@ async function appPage(browser, base, blockRecog) {
   ok(apiCalls.length === before + 1 && pre2.length >= 2, "far camera: a small card swapped in the same spot is seen as a new card and read");
   // Sonnet: thinking switched off with between_tools; an option the API rejects is dropped and never sent again
   await mp.evaluate(() => chrome.storage.local.set({ recogModel: "sonnet" }));
+  { const kg = Date.now(); await tick(kg); await mp.waitForTimeout(1500); await sold(); await mp.waitForTimeout(300); }   // a fresh gap: 2 reads allowed before each timer
   apiMode = "nothink"; before = apiCalls.length;
   await scene(3); await mp.waitForTimeout(3600);
   const sc = apiCalls.slice(before);
@@ -335,10 +359,10 @@ async function appPage(browser, base, blockRecog) {
   before = apiCalls.length; await scene(1); await mp.waitForTimeout(3800);
   ok(apiCalls.length === before + 1, "timer shown but not counting: the card is read before the start");
   // "read now": reads right away, whatever the watcher thinks
-  before = apiCalls.length;
+  before = apiCalls.length; const man0 = (await toApp()).filter((m) => m.manual).length;
   await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {})));
   await mp.waitForTimeout(900);
-  const man = (await toApp()).filter((m) => m.manual);
+  const man = (await toApp()).filter((m) => m.manual).slice(man0);
   ok(apiCalls.length === before + 1 && man.length === 1, "read now: one immediate read, marked manual");
   // the timer then starts on that same card: the read you asked for is the lot's reading, no automatic second read
   before = apiCalls.length; const k6 = Date.now() + 5; await tick(k6); await mp.waitForTimeout(2500);
@@ -396,9 +420,9 @@ async function appPage(browser, base, blockRecog) {
   ok(await ap.evaluate(() => !document.querySelector("#autoline") || getComputedStyle(document.querySelector("#autoline")).display === "none"), "no extension: no auto line (phone / plain tab unchanged)");
   ok(await ap.evaluate(() => { const b = document.querySelector("#readbig"); return !b || getComputedStyle(b).display === "none"; }), "no extension: no read button, right-click stays normal");
   await send({ type: "cardcomp-ext-ready" }); await ap.waitForTimeout(200);
-  ok((await posted()).some((m) => m.type === "cardcomp-auto-hello") && /auto off/.test(await ap.textContent("#autoline")), "extension present: line shows 'auto off' and asks for state");
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-hello") && (await ap.evaluate(() => (document.querySelector("#automodes span.on") || {}).dataset.m)) === "off", "extension present: mode switch shows 'off' and asks for state");
   await send({ type: "cardcomp-auto-state", on: true, model: "haiku", hasKey: true }); await ap.waitForTimeout(100);
-  ok(/auto on/.test(await ap.textContent("#autoline")) && await ap.$("#automodel"), "state on: switch and model picker");
+  ok((await ap.evaluate(() => (document.querySelector("#automodes span.on") || {}).dataset.m)) === "auto" && await ap.$("#automodel"), "state on (older extension, no mode): 'auto' selected, model picker");
   let key = Date.now();
   await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
   await ap.waitForTimeout(300);
@@ -447,7 +471,7 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto", key: preKey, capAt: preKey, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1100 });
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, first: (document.querySelector("#results .card") || {}).dataset }));
-  ok(/^auto on.*before start: read Numel/.test(st.line.replace(/\s+/g, " ")) && st.first && st.first.id === "me2pt5-223", "read before the timer: shown as 'before start', Numel IR first");
+  ok(/before start: read Numel/.test(st.line.replace(/\s+/g, " ")) && st.first && st.first.id === "me2pt5-223", "read before the timer: shown as 'before start', Numel IR first");
   await send({ type: "cardcomp-auto-adopt", from: preKey, to: lotKey }); await ap.waitForTimeout(100);
   await ap.evaluate((k) => { const rec = { startedAt: k, card: { id: "me2pt5-223", n: "Numel", label: "view" }, final: 4, me: false }; window.recogLotDone(rec); window.__lastRecog = rec.recog; }, lotKey);
   await ap.waitForTimeout(150);
@@ -540,8 +564,12 @@ async function appPage(browser, base, blockRecog) {
   ok((await ap.evaluate(() => document.querySelector("#q").value)) === "Numel", "after the lot ends, the next card's reading fills again");
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
-  await ap.click("#autosw"); await ap.waitForTimeout(100);
-  ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.on === false), "switch posts 'off' to the extension");
+  await ap.click('#automodes span[data-m="manual"]'); await ap.waitForTimeout(100);
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.mode === "manual"), "mode switch posts 'manual' to the extension");
+  await send({ type: "cardcomp-auto-state", on: true, mode: "manual", model: "sonnet", hasKey: true }); await ap.waitForTimeout(100);
+  ok(/press read/.test(await ap.textContent("#autoline")) && await ap.evaluate(() => { const b = document.querySelector("#readbig"); return b && getComputedStyle(b).display !== "none"; }), "manual mode: read button stays, line says to press read");
+  await ap.click('#automodes span[data-m="off"]'); await ap.waitForTimeout(100);
+  ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.mode === "off"), "mode switch posts 'off' to the extension");
   // dashboard (not part of the experiment): made-up lots, two sellers, a win without a card
   const dash = await ap.evaluate(() => {
     const t = Date.now() - 3600e3, mk = (o) => Object.assign({ startedAt: o.at - 20000, bids: 5 }, o);
