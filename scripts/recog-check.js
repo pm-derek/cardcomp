@@ -228,6 +228,25 @@ async function appPage(browser, base, blockRecog) {
   const nv = await scenario("novideo");
   ok(!nv.frame && nv.read && /no frame: .*no <video>/.test(nv.read.error || ""), "no video: reported as failed with the reason (" + (nv.read && nv.read.error) + ")");
 
+  // ---------- 4b. picture match relays: the ack carries the reading's key / n, never the reply's fields
+  {
+    const vm = require("vm"), reply = { ok: true, ranked: [], v: {}, cands: 22, n: 22, key: 1 };
+    const run = (file, ctx) => vm.runInContext(fs.readFileSync(path.join(ROOT, file), "utf8"), vm.createContext(ctx));
+    // side panel
+    let onMsg = null; const got = [], cw = { postMessage: (m) => got.push(m) };
+    run("extension/panel.js", { chrome: { runtime: { onMessage: { addListener() {} }, sendMessage: (m, cb) => cb && cb(reply), lastError: null }, windows: { getCurrent: (cb) => cb({ id: 1 }) },
+      tabs: { query: (q, cb) => cb([]), onCreated: { addListener() {} }, onRemoved: { addListener() {} }, onAttached: { addListener() {} }, onDetached: { addListener() {} }, onUpdated: { addListener() {} } } },
+      window: { addEventListener: (t, f) => { if (t === "message") onMsg = f; } }, document: { getElementById: () => ({ contentWindow: cw, addEventListener() {} }) } });
+    onMsg({ source: cw, data: { type: "cardcomp-auto-img", key: 777, n: 1, cands: [] } });
+    // CardComp tab
+    let onMsg2 = null; const got2 = [];
+    const w2 = { addEventListener: (t, f) => { if (t === "message") onMsg2 = f; }, postMessage: (m) => got2.push(m) };
+    run("extension/cardcomp.js", { chrome: { runtime: { onMessage: { addListener() {} }, sendMessage: (m, cb) => cb && cb(reply), lastError: null } }, window: w2, location: { origin: "https://pm-derek.github.io" } });
+    onMsg2({ source: w2, origin: "https://pm-derek.github.io", data: { type: "cardcomp-auto-img", key: 777, n: 1, cands: [] } });
+    const a1 = got.find((m) => m.type === "cardcomp-auto-img-ack"), a2 = got2.find((m) => m.type === "cardcomp-auto-img-ack");
+    ok(a1 && a1.key === 777 && a1.n === 1 && a2 && a2.key === 777 && a2.n === 1, "picture match relays: the ack keeps the reading's key and n (side panel and CardComp tab)");
+  }
+
   // ---------- 5. auto mode, extension side: lot timer -> frame -> API (mocked) -> CardComp message + lot record
   console.log("5. auto mode: lot start -> frame -> model (mocked API) -> CardComp, recorded per lot");
   let apiMode = "ok", apiCalls = [], zoomSeen = 0;
@@ -619,7 +638,8 @@ async function appPage(browser, base, blockRecog) {
   ok(ask && ask.key === pk2 && ask.cands.length > 8 && ask.cands.every((c) => /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u)), "picture match: a reading with several printings asks for the ranking (" + (ask ? ask.cands.length : 0) + " pictures)");
   const ackFor = (k, want, other, sure) => ({ type: "cardcomp-auto-img-ack", key: k, n: 1, ok: true, ranked: [{ id: want, s: 0.71 }, { id: other, s: sure ? 0.52 : 0.69 }], v: { top: want, s: 0.71, group: [want], next: other, ns: sure ? 0.52 : 0.69, sure }, pics: 20, ms: 180, box: true });
   const want = ask.cands[7].id;
-  await send(ackFor(pk2, want, ask.cands[0].id, true)); await ap.waitForTimeout(250);
+  // as extension 0.7.0-0.7.1 delivered it: the reply's own n (candidate count) over the reading's n
+  await send(Object.assign(ackFor(pk2, want, ask.cands[0].id, true), { n: ask.cands.length })); await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
   ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
   // pointer over the results: nothing moves, "show" is offered
