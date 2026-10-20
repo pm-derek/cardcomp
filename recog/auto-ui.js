@@ -213,7 +213,7 @@
     askPic(d, m, a);
     if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
-    MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
+    MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "") + (a.picAsk && a.picAsk.key === d.key && !a.pic ? ' &middot; <span class="wt" id="picwait">' + picWaitTxt() + '</span>' : "");
     paint();
     post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: !touched });
   }
@@ -229,8 +229,19 @@
     const pool = (m.pool || m.cards).filter((c) => picUrl(c));
     if (pool.length < 2) return;
     a.picAsk = { key: d.key, n: d.n || 1 };
+    if (!picExt()) return;   // the extension is older than the picture match: the line says to reload it
     post({ type: "cardcomp-auto-img", key: d.key, n: d.n || 1, cands: pool.map((c) => ({ id: c.id, u: picUrl(c) })) });
+    // never silent (Derek, 2026-10-20: "where's the picture tag"): no answer in 12 s says so on the line
+    const ask = a.picAsk;
+    setTimeout(() => {
+      if (a.picAsk !== ask || a.pic || !a.best || a.best.d.key !== ask.key) return;
+      a.pic = { err: "no reply" };
+      if ((a.best.d.capAt || a.best.d.key) >= LATEST) { MSG = describe(a.best.m, a.best.r, a.best.d) + ' &middot; <span class="bad">picture: no reply from the extension, reload it at chrome://extensions</span>'; paint(); }
+    }, 12000);
   }
+  // picture match needs extension 0.7+ (state carries the version from then on)
+  const picExt = () => { const v = String(STATE.ver || "").split(".").map(Number); return v.length > 1 && (v[0] > 0 || v[1] >= 7); };
+  const picWaitTxt = () => picExt() ? "picture: matching..." : '<span class="bad">picture match needs extension 0.7: reload it at chrome://extensions</span>';
   const cardTxt = (c) => c ? `${esc(c.n)} &middot; ${esc(c.s)} #${esc(c.num)}` : "";
   function onPic(d) {
     const ak = ADOPT[d.key] || d.key, a = AUTO[ak];
@@ -288,7 +299,7 @@
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
     if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); return; }
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
-    else if (d.type === "cardcomp-auto-state") { EXT = true; const m0 = STATE.mode; STATE = { on: !!d.on, mode: d.mode || (d.on ? "auto" : "off"), model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on || STATE.mode !== m0) MSG = ""; paint(); }
+    else if (d.type === "cardcomp-auto-state") { EXT = true; const m0 = STATE.mode; STATE = { on: !!d.on, mode: d.mode || (d.on ? "auto" : "off"), model: d.model || "sonnet", hasKey: !!d.hasKey, ver: d.ver || "" }; if (!STATE.on || STATE.mode !== m0) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
     else if (d.type === "cardcomp-auto-watch") { WATCH = { why: d.phase === "watching" || d.phase === "live" || d.phase === "paused" || d.phase === "off" ? d.why : d.phase, mean: d.mean, peak: d.peak, at: Date.now() }; if (STATE.mode === "auto") { const m = $("#autoline .wt"); if (m) m.innerHTML = "&middot; " + esc(WATCH.why); else paint(); } }
     else if (d.type === "cardcomp-auto-img-ack") onPic(d);

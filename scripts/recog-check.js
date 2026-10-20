@@ -606,9 +606,15 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   // picture match, CardComp side: a reading with many printings asks for the ranking; a clear winner moves up, marked
+  // an extension older than 0.7 (state without a version): nothing asked, the line says to reload it
   await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const rdChar = (k) => ({ type: "cardcomp-auto", key: k, capAt: k, n: 1, manual: true, read: { card_visible: true, name: "Charizard", number: "", total: "", language: "en", rarity: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
+  await send(rdChar(Date.now() + 19000)); await ap.waitForTimeout(300);
+  ok(!(await posted()).some((m) => m.type === "cardcomp-auto-img") && /needs extension 0\.7/.test(await ap.textContent("#autoline")), "picture match with an old extension: not asked, the line says to reload it");
+  await send({ type: "cardcomp-auto-state", on: true, mode: "auto", model: "sonnet", hasKey: true, ver: "0.7.1" });
+  await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const pk2 = Date.now() + 20000; await send(rdChar(pk2)); await ap.waitForTimeout(300);
+  ok(/picture: matching/.test(await ap.textContent("#autoline")), "picture match pending: the line says it is matching");
   const ask = (await posted()).find((m) => m.type === "cardcomp-auto-img");
   ok(ask && ask.key === pk2 && ask.cands.length > 8 && ask.cands.every((c) => /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u)), "picture match: a reading with several printings asks for the ranking (" + (ask ? ask.cands.length : 0) + " pictures)");
   const ackFor = (k, want, other, sure) => ({ type: "cardcomp-auto-img-ack", key: k, n: 1, ok: true, ranked: [{ id: want, s: 0.71 }, { id: other, s: sure ? 0.52 : 0.69 }], v: { top: want, s: 0.71, group: [want], next: other, ns: sure ? 0.52 : 0.69, sure }, pics: 20, ms: 180, box: true });
