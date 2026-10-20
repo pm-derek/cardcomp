@@ -46,7 +46,7 @@ Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Sh
 
 ```
 { id, n:name, s:set, c:setCode, y:year, o:groupRecency, num, r:rarity,
-  hp, t:[types], st:[subtypes], atk, img, lang:"en"|"jp", game:"pkmn"|"lorcana"|"onepiece",
+  hp?, t?:[types], st?:[subtypes], atk?, img?, lang?:"jp" (missing = "en"), game:"pkmn"|"lorcana"|"onepiece",
   px:{ "<printing>": {m:marketOrMid, l:low} }, pid:tcgplayerProductId,
   sealed:true?, kind:"<sealed type>"?,
   d7?, d30?:<% change>, ps?:"<YYYY-MM-DD last real price>" }
@@ -56,15 +56,11 @@ Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Sh
 
 `game` defaults to `"pkmn"` when absent. `px` printing keys become the printing chips in the UI.
 
-## ⚠️ The #1 recurring bug: storeFields
+Slim output (ingest.js `slim`, 2026-10-20: 11.65 MB -> 8.37 MB raw, 1.41 -> 1.23 MB gzipped): `img` is left out when it follows the pattern (`imgOf` in index.html rebuilds it: TCGplayer `product/<pid>_200w.jpg` for standalone ids with a prefix like `tc:`/`jp:`, pokemontcg.io `<set>/<num>.png` from joined ids like `sv8pt5-40`; ~230 odd links stay), and so are `lang:"en"` and empty `t` / `st` / `atk` / `hp`. Read them with defaults (`c.lang||"en"`, `r.t||[]`). data.json is fetched with `cache:"no-cache"` (a 304 when unchanged).
 
-MiniSearch **only returns fields listed in `storeFields`**. There are two result paths:
-- empty query → `CARDS.map(...)` → full objects, every field present.
-- typed query → `ms.search(...)` → **only `storeFields` are present**.
+## Search results come from CARDS (storeFields is gone)
 
-So any field used in `passFilters`, `render`, or sorting **must be in the `storeFields` array**, or searched results silently lose it (browse works, search breaks). This has bitten us with `game`, `sealed`, `kind`, and `o` — each time the symptom was "works when browsing / when in the other mode, but not when I search."
-
-**Rule: add a new card field → add it to `storeFields` in the same commit. Test by searching, not just browsing.**
+MiniSearch used to return only the fields listed in `storeFields`, so a new card field that was not added there worked when browsing and silently vanished when searching (bit us with `game`, `sealed`, `kind`, `o`). Since 2026-10-20 the index stores nothing (`storeFields: []`) and every search goes through `msq()`, which looks each hit up in `BY_ID` (id -> card from CARDS) and adds its `score`. Every field is present on both paths; the index also takes about half the memory. Call `msq()`, never `ms.search()` directly.
 
 ## Testing (no build step)
 
@@ -170,6 +166,8 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 - Dashboard (Derek, 2026-10: daily buys, biggest wins / losses, margin, net, which streamers perform best): a full page over the app (`#dash`, `dashOpen` / `paintDash`), opened from "dashboard" in the stats sheet header or in its own tab at `cardcomp/#dash` (Esc / ✕ close). Same rows as the stats sheet (`lotRow` now also keeps `id`, `pr` printing, `sh` shipping), so it fills in after the log sync. Period today / 7 / 30 days / all; tap a streamer to filter. Tiles: won + spent (wins without a card called out), net if listed (`np - f`) and margin vs target, after shipping (one charge per seller per stream, estimated), bought at % of market vs rooms sold at, worth today (catalog price at the bought printing and condition, no extra data.json fetch). Best / worst ("thinnest" when none lost money) buys, a streamer table (net first; sellers with no wins and under 5 lots fold into one line), by day, habits (paid over the CardComp max, lost under your max, profitable lots passed on: lots that sold under 40% of market are left out as likely another printing, wins without a card, softest hours). Rendered with the real 2026-10-16 log at 1280 / 660 / 380 px.
 - Taps carry their lot (pullsafaritcg 2026-10-20: fast back-to-back lots, bids tapped from the tiles before the timer; wins logged with a max set but no tap, the safety net still wiped them on a stray "Sold"): `whatnot.js` sends `lotStart` (the lot's startedAt) in every `cardcomp-lot`; `tapLot()` tags each tap at tap time with the live lot, the lot that sold if within `LATE_TAP_MS` of its end, else `"next"`. `finishLot` takes taps tagged for that lot plus `"next"` taps since the previous logged lot (`LAST_REAL_TO`); the safety net and empty lot-ends never drop tagged taps. Untagged taps (older extension) keep the time-window rules.
 - Card after the fact (Derek, 2026-10-20: wins where no card was registered): "+ card" on a win without a card (dashboard section "Wins without a card", or the stats table row reveal) starts pick mode (`pickFor`): a sticky `#pickbar` says which win, Derek searches as usual, an opened card shows a "use for your $N win" row of conditions (`addPickRow`, uses the selected printing chip, else `topPrint`), and a tap (`assignPick`) labels the lot `fixed` at today's price in localStorage and posts `cardcomp-log-edit {key:{seller,startedAt,at}, card}`; `store.js` `editLog` rewrites that row in the lot's day file (or the next day's: files are named by flush date) and acks "saved to your log ✓".
+- Your wins (dashboard, 2026-10-20: a card put on the wrong win showed twice): every win in the period, newest first; no card -> "+ card", with a card -> "change" (pick mode names the card it replaces, `PICK.was`) or "✕ card" (`clearLotCard`: back to no card here, `cardcomp-log-edit {clear:true, card:null}` -> `editLog(key, null, true)` in the log).
+- Removed 2026-10-20 (unused): the search feedback buttons (good / ok / bad strip, row rails, open-card buttons, undo bar, search log in settings), the old prices.json path and file, the pokemontcg.io API key setting, `tierLabel` / `marginAt` / `rowBid` / `TYPE_COLOR` / `LOT_WON`, dead CSS, MiniSearch's doc comments (86 -> 51 KB), tcgplayer.js's unused `first` flag.
 - Tap printing: a tap on a collapsed result records the top printing (`topPrint`, what the collapsed bid is priced from); the open card's selected chip wins when present. Before, collapsed taps logged printing "".
 - Sold safety net vs flicker (gametower, 2026-10-16): the "Sold seen, no lot-end within 1.5 s" net fired on a sold row flickering between lots and wiped a bid tapped before the timer (the $21 Master Ball Sylveon win was logged as only opened; views survived since they have their own window). It now skips a Sold whose lot end was already sent (`endSent` in `cardcomp-lot`, else the title of the lot that just ended, `LOT_END_TITLE`).
 - Stats sync: localStorage is a cache, the private log is the record. Once per load, after the extension says hello, the app sends `cardcomp-log-read {since: 120 days}`; `store.js` `readLog` returns every logged row (merged with unflushed ones) and the app replaces its rows with them (`lotRow` per row, keyed `seller|startedAt|at`), keeping only local lots newer than the newest log row. So side panel, tabs and a second computer agree, and a hand edit of the log shows up on next load.
@@ -241,7 +239,7 @@ Any new hook line in an existing file gets the `RECOG` tag.
 - Terse, numbers-first. **No em dashes** in any copy written for Derek. Minimal formatting.
 - Lean systems — push back on over-engineering relative to the dollars at stake. Prefer sale-side-only data entry.
 - Ship several small features per deploy; bugs surface from live-stream use and come back with specifics.
-- When adding a card field, adding a rarity, or adding a game: update `storeFields`, the relevant `*_CHASE` set, `passFilters`, and `buildVocab` together.
+- When adding a rarity or a game: update the relevant `*_CHASE` set, `passFilters`, and `buildVocab` together. A new card field needs nothing extra for search (results come from CARDS); give it a default if ingest's `slim` may drop it.
 
 ## Velocity-tiered margin (speedOf in index.html)
 
@@ -259,7 +257,6 @@ JP                10%   16%    20%     24%     25%     25%
 - fast = vintage (pre-2014), played (LP or worse), promos. normal = everything else. Price band uses the condition row's own price (spec §12). Rare/Holo Rare was dropped as a fast trait: split by era, modern NM rares sell only x0.85 vs their price band (the fast reading was vintage holos); modern NM promos hold up at x0.58.
 - Snapshot caveat: the inventory export has no listing dates, so months-to-sell (stock / sales rate) can only be biased toward slow. "Fast" readings are trustworthy; "slow" ones may be recent buy-ins. That is why SIR/SWSH/XY-SM/ME (1.1-1.3x) are treated as normal and JP is damped from 2.7x to 1.8x. Re-run quarterly with fresh exports before trusting the $50+ steps.
 - UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". The pill is a passive label, not tappable (Derek found tap-to-explain annoying in the list); tapping it opens the card like the rest of the row. The open card explains it in one sentence under the bid table (`speedExplain`), shown whenever the card is fast/slow or its margin differs from the floor: what made it fast/slow (vintage / played / promo / JP / price band), months to sell vs typical, and the resulting margin. Opening the card is the mobile "hover": no long-press or tap-to-reveal (both fought live use). Never swap text into the pill or bid column: any width change there squeezes the card name to nothing (shipped once, broke live). No icons or ratings. Keep it lean.
-- New card fields used by this go in `storeFields` (see the storeFields bug above).
 
 ## Deliberately not doing (don't rebuild these)
 

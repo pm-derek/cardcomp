@@ -56,10 +56,8 @@ GitHub fine-grained token (repository access: only pm-derek/cardcomp; permission
 Test shows how many entries the store holds. Without a token, live reads still work for the session; they
 just are not saved.
 
-Click-outs open in a background tab (one tab, reused), so you stay on the stream. If you open one in the
-foreground anyway, after the first read the extension switches you back to the Whatnot tab
-(the TCGplayer tab stays open behind). If nothing could be read within 8 seconds, the open card says so
-under its grid and you stay on TCGplayer.
+Click-outs open in a background tab (one tab, reused), so you stay on the stream. If nothing could be read
+within 8 seconds, the open card says so under its grid.
 
 ## Your own bid
 
@@ -171,7 +169,7 @@ and never bids. Plan and results: docs/auto-recognition-handoff.md.
 5. Results, frames and costs: Options > "the recognition test page". The card you tap or open in a lot is the
    truth; mark the other lots there.
 
-Capture check: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) or right-click > "Recognition test: grab a frame".
+Read now from the Whatnot tab: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac).
 Not Alt+Shift+R: Chrome uses that for Reading Mode. Frames stay in this extension (30 days); calls go only to
 api.anthropic.com. Remove the whole experiment: `node scripts/strip-recog.js`.
 <!-- RECOG-END -->

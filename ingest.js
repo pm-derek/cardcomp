@@ -482,7 +482,20 @@ function coverageProblems(kept){
   } catch (e) { console.log("carry-forward skipped: " + e.message.split("\n")[0]); }
 
   const sz = {}; for (const k in SZ) sz[k] = [...SZ[k]].sort((a,b)=>a-b);
-  const out = { updated, floor: FLOOR, sz, cards: kept };
+  // ---- slim the file the app loads on every start (2026-10: about -3 MB raw, -20% gzipped). Image links the app
+  // can rebuild (TCGplayer from pid, pokemontcg.io from the id: imgOf in index.html) are dropped, so are lang "en"
+  // and empty t / st / atk / hp; the app already treats missing values as those defaults. ~230 odd images stay.
+  const imgFor = (c) => { if (/:/.test(c.id)) return c.pid ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.pid}_200w.jpg` : null;
+    const i = c.id.lastIndexOf("-"); return `https://images.pokemontcg.io/${c.id.slice(0, i)}/${c.id.slice(i + 1)}.png`; };
+  const slim = (c) => {
+    const o = Object.assign({}, c);
+    if (o.img && o.img === imgFor(o)) delete o.img;
+    if (o.lang === "en") delete o.lang;
+    for (const k of ["t", "st"]) if (Array.isArray(o[k]) && !o[k].length) delete o[k];
+    for (const k of ["atk", "hp"]) if (o[k] === "") delete o[k];
+    return o;
+  };
+  const out = { updated, floor: FLOOR, sz, cards: kept.map(slim) };
   fs.writeFileSync("data.json", JSON.stringify(out));
   console.log(`\nWrote data.json — ${kept.length} entries >= $${FLOOR} (Pkmn EN ${en} / JP ${jp}; Lorcana ${lor}; One Piece ${op}; ${sealedN} sealed) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
 })();

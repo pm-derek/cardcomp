@@ -47,7 +47,7 @@
     else if (STATE.mode === "manual" && !msg) msg = "press read (or right-click) for each card";
     else if (!STATE.hasKey) msg = '<span class="bad">add your API key on the extension\'s Options page</span>';
     else if (!msg) msg = "waiting for the next lot";
-    const w = STATE.mode === "auto" && WATCH && Date.now() - WATCH.at < 6000 ? ` <span class="wt" title="what auto is doing between lots (picture change ${WATCH.mean} / ${WATCH.peak})">&middot; ${esc(WATCH.why)}</span>` : "";
+    const w = STATE.mode === "auto" && WATCH && Date.now() - WATCH.at < 30000 ? ` <span class="wt" title="what auto is doing between lots (picture change ${WATCH.mean} / ${WATCH.peak})">&middot; ${esc(WATCH.why)}</span>` : "";
     const modes = [["off", "off", "no reading"], ["manual", "manual", "reads only when you press read / right-click"], ["auto", "auto", "reads every lot by itself, plus read now"]];
     el.innerHTML = `<span class="modes" id="automodes">${modes.map(([m, l, t]) => `<span data-m="${m}" class="${STATE.mode === m ? "on" : ""}" title="${t}">${l}</span>`).join("")}</span>${STATE.on ? sel : ""}<span id="automsg">${msg}</span>${w}`;
     el.querySelectorAll("#automodes span").forEach((b) => b.onclick = () => { if (b.dataset.m !== STATE.mode) post({ type: "cardcomp-auto-config", mode: b.dataset.m }); });

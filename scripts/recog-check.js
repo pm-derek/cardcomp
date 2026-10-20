@@ -8,8 +8,8 @@
 // 2. regression: manual search gives identical results with and without recog/automatch.js loaded.
 // 3. strip:      in a temp copy, scripts/strip-recog.js restores every touched file to main as it was before the
 //                experiment (apart from later unrelated changes), leaves nothing that mentions it, and the app still works.
-// 4. capture:    the extension's capture code against a mock Whatnot page with a live <video>: video copy,
-//                screenshot fallback when the canvas is blocked, no video, the 5 s automatic retry, the results page.
+// 4. capture:    read now on a mock Whatnot page with a live <video>: video copy, screenshot fallback when the
+//                canvas is blocked, no video.
 // 5. auto, extension side: lot timer -> frame -> API (mocked) -> CardComp message, second frame rules, errors, records;
 //    reading a card held up before the timer, skipping a sold card still held, reusing the reading at timer start.
 // 6. auto, CardComp side: the auto line, switch, filled results with the mark, typing respected, outcome reported.
@@ -201,37 +201,32 @@ async function appPage(browser, base, blockRecog) {
   // ---------- 4. capture ----------
   console.log("4. capture: extension code against a mock Whatnot page");
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  // the real read path (read now -> frame -> API): video copy, screenshot when the canvas is blocked, no video
   const scenario = async (mode) => {
     const page = await ctx.newPage();
     const errs = []; page.on("pageerror", (e) => errs.push(e.message));
+    await page.route("https://api.anthropic.com/v1/messages", (r) => r.fulfill({ status: 401, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }, contentType: "application/json", body: '{"type":"error","error":{"type":"authentication_error","message":"x"}}' }));
     await page.goto(base + "/__mock?mode=" + mode);
     await page.waitForFunction(() => window.__mockReady === true);
     await page.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
     await page.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
     const shot = "data:image/jpeg;base64," + (await page.screenshot({ type: "jpeg", quality: 90 })).toString("base64");
-    await page.evaluate((shot) => { window.__shot = shot; }, shot);
-    await page.evaluate(() => recogGrab({ id: 1, windowId: 1, url: location.href }));
-    await page.waitForTimeout(6500);
-    const recs = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("frames").objectStore("frames").getAll(); q.onsuccess = () => res(q.result); }; }));
-    const toasts = await page.evaluate(() => window.__sent.map((m) => m.type));
+    await page.evaluate((shot) => { window.__shot = shot; return new Promise((r) => chrome.storage.local.set({ recogMode: "manual", recogKey: "sk-ant-test" }, r)); }, shot);
+    await page.waitForTimeout(200);
+    await page.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {})));
+    await page.waitForTimeout(2500);
+    const lots = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const q = r.result.transaction("lots").objectStore("lots").getAll(); q.onsuccess = () => res(q.result); }; }));
     await page.close();
-    return { rec: recs[recs.length - 1], toasts, errs };
+    const L = lots[lots.length - 1] || {};
+    return { frame: (L.frames || [])[0], read: (L.reads || [])[0], errs };
   };
   const v = await scenario("video");
-  ok(v.rec && v.rec.ok && v.rec.method === "video" && v.rec.w === 1000 && v.rec.luma > 12, `video copy: ${v.rec && v.rec.method} ${v.rec && v.rec.w}x${v.rec && v.rec.h}, ${v.rec && v.rec.kb} KB, brightness ${v.rec && v.rec.luma}`);
-  ok(v.rec && /^ok \(video\)/.test(v.rec.later), "video copy: automatic retry 5 s later works (" + (v.rec && v.rec.later) + ")");
-  ok(v.toasts.includes("recog-grab-result") && v.toasts.includes("recog-later-result") && !v.errs.length, "video copy: both results reach the page, no errors");
+  ok(v.frame && v.frame.method === "video" && v.frame.w === 1280 && v.frame.luma > 12 && !v.errs.length, `video copy: ${v.frame && v.frame.method} ${v.frame && v.frame.w}x${v.frame && v.frame.h}, ${v.frame && v.frame.kb} KB, brightness ${v.frame && v.frame.luma}`);
   const t = await scenario("tainted");
-  ok(t.rec && t.rec.ok && t.rec.method === "screenshot" && /canvas blocked/.test(t.rec.tries.join()), `blocked canvas: falls back to screenshot (${t.rec && t.rec.w}x${t.rec && t.rec.h}, ${t.rec && t.rec.tries})`);
-  ok(t.rec && Math.abs(t.rec.w / t.rec.h - 540 / 760) < 0.02, "blocked canvas: screenshot cropped to the video box (aspect " + (t.rec && (t.rec.w / t.rec.h).toFixed(3)) + ")");
+  ok(t.frame && t.frame.method === "screenshot", `blocked canvas: falls back to a screenshot (${t.frame && t.frame.w}x${t.frame && t.frame.h})`);
+  ok(t.frame && Math.abs(t.frame.w / t.frame.h - 540 / 760) < 0.02, "blocked canvas: screenshot cropped to the video box (aspect " + (t.frame && (t.frame.w / t.frame.h).toFixed(3)) + ")");
   const nv = await scenario("novideo");
-  ok(nv.rec && !nv.rec.ok && /no <video>/.test(nv.rec.tries.join()), "no video: reported as failed with the reason (" + (nv.rec && nv.rec.tries.join("; ")) + ")");
-  const dbg = await ctx.newPage();
-  await dbg.goto(base + "/extension/recog/debug.html");
-  await dbg.waitForTimeout(800);
-  const sumText = await dbg.textContent("#fsum");
-  ok(/3 grabs · 2 worked \(video copy 1, screenshot 1\)/.test(sumText), "results page, capture checks: " + sumText);
-  await dbg.close();
+  ok(!nv.frame && nv.read && /no frame: .*no <video>/.test(nv.read.error || ""), "no video: reported as failed with the reason (" + (nv.read && nv.read.error) + ")");
 
   // ---------- 5. auto mode, extension side: lot timer -> frame -> API (mocked) -> CardComp message + lot record
   console.log("5. auto mode: lot start -> frame -> model (mocked API) -> CardComp, recorded per lot");
@@ -612,7 +607,17 @@ async function appPage(browser, base, blockRecog) {
   const fx = await ap.evaluate(() => ({ row: loadLots().find((r) => r.s === "sellerB"), ed: window.__edits[0], dash: DASH.on, bar: document.querySelector("#pickbar").innerText }));
   ok(fx.row && fx.row.n === "Sylveon" && fx.row.c === "LP" && fx.row.lab === "fixed" && fx.row.m > 0 && fx.ed && fx.ed.key.seller === "sellerB" && fx.ed.card.label === "fixed" && fx.dash && /Added Sylveon LP/.test(fx.bar),
     "win without a card: + card, search, open, tap LP -> stats row and log edit (" + (fx.row && fx.row.n + " " + fx.row.c + " $" + fx.row.m) + ")");
-  await ap.evaluate(() => dashOpen(false));
+  // a card put on the wrong win: "✕ card" clears it (stats row and log), "change" starts pick mode naming the current card
+  ap.once("dialog", (dl) => dl.accept());
+  await ap.evaluate(() => { window.__edits = []; DASH.per = "7"; DASH.seller = ""; dashOpen(true); }); await ap.waitForTimeout(150);
+  await ap.evaluate(() => { const b = [...document.querySelectorAll("#dash .dclr")].find((x) => (loadLots().find((r) => r.k === x.dataset.k) || {}).s === "sellerB"); b.click(); });
+  await ap.waitForTimeout(300);
+  const cl = await ap.evaluate(() => ({ row: loadLots().find((r) => r.s === "sellerB"), ed: window.__edits[0], noCard: /no card/.test(document.querySelector("#dash").innerText) }));
+  ok(cl.row && !cl.row.n && !(cl.row.m > 0) && cl.ed && cl.ed.clear === true && cl.ed.card === null && cl.noCard, "✕ card: the win is back to 'no card' here and the log gets the removal");
+  await ap.evaluate(() => { const b = [...document.querySelectorAll("#dash .dchg")].find((x) => (loadLots().find((r) => r.k === x.dataset.k) || {}).s === "sellerA"); b.click(); });
+  await ap.waitForTimeout(200);
+  ok(/Changing the card on your \$21 win \(now Sylveon\)/.test(await ap.textContent("#pickbar")), "change: pick mode names the card it replaces");
+  await ap.click("#pickbar .pickx"); await ap.evaluate(() => dashOpen(false));
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);

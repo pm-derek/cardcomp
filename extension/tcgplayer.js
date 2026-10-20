@@ -69,7 +69,7 @@ function report() {
   const key = [c.pid, c.printing, c.cond, market, low].join("|");
   if (key === last) return true;
   last = key;
-  send({ market, low, first: !reported });   // first: the extension switches back to the Whatnot tab
+  send({ market, low });
   reported = true;
   return true;
 }

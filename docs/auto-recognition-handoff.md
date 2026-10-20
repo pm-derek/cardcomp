@@ -451,3 +451,11 @@ Speed: streamed replies fill the search once name / number are written (about 0.
   sharp; for soft streams the best case is the right name and rarity with its printings listed.
 - Collapsed-tile bids on that stream: 10 wins had a max set in Whatnot but no tap in the log (the tap reached Whatnot,
   the app dropped it). Taps are now tagged with their lot when tapped (see CLAUDE.md, "Taps carry their lot").
+
+## Cleanup (2026-10-20)
+
+Removed: the step-1 capture check (Ctrl+Shift+Y grab + 5 s retry toast, the "Recognition test: grab a frame"
+right-click menu and its `contextMenus` permission, the results page's capture-checks section) and
+`scripts/recog-test.js` (the one-off screenshot harness above; in git history if a model comparison is ever re-run).
+Ctrl+Shift+Y now only means read now. The capture tests in recog-check.js go through read now instead.
+The watcher status is sent to CardComp when its words change (or every 20 s), not every 2 s.
