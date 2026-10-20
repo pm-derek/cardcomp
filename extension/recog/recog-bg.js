@@ -105,28 +105,86 @@ async function recogCrop(shot, rect, maxEdge) {
   return { img: await recogDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.88 })), w, h, luma: Math.round(s / n) };
 }
 
+// Zoom (pullsafaritcg 2026-10-20: the card was ~300 px wide in a 1080x1920 frame, in a toploader; numbers were read on
+// 2 of 13 lots and names were guessed from the art): crop the card box the model reported, with a margin, from the
+// same frame and enlarge it so its long edge is ~1400 px (at most 3x). null when the box is unusable or already big.
+async function recogZoom(img, box) {
+  if (!Array.isArray(box) || box.length !== 4) return null;
+  let [l, t, r, b] = box.map((v) => Math.max(0, Math.min(1000, +v || 0)));
+  if (r - l < 30 || b - t < 30) return null;
+  if ((r - l) * (b - t) > 500000) return null;   // the card already fills half the frame: zooming adds nothing
+  const mx = (r - l) * 0.12, my = (b - t) * 0.12; l = Math.max(0, l - mx); t = Math.max(0, t - my); r = Math.min(1000, r + mx); b = Math.min(1000, b + my);
+  const bmp = await createImageBitmap(await (await fetch(img)).blob());
+  const sx = l / 1000 * bmp.width, sy = t / 1000 * bmp.height, sw = (r - l) / 1000 * bmp.width, sh = (b - t) / 1000 * bmp.height;
+  const z = Math.min(3, 1400 / Math.max(sw, sh)), w = Math.round(sw * z), h = Math.round(sh * z);
+  if (z < 1.2) return null;
+  const c = new OffscreenCanvas(w, h), g = c.getContext("2d"); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
+  return { img: await recogDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.9 })), w, h, z: +z.toFixed(2) };
+}
+// a zoomed reading replaces the first one only when it knows more (a number, or a name where there was none)
+const recogBetter = (z, a) => !!(z && z.card_visible !== false && z.name && (!a || !a.name || (z.number && !a.number) || ((z.confidence || 0) > (a.confidence || 0) + 0.2 && z.name.toLowerCase() === String(a.name).toLowerCase())));
+
 // ---------------------------------------------------------------- the model call
 const RECOG_SYSTEM = "You identify Pokemon trading cards in frames of a Whatnot livestream. One card is shown to the camera, held in hand or in a sleeve or top-loader. Ignore cards on stands, in binders, in display cases or on the table behind it. Read only what is printed on the card held in front. Never guess a number you cannot read: return an empty string instead.";
 const RECOG_ASK = `Return the card held in front:
-- card_visible: false if no single card is being shown (seller's face, a pack, a stack, a blurred hand)
+- visible: false if no single card is being shown (seller's face, a pack, a stack, a blurred hand)
 - name: the card name as printed, in English (for a Japanese card, the English name of that Pokemon or trainer card), with prefixes and suffixes such as Radiant, Shining, Mega, Team Rocket's, Cynthia's, ex, EX, GX, V, VMAX, VSTAR, LV.X, Prime
-- number: the collector number at the bottom (digits or code before the slash, e.g. 233, SV049, TG12), "" if unreadable
+- lang: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
+- num: the collector number at the bottom (digits or code before the slash, e.g. 233, SV049, TG12), "" if unreadable
 - total: the digits after the slash (e.g. 182), "" if none or unreadable
-- language: en, jp, zh (Chinese), ko (Korean) or other. Japanese text has kana (あ, ア); Chinese cards use only Chinese characters (Simplified 简体 or Traditional 繁體) with no kana; Korean uses Hangul (한)
 - rarity: the treatment you see, e.g. Illustration Rare (art past the frame, normal text box), Special Illustration Rare, Ultra Rare full art, Double Rare holo, Holo Rare, Reverse Holo, Common. Say "full art" when unsure which premium rarity it is
 - stamp: look closely for a stamp, a small logo printed on the art or text box, often in a corner: a set logo on a stamped promo reprint (e.g. "Prismatic Evolutions", "Journey Together", "Mega Evolution"), a Pikachu anniversary logo (read whether it says 25th or 30th), Pokemon Center, Prerelease, Staff, 1st Edition, a Black Star promo mark. Sellers often circle a stamp or other detail with a marker: look inside any hand-drawn circle. Name what the stamp says; "" if there is none
 - finish: where the foil shine is. holo = shiny artwork only; reverse holo = the card body around the art shines and the art is flat; poke ball pattern / master ball pattern = a reverse holo whose shiny body is covered in repeated Poke Ball icons / Master Ball icons (purple ball with an M); other pattern = any other repeated icon pattern (energy symbols, etc); non-holo = no shine anywhere; unknown when glare, the sleeve or the resolution hides it. Full art and illustration cards are holo
 - set: the set if you can tell, else ""
-- confidence: 0 to 1 that the name is right`;
+- conf: 0 to 1 that the name is right
+- box: where the card held in front is, as [left, top, right, bottom] in thousandths of the image width and height (0 to 1000); [] if no card`;
+// Short keys in answer order: the reply streams, and name / lang / num / total come first so CardComp can fill the
+// search before the rest is written (2026-10-20: ~70 output tokens, a third of them key names).
 const RECOG_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["card_visible", "name", "number", "total", "language", "rarity", "stamp", "finish", "set", "confidence"],
+  required: ["visible", "name", "lang", "num", "total", "rarity", "stamp", "finish", "set", "conf", "box"],
   properties: {
-    card_visible: { type: "boolean" }, name: { type: "string" }, number: { type: "string" }, total: { type: "string" },
-    language: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] }, rarity: { type: "string" }, stamp: { type: "string" },
-    finish: { type: "string", enum: ["unknown", "non-holo", "holo", "reverse holo", "poke ball pattern", "master ball pattern", "other pattern"] }, set: { type: "string" }, confidence: { type: "number" }
+    visible: { type: "boolean" }, name: { type: "string" }, lang: { type: "string", enum: ["en", "jp", "zh", "ko", "other"] },
+    num: { type: "string" }, total: { type: "string" }, rarity: { type: "string" }, stamp: { type: "string" },
+    finish: { type: "string", enum: ["unknown", "non-holo", "holo", "reverse holo", "poke ball pattern", "master ball pattern", "other pattern"] },
+    set: { type: "string" }, conf: { type: "number" }, box: { type: "array", items: { type: "integer" } }
   }
 };
+// short keys -> the names the rest of the experiment uses (older replies and the test mock may use the long ones)
+function recogLong(o) {
+  if (!o || typeof o !== "object") return o;
+  const pick = (a, b) => (o[a] !== undefined ? o[a] : o[b]);
+  return { card_visible: pick("visible", "card_visible"), name: o.name || "", number: pick("num", "number") || "", total: o.total || "", language: pick("lang", "language") || "",
+    rarity: o.rarity || "", stamp: o.stamp || "", finish: o.finish || "", set: o.set || "", confidence: pick("conf", "confidence"), box: Array.isArray(o.box) ? o.box : [] };
+}
+// Name, language, number and total out of a reply still being written: enough to fill the search early.
+function recogPartial(t) {
+  if (/"visible"\s*:\s*false/.test(t)) return null;
+  const g = (k) => { const m = new RegExp('"' + k + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"').exec(t); if (!m) return null; try { return JSON.parse('"' + m[1] + '"'); } catch (_) { return null; } };
+  const name = g("name"), language = g("lang"), number = g("num"), total = g("total");
+  if (!name || language == null || number == null || total == null) return null;
+  return { card_visible: true, name, language, number, total, rarity: "", stamp: "", finish: "", set: "", confidence: null };
+}
+async function recogSSE(r, onText) {   // server-sent events -> { text, usage, stop, model, err }
+  const rd = r.body.getReader(), dec = new TextDecoder(), u = {};
+  let buf = "", text = "", stop = null, model = "", err = null;
+  for (;;) {
+    const { value, done } = await rd.read(); if (done) break;
+    buf += dec.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const line = chunk.split("\n").find((l) => l.startsWith("data:")); if (!line) continue;
+      let ev; try { ev = JSON.parse(line.slice(5)); } catch (_) { continue; }
+      if (ev.type === "message_start" && ev.message) { model = ev.message.model || ""; Object.assign(u, ev.message.usage || {}); }
+      else if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") { text += ev.delta.text; try { onText(text); } catch (_) {} }
+      else if (ev.type === "message_delta") { if (ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason; if (ev.usage) Object.assign(u, ev.usage); }
+      else if (ev.type === "error") err = ev.error || { message: "stream error" };
+    }
+  }
+  return { text, usage: u, stop, model, err };
+}
 function recogErr(status, txt) {
   if (status === 401) return "API key rejected (Options page)";
   if (status === 403) return "API key not allowed to use this model";
@@ -136,7 +194,7 @@ function recogErr(status, txt) {
   return "API error " + status + ": " + String(txt || "").slice(0, 120);
 }
 const RECOG_DROP = {};
-async function recogRead(img, modelKey, apiKey) {
+async function recogRead(img, modelKey, apiKey, onPartial) {
   const model = RECOG_MODELS[modelKey] || RECOG_MODELS.haiku;
   const drop = RECOG_DROP[model] = RECOG_DROP[model] || {};   // options this model rejected once: never sent again
   let useFormat = !drop.format, useEffort = !drop.effort, netRetried = false;
@@ -146,7 +204,7 @@ async function recogRead(img, modelKey, apiKey) {
   const t0 = Date.now();
   for (let attempt = 0; attempt < 5; attempt++) {
     const body = {
-      model, max_tokens: 2000, system: RECOG_SYSTEM,
+      model, max_tokens: 2000, system: RECOG_SYSTEM, stream: true,
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
         { type: "text", text: RECOG_ASK + (useFormat ? "" : "\nAnswer with one JSON object only, with exactly those keys.") }
@@ -159,8 +217,12 @@ async function recogRead(img, modelKey, apiKey) {
     const headers = { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
     if (think) body.thinking = think;
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 25000);
-    let r, txt;
-    try { r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body), signal: ctl.signal }); txt = await r.text(); }
+    let r, txt = "", sse = null, sent = false;
+    const early = (t) => { if (sent || !onPartial) return; const p = recogPartial(t); if (p) { sent = true; onPartial(p, Date.now() - t0); } };
+    try {
+      r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body), signal: ctl.signal });
+      if (r.ok && /event-stream/.test(r.headers.get("content-type") || "")) sse = await recogSSE(r, early); else txt = await r.text();
+    }
     catch (e) {
       if (!(e && e.name === "AbortError") && !netRetried) { netRetried = true; await new Promise((s) => setTimeout(s, 600)); continue; }
       return { error: e && e.name === "AbortError" ? "timed out (25 s)" : "network: " + (e && e.message), ms: Date.now() - t0, model };
@@ -174,7 +236,11 @@ async function recogRead(img, modelKey, apiKey) {
     if ((r.status === 529 || r.status === 503) && attempt < 1) { await new Promise((s) => setTimeout(s, 800)); continue; }
     const ms = Date.now() - t0;
     if (!r.ok) return { error: recogErr(r.status, txt), status: r.status, ms, model };
-    let j; try { j = JSON.parse(txt); } catch (_) { return { error: "unreadable API reply", ms, model }; }
+    let j;
+    if (sse) {
+      if (sse.err) return { error: /overload/i.test(sse.err.type || sse.err.message || "") ? "API busy (529)" : "API error: " + String(sse.err.message || "stream").slice(0, 120), ms, model };
+      j = { model: sse.model, usage: sse.usage, stop_reason: sse.stop, content: [{ type: "text", text: sse.text }] };
+    } else { try { j = JSON.parse(txt); } catch (_) { return { error: "unreadable API reply", ms, model }; } }
     const u = j.usage || {}, p = RECOG_PRICE[j.model] || RECOG_PRICE[model] || [0, 0];
     const cost = ((u.input_tokens || 0) * p[0] + (u.output_tokens || 0) * p[1]) / 1e6;
     const base = { ms, model: j.model || model, inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, cost, stop: j.stop_reason };
@@ -183,35 +249,39 @@ async function recogRead(img, modelKey, apiKey) {
     let read = null;
     try { read = JSON.parse(text); } catch (_) { const m = text.match(/\{[\s\S]*\}/); if (m) { try { read = JSON.parse(m[0]); } catch (_) {} } }
     if (!read) return Object.assign(base, { error: j.stop_reason === "max_tokens" ? "reply cut off" : "no JSON in the reply", raw: text.slice(0, 200) });
-    return Object.assign(base, { read });
+    return Object.assign(base, { read: recogLong(read) });
   }
   return { error: "API options rejected", ms: Date.now() - t0, model };
 }
 
 // ---------------------------------------------------------------- settings, cap, messages to CardComp
-const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn", "recogModel", "recogKey"], (r) => res(r || {})));
+// Mode (Derek, 2026-10-20: auto used up the hourly cap and blocked his read-nows): "off", "manual" (read now only,
+// the watcher reads nothing) or "auto" (watcher + read now). Older installs only stored recogOn.
+const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn", "recogMode", "recogModel", "recogKey"], (r) => res(r || {})));
+const recogModeOf = (s) => (["off", "manual", "auto"].includes(s.recogMode) ? s.recogMode : s.recogOn ? "auto" : "off");
 async function recogState() {
-  const s = await recogGet();
-  return { type: "cardcomp-auto-state", on: !!s.recogOn, model: s.recogModel || "sonnet", hasKey: !!s.recogKey };
+  const s = await recogGet(), mode = recogModeOf(s);
+  return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey };
 }
 function recogToApp(msg) {   // side panel page + any CardComp tab (same path as lot messages)
   try { const p = chrome.runtime.sendMessage(msg); if (p && p.catch) p.catch(() => {}); } catch (_) {}
   try { chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => (tabs || []).forEach((t) => { const p = chrome.tabs.sendMessage(t.id, msg); if (p && p.catch) p.catch(() => {}); })); } catch (_) {}
 }
-let recogCalls = [];
-function recogCapOK() {
-  const now = Date.now();
-  recogCalls = recogCalls.filter((t) => now - t < 3600e3);
-  if (recogCalls.length >= RECOG_HOURLY_CAP) return false;
-  recogCalls.push(now); return true;
+// Separate hourly allowances: automatic reads can never use up the read-nows.
+const recogCalls = { auto: [], manual: [] };
+function recogCapOK(kind) {
+  const now = Date.now(), k = kind === "manual" ? "manual" : "auto";
+  recogCalls[k] = recogCalls[k].filter((t) => now - t < 3600e3);
+  if (recogCalls[k].length >= RECOG_HOURLY_CAP) return false;
+  recogCalls[k].push(now); return true;
 }
 
 // ---------------------------------------------------------------- auto mode: one frame per lot (two when unsure)
 const recogPrev = {};   // tabId -> last reading, to spot a seller still holding the sold card
 const sameCard = (a, b) => a && b && a.name && String(a.name).toLowerCase() === String(b.name).toLowerCase() && String(a.number || "") === String(b.number || "");
 async function recogOnFrame(msg, tab) {
-  const s = await recogGet();
-  if (!s.recogOn) return;
+  const s = await recogGet(), mode = recogModeOf(s), kind = msg.trigger === "manual" ? "manual" : "auto";
+  if (mode === "off" || (mode === "manual" && kind !== "manual")) return;
   const key = msg.key, n = msg.n || 1;
   const head = { type: "cardcomp-auto", key, n, capAt: msg.capAt || Date.now(), title: msg.title || "", seller: msg.seller || "", pre: msg.trigger === "pre", manual: msg.trigger === "manual" };
   let frame = msg.ok ? { img: msg.img, w: msg.w, h: msg.h, luma: msg.luma, method: "video" } : null;
@@ -228,13 +298,34 @@ async function recogOnFrame(msg, tab) {
   const fr = { n, trigger: msg.trigger || "start", diff: msg.diff, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
   let res;
   if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
-  else if (!recogCapOK()) res = { error: "hourly cap reached (" + RECOG_HOURLY_CAP + " reads)" };
-  else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey);
+  else if (!recogCapOK(kind)) {
+    if (kind === "auto") {   // pause quietly: say so on the watcher line, never over the results or a read-now
+      recogToApp({ type: "cardcomp-auto-watch", phase: "paused", why: "auto paused: " + RECOG_HOURLY_CAP + " reads this hour (read now still works)" });
+      return;
+    }
+    res = { error: "read-now limit reached (" + RECOG_HOURLY_CAP + " an hour)" };
+  }
+  else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey, (read, ms) =>
+    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) })));
   const prev = recogPrev[tab ? tab.id : 0];
   await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "sonnet" }, res)); });
   recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
-  if (res.read && tab) {
-    const r = res.read, held = n === 1 && !msg.afterPre && sameCard(r, prev);
+  // no number (or unsure): read the enlarged card from the same frame; CardComp keeps it only if it is better
+  let best = res.read;
+  if (res.read && res.read.card_visible !== false && res.read.name && (!res.read.number || (res.read.confidence || 0) < 0.7) && s.recogKey) {
+    let zc = null; try { zc = await recogZoom(frame.img, res.read.box); } catch (_) {}
+    if (zc && recogCapOK(kind)) {
+      const zr = await recogRead(zc.img, s.recogModel || "sonnet", s.recogKey);
+      const zf = { n, trigger: "zoom", zoom: zc.z, box: res.read.box, w: zc.w, h: zc.h, kb: Math.round(zc.img.length * 0.75 / 1024), img: zc.img };
+      await recogLot(key, (rec) => { rec.frames.push(zf); rec.reads.push(Object.assign({ n, zoom: zc.z, modelPicked: s.recogModel || "sonnet" }, zr)); });
+      if (zr.read && recogBetter(zr.read, res.read)) {
+        best = zr.read;
+        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
+      }
+    }
+  }
+  if (best && tab) {
+    const r = best, held = n === 1 && !msg.afterPre && sameCard(r, prev);
     if (n === 1) recogPrev[tab.id] = r;
     if (n === 1 && msg.trigger !== "pre" && msg.trigger !== "manual" && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
       setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
@@ -283,7 +374,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "cardcomp-auto-read") { recogReadNow().then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r)); }); return true; }   // "read now" button
   if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
   if (msg.type === "cardcomp-auto-config") {
-    const set = {}; if ("on" in msg) set.recogOn = !!msg.on; if (msg.model && RECOG_MODELS[msg.model]) set.recogModel = msg.model;
+    const set = {};
+    if (["off", "manual", "auto"].includes(msg.mode)) { set.recogMode = msg.mode; set.recogOn = msg.mode !== "off"; }
+    else if ("on" in msg) { set.recogOn = !!msg.on; set.recogMode = msg.on ? "auto" : "off"; }
+    if (msg.model && RECOG_MODELS[msg.model]) set.recogModel = msg.model;
     chrome.storage.local.set(set, () => recogState().then(recogToApp)); reply({ ok: true }); return;
   }
   if (msg.type === "cardcomp-auto-match") {   // what CardComp made of a reading
@@ -347,7 +441,7 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (!tab || !tab.id) tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!tab || !/^https:\/\/([^/]*\.)?whatnot\.com\//.test(tab.url || "")) return;
   const s = await recogGet();
-  if (s.recogOn) { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }   // auto on: the hotkey means "read now"
+  if (recogModeOf(s) !== "off") { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }   // manual or auto: the hotkey means "read now"
   recogGrab(tab);
 });
 // Right-click menu: same grab, no key needed (Chrome keeps some keys for itself, e.g. Alt+Shift+R is Reading Mode).
@@ -357,6 +451,6 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "recog-grab" || !tab || !tab.id) return;
-  if ((await recogGet()).recogOn) { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }
+  if (recogModeOf(await recogGet()) !== "off") { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }
   recogGrab(tab);
 });

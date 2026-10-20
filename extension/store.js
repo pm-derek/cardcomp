@@ -99,6 +99,30 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
   }
   return { ok: true, removed, files };
 }
+// Put a card on a logged lot after the fact (Derek, 2026-10-20: wins where no card was registered). key = {seller,
+// startedAt, at}. A lot sits in the day file of the UTC day it was flushed, so look at its day and the next.
+async function editLog(key, card) {
+  const k = lotKey(key); if (!k || !card) return { ok: false, why: "bad request" };
+  let hit = false;
+  pendingLog.forEach((r) => { if (lotKey(r) === k) { r.card = card; hit = true; } });
+  const tok = await token();
+  if (!tok) return { ok: hit, why: hit ? "" : "no GitHub token" };
+  const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
+  const day0 = new Date(+key.at).toISOString().slice(0, 10), day1 = new Date(+key.at + 864e5).toISOString().slice(0, 10);
+  for (const day of [day0, day1]) {
+    const api = logApi(day);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let j; try { j = await logFile(api, hdr); } catch (e) { return { ok: hit, why: e.message }; }
+      const row = j.rows.find((r) => lotKey(r) === k); if (!row) break;
+      row.card = card;
+      const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr),
+        body: JSON.stringify({ message: `Card added to a lot: ${card.n || "?"}`, branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
+      if (r.status === 409 || r.status === 422) continue;
+      return r.ok ? { ok: true, file: "log-" + day + ".json" } : { ok: false, why: "GitHub PUT " + r.status };
+    }
+  }
+  return hit ? { ok: true, queued: true } : { ok: false, why: "lot not found in the log" };
+}
 // Every logged lot with at >= since, for the app's stream stats (one list call + one GET per day file).
 async function readLog(since) {
   since = +since || 0;
