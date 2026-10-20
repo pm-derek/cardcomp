@@ -241,7 +241,9 @@ the pointer touched or hovered the results (offers "show"). Thresholds in `IM.ve
 different picture) are first guesses: the results page button "Test picture match on saved lots" replays saved frames
 against the card Derek bid on or opened, and "Copy picture results" gives the rows to tune from; `rec.recog.pic` rides on
 the log row and `recog-score-log.js` scores it. Host permissions for tcgplayer-cdn.tcgplayer.com / images.pokemontcg.io
-(the cloud sandbox cannot reach them, so tuning happens from Derek's replay).
+(the cloud sandbox cannot reach them, so tuning happens from Derek's replay). Never silent (Derek, first live try: "where's
+the picture tag"): the line shows "picture: matching..." while it runs, "no reply from the extension" after 12 s, and
+"needs extension 0.7" when the state carries no `ver` (extension state reports its version since 0.7.1).
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

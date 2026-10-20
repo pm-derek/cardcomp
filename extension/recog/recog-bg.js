@@ -251,7 +251,7 @@ const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn",
 const recogModeOf = (s) => (["off", "manual", "auto"].includes(s.recogMode) ? s.recogMode : s.recogOn ? "auto" : "off");
 async function recogState() {
   const s = await recogGet(), mode = recogModeOf(s);
-  return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey };
+  return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey, ver: chrome.runtime.getManifest ? chrome.runtime.getManifest().version : "" };
 }
 function recogToApp(msg, tab) {   // to the CardComp copies paired with that tab's window (bg.js toApps); no tab = every copy
   if (typeof toApps === "function") { toApps(msg, tab); return; }
