@@ -58,6 +58,9 @@ async function paint() {
     `<b>Strong suggestion wrong: <span class="${strongWrong ? "bad" : "ok"}">${strongWrong} of ${strong.length}</span></b> (the number to watch)`,
     `Scored from the card you tapped or opened: <b>${fromTaps}</b> · reviewed by hand: ${labeled.length - fromTaps} · unscored (no card picked, review optional, at the bottom): ${todo}`,
     `Labeled ${labeled.length}: right pick <span class="ok">${pct(V.filter((L) => L.V.v === "agree").length, labeled.length)}</span> · right card listed, no pick ${pct(V.filter((L) => L.V.v === "listed").length, labeled.length)} · wrong or not listed <span class="bad">${pct(V.filter((L) => L.V.v === "miss").length, labeled.length)}</span>`,
+    (() => { const P = V.filter((L) => L.V.truth && (L.pics || []).length), last = (L) => L.pics[L.pics.length - 1], inG = (L) => (last(L).group || []).includes(L.V.truth);
+      const sure = P.filter((L) => last(L).sure);
+      return P.length ? `Picture match (lots with your card): your card's picture on top <span class="ok">${P.filter(inG).length} of ${P.length}</span> · marked sure ${sure.length}, of those wrong <span class="${sure.filter((L) => !inG(L)).length ? "bad" : "ok"}">${sure.filter((L) => !inG(L)).length}</span>` : "Picture match: no lots yet (needs extension 0.7)"; })(),
     `Printing read (right card, you picked a printing): <span class="ok">${V.filter((L) => pv(L) === "right").length}</span> right of ${V.filter((L) => pv(L)).length}`,
     `Outcomes: ${Object.entries(kinds).map(([k, n]) => esc(k) + " " + n).join(" · ")}`,
     `Read before the timer: ${lots.filter((L) => (L.frames || []).some((f) => f.trigger === "pre")).length} lots (${lots.filter((L) => L.adopted).length} reused at start, no second call)`,
@@ -74,10 +77,12 @@ async function paint() {
     const sug = m && m.suggestion && (m.cards || []).find((c) => c.id === m.suggestion);
     const mt = m ? `<div class="k">match: ${esc(m.kind)}${m.strength ? " · " + m.strength : ""}${sug ? " · <span class=gold>" + esc(sug.n) + " " + esc(sug.s) + " #" + esc(sug.num) + (sug.r ? " · " + esc(sug.r) : "") + (m.printing ? " · " + esc(m.printing) : "") + "</span>" : ""}${pv(L) ? " · printing <span class=" + (pv(L) === "right" ? "ok" : "bad") + ">" + pv(L) + "</span>" : ""}${m.note ? " · " + esc(m.note) : ""}${m.filled === false ? " · not shown (you were typing)" : ""}</div>
       <div class="k">listed: ${(m.cards || []).slice(0, 4).map((c) => esc(c.n) + " #" + esc(c.num) + (c.r ? " " + esc(c.r) : "") + " $" + (c.m || 0).toFixed(2)).join(", ")}</div>` : "";
+    const pk = (L.pics || []).slice(-1)[0], pnm = (id) => { const c = (m && m.cards || []).find((x) => x.id === id); return c ? esc(c.n) + " " + esc(c.s) + " #" + esc(c.num) : esc(id); };
+    const pc = pk ? `<div class="k">picture: ${pk.top ? (pk.sure ? "<span class=gold>" : "") + pnm(pk.top) + (pk.sure ? "</span>" : " (unsure)") + " " + pk.s + (pk.next ? " vs " + pk.ns : "") : "no pictures"}${L.V.truth ? (pk.group && pk.group.includes(L.V.truth) ? " · <span class=ok>" + (pk.top === L.V.truth ? "right" : "same art") + "</span>" : " · <span class=bad>not your card</span>") : ""} · ${pk.pics} pictures, ${pk.ms} ms${pk.box ? "" : ", whole frame"}</div>` : "";
     const oc = o ? `<div class="k">lot: ${o.card ? "you " + (o.card.label === "tap" ? "bid on" : "opened") + " <b>" + esc(o.card.n) + " " + esc(o.card.s || "") + " #" + esc(o.card.num || "") + (o.card.r ? " · " + esc(o.card.r) : "") + "</b>" + (o.card.printing ? " · " + esc(o.card.printing) : "") + (o.card.cond ? " " + esc(o.card.cond) : "") : "you did not tap or open a card"}${o.placedMax ? " · your max $" + esc(o.placedMax) : o.card && o.card.myMax ? " · your max $" + esc(o.card.myMax) : ""} · sold $${esc(o.final)}${o.me ? " to you" : ""}</div>` : `<div class="k">lot: no end recorded</div>`;
     const rv = L.V.truth ? "" : `<div><button class="sm" data-k="${L.key}" data-r="right">right</button><button class="sm" data-k="${L.key}" data-r="listed">listed, not picked</button><button class="sm" data-k="${L.key}" data-r="wrong">wrong</button><button class="sm" data-k="${L.key}" data-r="nocard">no card</button></div>`;
     return `<div class="row">${f ? `<img src="${f.img}" title="${f.w}x${f.h}, ${f.kb} KB">` : `<div style="width:150px" class="bad">no frame</div>`}<div>
-      <div><span class="tag t-${L.V.v}">${esc(L.V.label)}</span>${[new Date(L.at).toLocaleString(), L.seller, L.title].filter(Boolean).map(esc).join(" · ")}</div>${rd}${mt}${oc}${rv}</div></div>`;
+      <div><span class="tag t-${L.V.v}">${esc(L.V.label)}</span>${[new Date(L.at).toLocaleString(), L.seller, L.title].filter(Boolean).map(esc).join(" · ")}</div>${rd}${mt}${pc}${oc}${rv}</div></div>`;
   }).join("");
   document.querySelectorAll("#list img").forEach((im) => im.onclick = () => im.classList.toggle("big"));
   document.querySelectorAll("button[data-k]").forEach((b) => b.onclick = async () => {
@@ -105,4 +110,55 @@ document.getElementById("wipe").onclick = () => {
   if (!confirm("Delete every recognition lot and frame?")) return;
   const r = indexedDB.deleteDatabase("cardcomp-recog"); r.onsuccess = r.onerror = r.onblocked = () => setTimeout(paint, 300);
 };
+// ---------------------------------------------------------------- picture match replay
+// Every saved lot with a frame, a reading and the card you bid on or opened: rank that frame against the pictures of
+// every catalog card with the name that was read (what CardComp would list), and compare with the pick shown then.
+const PNORM = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const PMECH = new Set(["ex", "v", "vmax", "vstar", "gx", "break", "lvx", "prime", "star", "legend", "tag"]);
+let PICT = null;
+async function picTest() {
+  const out = document.getElementById("pic"), btn = document.getElementById("pictest");
+  btn.disabled = true; out.innerHTML = "loading the catalog...";
+  try {
+    const cat = await (await fetch("https://pm-derek.github.io/cardcomp/data.json", { cache: "no-cache" })).json();
+    const cards = cat.cards.filter((c) => (c.game || "pkmn") === "pkmn" && !c.sealed);
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    const lots = (await all("lots")).filter((L) => L.outcome && L.outcome.card && L.outcome.card.id && !L.outcome.card.multi && byId.has(L.outcome.card.id));
+    const rows = [], cache = new Map();
+    const tmpl = async (c) => { const u = IM.picUrl(c); if (!u) return null; if (!cache.has(u)) { let t = null; try { t = IM.normalize(IM.cardCells(await IM.load(u, 300))); } catch (_) {} cache.set(u, t); } return cache.get(u); };
+    let i = 0;
+    for (const L of lots) {
+      i++; out.innerHTML = `testing lot ${i} of ${lots.length}...`;
+      const rd = (L.reads || []).find((r) => r.read && r.read.name && r.read.card_visible !== false);
+      const fr = rd && (L.frames || []).find((f) => f.n === rd.n && f.img && f.trigger !== "zoom");
+      if (!rd || !fr) continue;
+      const truth = L.outcome.card.id, lang = /^jp/.test(rd.read.language || "") ? "jp" : "en", q = PNORM(rd.read.name);
+      const pool = cards.filter((c) => (c.lang || "en") === lang && (() => { const n = PNORM(c.n); return n === q || (n.startsWith(q + " ") && !PMECH.has(n.slice(q.length + 1).split(" ")[0])); })()).slice(0, 80);
+      const m = (L.matches || []).filter((x) => x.filled !== false).pop() || (L.matches || []).slice(-1)[0] || {};
+      const row = { key: L.key, seller: L.seller, read: rd.read.name, truth, truthName: byId.get(truth).n + " " + byId.get(truth).s + " #" + byId.get(truth).num, textSug: m.suggestion || null, textKind: m.kind || "", pool: pool.length, inPool: pool.some((c) => c.id === truth), box: !!(rd.read.box && rd.read.box.length === 4) };
+      if (row.inPool && pool.length > 1) {
+        const temps = [];
+        for (let k = 0; k < pool.length; k += 8) (await Promise.all(pool.slice(k, k + 8).map(async (c) => ({ id: c.id, t: await tmpl(c) })))).forEach((x) => { if (x.t) temps.push(x); });
+        const px = await IM.load(fr.img), t0 = performance.now();
+        const ranked = IM.match(px, row.box ? rd.read.box : null, temps), v = IM.verdict(ranked, temps);
+        Object.assign(row, { ms: Math.round(performance.now() - t0), pics: temps.length, top: v.top, s: v.s, next: v.next, ns: v.ns, sure: v.sure, group: v.group.slice(0, 6),
+          rank: ranked.findIndex((r) => r.id === truth) + 1, truthS: (ranked.find((r) => r.id === truth) || {}).s, top5: ranked.slice(0, 5) });
+        row.picRight = v.group.includes(truth);
+      }
+      rows.push(row);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    PICT = rows;
+    const T = rows.filter((r) => r.inPool && r.pool > 1), one = rows.filter((r) => r.pool === 1).length, notIn = rows.filter((r) => !r.inPool).length;
+    const right = T.filter((r) => r.picRight).length, top3 = T.filter((r) => r.rank && r.rank <= 3).length, sure = T.filter((r) => r.sure), sureWrong = sure.filter((r) => !r.picRight).length;
+    const textRight = T.filter((r) => r.textSug === r.truth).length;
+    out.innerHTML = `<b>Picture match on ${T.length} saved lots</b> (name read right, several printings): your card's picture on top <span class="ok">${right}</span> (${pct(right, T.length)}) · in the top 3 ${top3} · sure ${sure.length}, of those wrong <span class="${sureWrong ? "bad" : "ok"}">${sureWrong}</span> · the pick shown then was right ${textRight} (${pct(textRight, T.length)})` +
+      `<br>Skipped: ${one} lots with only one printing of the name, ${notIn} where the name read did not match your card. Median ${q(T.map((r) => r.ms || 0), 0.5)} ms a lot. Press "Copy picture results" and paste them to Claude to tune it.`;
+    document.getElementById("pictcopy").style.display = "";
+  } catch (e) { out.innerHTML = `<span class="bad">picture test failed: ${esc(e.message)}</span>`; }
+  btn.disabled = false;
+}
+document.getElementById("pictest").onclick = picTest;
+document.getElementById("pictcopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(PICT)).then(() => { document.getElementById("pictcopy").textContent = "Copied"; }); };
+
 paint(); setInterval(() => { if (!document.querySelector("img.big")) paint(); }, 8000);

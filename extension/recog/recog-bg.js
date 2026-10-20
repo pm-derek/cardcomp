@@ -10,6 +10,7 @@
 //   cost, what CardComp matched, and what Derek tapped or opened. Results page: recog/debug.html.
 // Nothing here bids or touches Whatnot. Calls go straight to api.anthropic.com with Derek's key.
 
+try { importScripts("recog/imgmatch.js"); } catch (_) {}   // picture match (IM)
 const RECOG_DB = "cardcomp-recog";
 const RECOG_MODELS = { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5" };
 const RECOG_PRICE = { "claude-haiku-5-5": [0.10, 0.50], "claude-sonnet-5-5": [2, 10], "claude-opus-5-5": [4, 20] };   // $/MTok in, out (2026-10)
@@ -252,7 +253,8 @@ async function recogState() {
   const s = await recogGet(), mode = recogModeOf(s);
   return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey };
 }
-function recogToApp(msg) {   // side panel page + any CardComp tab (same path as lot messages)
+function recogToApp(msg, tab) {   // to the CardComp copies paired with that tab's window (bg.js toApps); no tab = every copy
+  if (typeof toApps === "function") { toApps(msg, tab); return; }
   try { const p = chrome.runtime.sendMessage(msg); if (p && p.catch) p.catch(() => {}); } catch (_) {}
   try { chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => (tabs || []).forEach((t) => { const p = chrome.tabs.sendMessage(t.id, msg); if (p && p.catch) p.catch(() => {}); })); } catch (_) {}
 }
@@ -282,23 +284,24 @@ async function recogOnFrame(msg, tab) {
   if (!frame) {
     const error = "no frame: " + (msg.why || "unknown");
     await recogLot(key, (rec) => { lotHead(rec); rec.reads.push({ n, error }); });
-    recogToApp(Object.assign(head, { error })); return;
+    recogToApp(Object.assign(head, { error }), tab); return;
   }
   const fr = { n, trigger: msg.trigger || "start", diff: msg.diff, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
   let res;
   if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
   else if (!recogCapOK(kind)) {
     if (kind === "auto") {   // pause quietly: say so on the watcher line, never over the results or a read-now
-      recogToApp({ type: "cardcomp-auto-watch", phase: "paused", why: "auto paused: " + RECOG_HOURLY_CAP + " reads this hour (read now still works)" });
+      recogToApp({ type: "cardcomp-auto-watch", phase: "paused", why: "auto paused: " + RECOG_HOURLY_CAP + " reads this hour (read now still works)" }, tab);
       return;
     }
     res = { error: "read-now limit reached (" + RECOG_HOURLY_CAP + " an hour)" };
   }
   else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey, (read, ms) =>
-    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) })));
+    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) }), tab));
   const prev = recogPrev[tab ? tab.id : 0];
+  if (res.read) picKeep(key, n, frame.img, res.read.box);   // before CardComp hears of it: it asks for the picture match next
   await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "sonnet" }, res)); });
-  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
+  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
   // no number (or unsure): read the enlarged card from the same frame; CardComp keeps it only if it is better
   let best = res.read;
   if (res.read && res.read.card_visible !== false && res.read.name && (!res.read.number || (res.read.confidence || 0) < 0.7) && s.recogKey) {
@@ -309,7 +312,7 @@ async function recogOnFrame(msg, tab) {
       await recogLot(key, (rec) => { rec.frames.push(zf); rec.reads.push(Object.assign({ n, zoom: zc.z, modelPicked: s.recogModel || "sonnet" }, zr)); });
       if (zr.read && recogBetter(zr.read, res.read)) {
         best = zr.read;
-        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
+        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
       }
     }
   }
@@ -322,16 +325,17 @@ async function recogOnFrame(msg, tab) {
   }
 }
 
-// "Read now": the Whatnot tab Derek is watching (active first, else the one touched last) reads its frame right away.
-async function recogReadNow() {
+// "Read now": the stream in the asking CardComp's window (its active Whatnot tab first), else the one touched last.
+async function recogReadNow(win) {
   const tabs = await chrome.tabs.query({ url: "https://*.whatnot.com/*" });
   if (!tabs.length) return { ok: false, why: "no Whatnot tab" };
-  tabs.sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
-  try { const r = await chrome.tabs.sendMessage(tabs[0].id, { type: "recog-read-now" }); return r && r.ok ? { ok: true } : { ok: false, why: "auto is off" }; }
+  const here = win != null ? tabs.filter((t) => t.windowId === win) : [];
+  const pick = (here.length ? here : tabs).sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)))[0];
+  try { const r = await chrome.tabs.sendMessage(pick.id, { type: "recog-read-now" }); return r && r.ok ? { ok: true } : { ok: false, why: "auto is off" }; }
   catch (_) { return { ok: false, why: "Whatnot tab not ready, reload it" }; }
 }
 
-async function recogAdopt(msg) {
+async function recogAdopt(msg, tab) {
   RECOG_ADOPT[msg.from] = msg.to;   // a reading still on its way lands on the lot
   const db = await recogDb();
   await new Promise((res) => {
@@ -350,17 +354,78 @@ async function recogAdopt(msg) {
     };
     tx.oncomplete = res; tx.onerror = res;
   });
-  recogToApp({ type: "cardcomp-auto-adopt", from: msg.from, to: msg.to });
+  recogToApp({ type: "cardcomp-auto-adopt", from: msg.from, to: msg.to }, tab);
+}
+
+// ---------------------------------------------------------------- picture match
+// CardComp sends the candidates of a reading ("cardcomp-auto-img"); the frame that was read is ranked against each
+// candidate's TCGplayer picture (imgmatch.js) and the ranking goes back in the reply. Frames are kept in memory for a
+// few minutes; candidate templates are kept in IndexedDB "cardcomp-pics" (about 9 KB a card) so a name seen before
+// ranks with no download.
+const PIC_FRAMES = new Map();   // "key|n" -> { img, box, at, px }
+function picKeep(key, n, img, box) {
+  PIC_FRAMES.set(key + "|" + n, { img, box: Array.isArray(box) && box.length === 4 ? box : null, at: Date.now() });
+  for (const [k, f] of PIC_FRAMES) if (PIC_FRAMES.size > 12 || Date.now() - f.at > 5 * 60e3) PIC_FRAMES.delete(k); else break;
+}
+const PIC_MEM = new Map();      // picture URL -> normalized template (or null: no picture)
+let picDbP = null;
+function picDb() {
+  return picDbP = picDbP || new Promise((res, rej) => {
+    const r = indexedDB.open("cardcomp-pics", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("cells");
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function picCells(url) {
+  if (PIC_MEM.has(url)) return PIC_MEM.get(url);
+  const db = await picDb().catch(() => null);
+  let cells = db ? await new Promise((res) => { const g = db.transaction("cells").objectStore("cells").get(url); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); }) : null;
+  if (!cells) {
+    try { cells = IM.cardCells(await IM.load(url, 300)); } catch (_) { cells = null; }
+    if (cells && db) try { db.transaction("cells", "readwrite").objectStore("cells").put(cells, url); } catch (_) {}
+  }
+  const t = cells ? IM.normalize(cells) : null;
+  if (PIC_MEM.size > 3000) PIC_MEM.clear();
+  PIC_MEM.set(url, t);
+  return t;
+}
+async function picRank(msg) {
+  if (typeof IM === "undefined") return { ok: false, why: "no picture matcher" };
+  const f = PIC_FRAMES.get(msg.key + "|" + (msg.n || 1));
+  if (!f) return { ok: false, why: "frame gone" };
+  const t0 = Date.now();
+  if (!f.px) f.px = await IM.load(f.img);
+  const cands = (msg.cands || []).slice(0, 80).filter((c) => c && c.id && /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u || ""));
+  const got = [];
+  for (let i = 0; i < cands.length; i += 8) {   // 8 downloads at a time
+    const part = await Promise.all(cands.slice(i, i + 8).map(async (c) => ({ id: c.id, t: await picCells(c.u) })));
+    got.push(...part);
+  }
+  const temps = got.filter((x) => x.t), dl = Date.now() - t0;
+  // One photo under 3+ ids is TCGplayer's "image coming soon": no information, left out (a pair can be a shared scan of
+  // two real products; those just rank together)
+  for (const x of temps) x.same = temps.filter((y) => y === x || IM.sim(x.t, y.t) > 0.995).length;
+  const usable = temps.filter((x) => x.same < 3);
+  if (!usable.length) return { ok: false, why: "no pictures" };
+  const ranked = IM.match(f.px, f.box, usable);
+  const v = IM.verdict(ranked, usable);
+  const out = { ok: true, ranked: ranked.slice(0, 40), v, box: !!f.box, n: cands.length, pics: usable.length, ms: Date.now() - t0, dl };
+  recogLot(msg.key, (rec) => { (rec.pics = rec.pics || []).push({ n: msg.n || 1, at: Date.now(), ms: out.ms, dl, box: out.box, cands: cands.length, pics: usable.length, top: v.top, s: v.s, sure: v.sure, group: v.group.slice(0, 6), next: v.next, ns: v.ns, ranked: ranked.slice(0, 8) }); });
+  return out;
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg.type !== "string") return;
   if (msg.type === "recog-frame") { recogOnFrame(msg, sender.tab); reply({ ok: true }); return; }
   if (msg.type === "recog-adopt") {   // a card read before the timer started, picture unchanged: it is this lot's reading
-    recogAdopt(msg); reply({ ok: true }); return;
+    recogAdopt(msg, sender.tab); reply({ ok: true }); return;
   }
-  if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg); return; }   // watcher status -> CardComp
-  if (msg.type === "cardcomp-auto-read") { recogReadNow().then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r)); }); return true; }   // "read now" button
+  if (msg.type === "cardcomp-auto-img") { picRank(msg).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // picture match for a reading
+  if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg, sender.tab); return; }   // watcher status -> CardComp
+  if (msg.type === "cardcomp-auto-read") {   // read the stream in the asking CardComp's window
+    const win = sender.tab ? sender.tab.windowId : msg.win;
+    recogReadNow(win).then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r), win != null ? { windowId: win } : null); }); return true;
+  }   // "read now" button
   if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
   if (msg.type === "cardcomp-auto-config") {
     const set = {};

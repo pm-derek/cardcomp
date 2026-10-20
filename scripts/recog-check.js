@@ -254,6 +254,7 @@ async function appPage(browser, base, blockRecog) {
   await mp.goto(base + "/__mock?mode=video");
   await mp.waitForFunction(() => window.__mockReady === true);
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
+  await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/imgmatch.js") });
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
   // a live lot: the timer counts down (whatnot.js calls __recogTick on every page change, so every second)
   const tick = (key) => mp.evaluate((key) => {
@@ -392,6 +393,37 @@ async function appPage(browser, base, blockRecog) {
   r1 = await lotRec(k1);
   ok(r1.outcome.card.label === "tap" && r1.outcome.card.printing === "Holofoil" && r1.outcome.placedMax === 22 && !(await lotRec(12345)), "outcome from the log row: tap with printing and max; unread lots get no record");
   ok(merr.length === 0, "no page errors (" + (merr[0] || "") + ")");
+  // picture match, extension side: synthetic card pictures (served as TCGplayer photos), a frame showing one of them
+  // smaller, shifted in color, with a decoy card beside it -> that card ranks first and is "sure"; a second ask for the
+  // same candidates downloads nothing (templates cached); two ids with the same picture are left out
+  const pics = await mp.evaluate(async () => {
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const card = () => { const c = new OffscreenCanvas(200, 279), g = c.getContext("2d"); g.fillStyle = `hsl(${rnd() * 360},50%,${40 + rnd() * 30}%)`; g.fillRect(0, 0, 200, 279);
+      for (let i = 0; i < 14; i++) { g.fillStyle = `hsl(${rnd() * 360},${40 + rnd() * 50}%,${20 + rnd() * 60}%)`; g.beginPath(); g.arc(rnd() * 200, 30 + rnd() * 140, 10 + rnd() * 45, 0, 7); g.fill(); }
+      g.fillStyle = "#eee"; g.fillRect(14, 180, 172, 80); return c; };
+    const cards = Array.from({ length: 8 }, card), urls = [];
+    for (const c of cards) { const b = await c.convertToBlob({ type: "image/jpeg", quality: 0.85 }); urls.push(await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); })); }
+    const fr = new OffscreenCanvas(720, 1280), g = fr.getContext("2d"); g.fillStyle = "#3b3b3b"; g.fillRect(0, 0, 720, 1280);
+    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(${rnd() * 255},${rnd() * 255},${rnd() * 255},.25)`; g.fillRect(rnd() * 720, rnd() * 1280, 30, 30); }
+    g.filter = "brightness(1.15) saturate(0.85)"; g.drawImage(cards[3], 210, 430, 300, 419); g.filter = "none"; g.drawImage(cards[5], 560, 900, 140, 195);
+    const fb = await fr.convertToBlob({ type: "image/jpeg", quality: 0.7 });
+    const frame = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(fb); });
+    return { urls, frame, box: [Math.round(200 / 720 * 1000), Math.round(410 / 1280 * 1000), Math.round(520 / 720 * 1000), Math.round(860 / 1280 * 1000)] };
+  });
+  let picHits = 0;
+  await ctx.route(/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/(\d+)_200w\.jpg/, (r) => { picHits++; const id = +r.request().url().match(/product\/(\d+)_/)[1];
+    const i = id >= 900 ? 7 : id - 100; r.fulfill({ status: 200, headers: { "access-control-allow-origin": "*" }, contentType: "image/jpeg", body: Buffer.from(pics.urls[i].split(",")[1], "base64") }); });
+  const pcands = [0, 1, 2, 3, 4, 5, 6].map((i) => ({ id: "c" + i, u: `https://tcgplayer-cdn.tcgplayer.com/product/${100 + i}_200w.jpg` })).concat([900, 901, 902].map((p, i) => ({ id: "dup" + i, u: `https://tcgplayer-cdn.tcgplayer.com/product/${p}_200w.jpg` })));
+  const pr1 = await mp.evaluate(async ({ pics, pcands }) => { picKeep(4242, 1, pics.frame, pics.box); return picRank({ key: 4242, n: 1, cands: pcands }); }, { pics, pcands });
+  const hits1 = picHits;
+  const pr2 = await mp.evaluate(async ({ pcands }) => picRank({ key: 4242, n: 1, cands: pcands }), { pcands });
+  const pr3 = await mp.evaluate(async ({ pics, pcands }) => { picKeep(4243, 1, pics.frame, null); return picRank({ key: 4243, n: 1, cands: pcands }); }, { pics, pcands });
+  ok(pr1.ok && pr1.v.top === "c3" && pr1.v.sure && !pr1.ranked.some((r) => /^dup/.test(r.id)) && pr1.pics === 7, "picture match: the card shown ranks first and sure (" + (pr1.ranked || []).slice(0, 3).map((r) => r.id + " " + r.s).join(", ") + ", " + pr1.ms + " ms); one photo under 3 ids left out " + JSON.stringify({ sure: pr1.v && pr1.v.sure, pics: pr1.pics, ids: (pr1.ranked || []).map((r) => r.id) }));
+  ok(pr2.ok && pr2.v.top === "c3" && picHits === hits1, "picture match: second ask downloads nothing (" + hits1 + " pictures the first time, " + (picHits - hits1) + " now, " + pr2.ms + " ms)");
+  ok(pr3.ok && pr3.v.top === "c3" && !pr3.box, "picture match without a card box (whole frame): still the shown card (" + pr3.ms + " ms)");
+  ok(await mp.evaluate(() => PIC_FRAMES.size >= 3 && [...PIC_FRAMES.keys()].some((k) => !/^424[23]\|/.test(k))), "picture match: every reading keeps its frame for the ranking that follows");
+  const lotPics = await mp.evaluate(() => new Promise((res) => { const r = indexedDB.open("cardcomp-recog", 2); r.onsuccess = () => { const g = r.result.transaction("lots").objectStore("lots").get(4242); g.onsuccess = () => res(g.result && g.result.pics); }; }));
+  ok(lotPics && lotPics.length === 2 && lotPics[0].top === "c3", "picture match recorded on the lot for the results page");
   const dbg2 = await ctx.newPage();
   await dbg2.goto(base + "/extension/recog/debug.html"); await dbg2.waitForTimeout(900);
   const sum2 = await dbg2.textContent("#sum");
@@ -573,6 +605,35 @@ async function appPage(browser, base, blockRecog) {
   ok((await ap.evaluate(() => document.querySelector("#q").value)) === "Numel", "after the lot ends, the next card's reading fills again");
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
+  // picture match, CardComp side: a reading with many printings asks for the ranking; a clear winner moves up, marked
+  await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
+  const rdChar = (k) => ({ type: "cardcomp-auto", key: k, capAt: k, n: 1, manual: true, read: { card_visible: true, name: "Charizard", number: "", total: "", language: "en", rarity: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
+  const pk2 = Date.now() + 20000; await send(rdChar(pk2)); await ap.waitForTimeout(300);
+  const ask = (await posted()).find((m) => m.type === "cardcomp-auto-img");
+  ok(ask && ask.key === pk2 && ask.cands.length > 8 && ask.cands.every((c) => /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u)), "picture match: a reading with several printings asks for the ranking (" + (ask ? ask.cands.length : 0) + " pictures)");
+  const ackFor = (k, want, other, sure) => ({ type: "cardcomp-auto-img-ack", key: k, n: 1, ok: true, ranked: [{ id: want, s: 0.71 }, { id: other, s: sure ? 0.52 : 0.69 }], v: { top: want, s: 0.71, group: [want], next: other, ns: sure ? 0.52 : 0.69, sure }, pics: 20, ms: 180, box: true });
+  const want = ask.cands[7].id;
+  await send(ackFor(pk2, want, ask.cands[0].id, true)); await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
+  ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
+  // pointer over the results: nothing moves, "show" is offered
+  await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
+  const pk3 = Date.now() + 21000; await send(rdChar(pk3)); await ap.waitForTimeout(300);
+  const ask3 = (await posted()).find((m) => m.type === "cardcomp-auto-img"), want3 = ask3.cands[9].id;
+  const before3 = await ap.evaluate(() => document.querySelector("#results .card").dataset.id);
+  await ap.hover("#results .card >> nth=1"); await ap.waitForTimeout(50);
+  await send(ackFor(pk3, want3, ask3.cands[0].id, true)); await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ first: document.querySelector("#results .card").dataset.id, show: !!document.querySelector("#autoshow") }));
+  ok(st.first === before3 && st.show, "picture match: pointer over the results, no reorder under it, 'show' offered");
+  await ap.click("#autoshow"); await ap.waitForTimeout(200);
+  ok(await ap.evaluate(() => document.querySelector("#results .card").dataset.id) === want3, "picture match: 'show' puts the picture's pick first");
+  // unsure: sorted by likeness, nothing marked as the picture's pick
+  await ap.mouse.move(5, 5); await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
+  const pk4 = Date.now() + 22000; await send(rdChar(pk4)); await ap.waitForTimeout(300);
+  const ask4 = (await posted()).find((m) => m.type === "cardcomp-auto-img");
+  await send(ackFor(pk4, ask4.cands[5].id, ask4.cands[6].id, false)); await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => ({ first: document.querySelector("#results .card").dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent || "", line: document.querySelector("#autoline").textContent }));
+  ok(st.first === ask4.cands[5].id && st.badge !== "picture" && /picture unsure/.test(st.line), "picture match unsure: sorted by likeness, no 'picture' mark");
   await ap.click('#automodes span[data-m="manual"]'); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.mode === "manual"), "mode switch posts 'manual' to the extension");
   await send({ type: "cardcomp-auto-state", on: true, mode: "manual", model: "sonnet", hasKey: true }); await ap.waitForTimeout(100);

@@ -12,7 +12,7 @@
   const fromExt = (e) => (e.source === window && e.origin === location.origin) || (window.parent !== window && e.source === window.parent);
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
   const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
-  let EXT = false, STATE = { on: false, mode: "off", model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null, WATCH = null;
+  let EXT = false, STATE = { on: false, mode: "off", model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null, WATCH = null, HOVER = 0;
   // Engaged with this lot: typed, tapped or opened a result, or asked for "read now". Until the lot ends (not a
   // new title: it often appears with the timer, when the start read lands), automatic readings never replace the results, they only offer "show" (Derek: an auto read
   // after his read now collapsed the card he had open). 90 s cap in case no lot end ever arrives.
@@ -30,7 +30,8 @@
     "#autoline .rn{cursor:pointer;border:1px solid var(--gold);color:var(--gold);border-radius:5px;padding:0 6px;margin-right:6px}#autoline .wt{color:var(--faint)}" +
     "#autoline a{color:var(--blue);cursor:pointer}#autoline .bad{color:var(--red)}#autoline .gold{color:var(--gold)}" +
     ".autobadge{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:700;vertical-align:middle}" +
-    ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}";
+    ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}" +
+    ".autobadge.pic{background:rgba(245,179,1,.18);border:1px solid var(--gold);color:var(--gold)}";
   document.head.appendChild(css);
 
   function lineEl() {
@@ -153,7 +154,8 @@
       if (el) {
         el.classList.add("autosug");
         const nm = el.querySelector(".nm");
-        if (nm) nm.insertAdjacentHTML("beforeend", m.strength === "strong" ? '<span class="autobadge strong">&#10003; auto</span>' : '<span class="autobadge weak">auto?</span>');
+        if (nm) nm.insertAdjacentHTML("beforeend", m.strength === "strong" ? '<span class="autobadge strong">&#10003; auto</span>' :
+          m.pic === "agree" ? '<span class="autobadge pic">auto + picture</span>' : m.pic === "pick" ? '<span class="autobadge pic">picture</span>' : '<span class="autobadge weak">auto?</span>');
       }
     }
     if (document.activeElement === q) q.select();
@@ -207,11 +209,57 @@
     // a zoomed re-read fills unless Derek touched the results since the frame (the read-now that started it does not count)
     const touched = d.zoom ? TOUCH > (d.capAt || d.key) - 1500 : !d.manual && (engaged() || TOUCH > (d.capAt || d.key) - 1500);
     if (!touched) fill(m, r);
+    a.filledAt = touched ? 0 : Date.now(); a.pic = null;
+    askPic(d, m, a);
     if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "");
     paint();
     post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: !touched });
+  }
+
+  // Picture match (Derek, 2026-10-20: too many results to scan by eye). The reading's candidates go to the extension,
+  // which ranks the frame against each one's TCGplayer picture (extension/recog/imgmatch.js). The list is reordered by
+  // picture (printings sharing the art stay together, the text clues order them), and a clear winner is marked
+  // "picture". A number match stays the pick; a picture that disagrees with it is only named. Never reorders under
+  // the pointer: once Derek touched or hovered the results since they were filled, it offers "show" instead.
+  const picUrl = (c) => c.pid ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.pid}_200w.jpg` : (typeof imgOf === "function" ? imgOf(c) : "");
+  function askPic(d, m, a) {
+    if (m.kind === "foreign" || m.kind === "none" || (m.kind === "exact" && m.strength === "strong")) return;
+    const pool = (m.pool || m.cards).filter((c) => picUrl(c));
+    if (pool.length < 2) return;
+    a.picAsk = { key: d.key, n: d.n || 1 };
+    post({ type: "cardcomp-auto-img", key: d.key, n: d.n || 1, cands: pool.map((c) => ({ id: c.id, u: picUrl(c) })) });
+  }
+  const cardTxt = (c) => c ? `${esc(c.n)} &middot; ${esc(c.s)} #${esc(c.num)}` : "";
+  function onPic(d) {
+    const ak = ADOPT[d.key] || d.key, a = AUTO[ak];
+    if (!a || !a.best || !a.picAsk || a.picAsk.key !== d.key || a.picAsk.n !== (d.n || 1)) return;
+    const { m, r } = a.best, bd = a.best.d;
+    if (!d.ok) { a.pic = { err: d.why || "failed" }; MSG = describe(m, r, bd) + ` <span style="color:var(--faint)">&middot; picture: ${esc(d.why || "failed")}</span>`; paint(); return; }
+    const v = d.v, S = new Map(d.ranked.map((x) => [x.id, x.s])), grp = new Set(v.group), pool = m.pool || m.cards;
+    const ti = new Map(pool.map((c, i) => [c.id, i])), sc = (c) => (S.has(c.id) ? S.get(c.id) : -9);
+    const textSug = m.suggestion, numPick = !!(textSug && (m.kind === "exact" || m.kind === "near"));
+    let ordered = pool.slice().sort((x, y) => (grp.has(y.id) - grp.has(x.id)) || (grp.has(x.id) ? ti.get(x.id) - ti.get(y.id) : sc(y) - sc(x)));
+    let sug = textSug, pic = "unsure";
+    if (v.sure) {
+      const inGrp = !!(textSug && grp.has(textSug));
+      if (numPick && !inGrp) pic = "disagree";
+      else { sug = inGrp ? textSug : ordered[0].id; pic = inGrp ? "agree" : "pick"; }
+    }
+    if (sug && (numPick || !ordered.slice(0, 16).some((c) => c.id === sug))) ordered = [pool.find((c) => c.id === sug)].concat(ordered.filter((c) => c.id !== sug));
+    const m2 = Object.assign({}, m, { cards: ordered.slice(0, 16), suggestion: sug, pic });
+    const topC = pool.find((c) => c.id === v.top);
+    a.pic = { top: v.top, s: v.s, sure: v.sure, next: v.next, ns: v.ns, group: v.group.slice(0, 4), sug, pic, pics: d.pics, box: d.box, ms: d.ms };
+    const tip = esc(`picture ${v.s} vs next different ${v.ns == null ? "none" : v.ns} · ${d.pics} pictures · ${d.ms} ms${d.box ? "" : " · whole frame"}`);
+    const note = pic === "pick" ? `picture: <b>${cardTxt(topC)}</b>` : pic === "agree" ? "picture agrees" :
+      pic === "disagree" ? `<span class="bad">picture looks like ${cardTxt(topC)}</span>` : "picture unsure, sorted by likeness";
+    const fresh = (bd.capAt || bd.key) >= LATEST, canFill = fresh && a.filledAt && TOUCH < a.filledAt && HOVER < a.filledAt;
+    if (canFill) { fill(m2, r); a.filledAt = Date.now(); SHOW = null; }
+    else if (fresh) SHOW = { m: m2, r };
+    if (!fresh) return;
+    MSG = describe(m2, r, bd) + ` &middot; <span title="${tip}">${note}</span>` + (!canFill ? ' &middot; <a id="autoshow">show</a>' : "");
+    paint();
   }
 
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.
@@ -225,7 +273,8 @@
       rec.recog = { model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, zoom: b.d.zoom || 0, short: b.d.short || 0,
         read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
         kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
-        sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id) };
+        sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id),
+        pic: AUTO[key].pic || null };
     } catch (_) {}
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
@@ -233,6 +282,7 @@
   };
 
   document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = ENGAGED = Date.now(); }, true);
+  document.addEventListener("pointermove", (e) => { if (e.target && e.target.closest && e.target.closest("#results")) HOVER = Date.now(); }, true);
   document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = ENGAGED = Date.now(); }, true);
   window.addEventListener("message", (e) => {
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
@@ -241,6 +291,7 @@
     else if (d.type === "cardcomp-auto-state") { EXT = true; const m0 = STATE.mode; STATE = { on: !!d.on, mode: d.mode || (d.on ? "auto" : "off"), model: d.model || "sonnet", hasKey: !!d.hasKey }; if (!STATE.on || STATE.mode !== m0) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
     else if (d.type === "cardcomp-auto-watch") { WATCH = { why: d.phase === "watching" || d.phase === "live" || d.phase === "paused" || d.phase === "off" ? d.why : d.phase, mean: d.mean, peak: d.peak, at: Date.now() }; if (STATE.mode === "auto") { const m = $("#autoline .wt"); if (m) m.innerHTML = "&middot; " + esc(WATCH.why); else paint(); } }
+    else if (d.type === "cardcomp-auto-img-ack") onPic(d);
     else if (d.type === "cardcomp-auto-readack" && !d.ok) { READING = 0; MSG = `<span class="bad">read now: ${esc(d.why || "failed")}</span>`; paint(); paintRead("bad"); }
     else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
       ADOPT[d.from] = d.to;

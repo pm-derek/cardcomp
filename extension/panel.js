@@ -1,26 +1,37 @@
 // Side panel: CardComp in an iframe. The iframe posts bids to its parent (this page); relay and ack.
 const cc = document.getElementById("cc");
+// Window pairing (see bg.js toApps): this panel talks to the stream in its own window, and keeps only messages from it.
+// A window with no Whatnot tab follows the main stream (primary).
+let WIN = null, HAS_WN = true;
+const WN = "https://*.whatnot.com/*";
+const hasWn = () => { if (WIN != null) chrome.tabs.query({ windowId: WIN, url: WN }, (t) => { HAS_WN = !chrome.runtime.lastError && t.length > 0; }); };
+chrome.windows.getCurrent((w) => { WIN = w ? w.id : null; hasWn(); });
+chrome.tabs.onCreated.addListener(hasWn); chrome.tabs.onRemoved.addListener(hasWn); chrome.tabs.onAttached.addListener(hasWn); chrome.tabs.onDetached.addListener(hasWn);
+chrome.tabs.onUpdated.addListener((id, ch) => { if (ch.url || ch.status === "complete") hasWn(); });
+const mine = (msg) => msg.win == null || WIN == null || msg.win === WIN || (!HAS_WN && msg.primary);
+const send = (d, cb) => chrome.runtime.sendMessage(Object.assign({}, d, WIN != null ? { win: WIN } : {}), cb || (() => chrome.runtime.lastError));
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || e.source !== cc.contentWindow) return;
-  if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }   // RECOG app -> extension
-  if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); return; }
-  if (d.type === "cardcomp-snapshot") { chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
+  if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { send(d); return; }   // RECOG app -> extension
+  if (d.type === "cardcomp-auto-img") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n, q: d.q }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }   // RECOG picture match
+  if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { send(d); return; }
+  if (d.type === "cardcomp-snapshot") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
   if (d.type === "cardcomp-log-prune" || d.type === "cardcomp-log-read" || d.type === "cardcomp-log-edit") {
-    chrome.runtime.sendMessage(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: d.type + "-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*"));
+    send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: d.type + "-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*"));
     return;
   }
   if (d.type === "cardcomp-status") {
-    chrome.runtime.sendMessage(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
+    send(d, (r) => { if (!chrome.runtime.lastError && r) cc.contentWindow.postMessage({ type: "cardcomp-status-ack", whatnot: !!r.whatnot, store: !!r.store }, "*"); });
     return;
   }
   if (d.type !== "cardcomp-bid") return;
-  chrome.runtime.sendMessage(d, (r) => {
+  send(d, (r) => {
     const err = chrome.runtime.lastError;
     cc.contentWindow.postMessage({ type: "cardcomp-bid-ack", ok: !!(r && r.ok) && !err, why: err ? err.message : (r && r.why) }, "*");
   });
 });
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type) && mine(msg)) cc.contentWindow.postMessage(msg, "*"); });
+chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type) && mine(msg)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
