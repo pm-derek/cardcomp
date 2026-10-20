@@ -249,6 +249,11 @@ dropped as another reading's; now the reading's key / n are applied last, the re
 app matches on key (n only for replies with `cands`). recog-check 4b runs the real relays. Mark colors (Derek): gold border = the auto
 read's pick, blue = the picture alone ("picture"), green = both agree ("auto + picture"). The line's "best guess X"
 used to read "no match" whenever no printing was read (branch order in `describe`); fixed.
+Language misread (awholes 2026-10-20, Mega Eelektross ex 266/217 read as Japanese): when number AND total exist only in
+the other language's catalog, `autoMatch` uses that language (`m.swapped`, never strong). Unattached read nows: a read
+now before the timer is keyed by press time and was only tied to the lot by `recog-adopt` (picture unchanged at timer
+start), so most never reached the log (5 of 39 lots); `recogLotDone` now falls back to the latest reading taken since
+the previous real lot end (`PREV_END`) and before this lot sold.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

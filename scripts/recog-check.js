@@ -525,6 +525,15 @@ async function appPage(browser, base, blockRecog) {
   const lrec2 = await ap.evaluate(() => window.__lastRecog || null);
   ok(oc2 && oc2.key === lotKey && oc2.outcome.card.id === "me2pt5-223", "reused reading: the lot's outcome is reported under the lot");
   ok(lrec2 && lrec2.sug && lrec2.sug.id === "me2pt5-223" && /Illustration/.test(lrec2.sug.r) && lrec2.pre === true, "log row reading: suggested card with its rarity (" + (lrec2 && lrec2.sug ? lrec2.sug.n + ", " + lrec2.sug.r : "none") + "), read before the timer");
+  // a read now before the timer that was never adopted (the seller moved the card): still this lot's reading at lot end
+  await lotEnd(); const k7 = Date.now();
+  await send({ type: "cardcomp-auto", key: k7, capAt: k7, n: 1, manual: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  const lr7 = await ap.evaluate((k) => { const rec = { startedAt: k + 4000, at: k + 30000, card: { id: "me2pt5-223", n: "Numel", label: "tap" }, final: 3, me: false }; window.recogLotDone(rec); return rec.recog || null; }, k7);
+  await ap.waitForTimeout(150);
+  const oc7 = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
+  ok(lr7 && lr7.read.name === "Numel" && lr7.manual && oc7 && oc7.key === k7, "read now before the timer, never adopted: still logged as the lot's reading, outcome under the reading");
+  await lotEnd();
   const later = Date.now();
   await send({ type: "cardcomp-auto", key: lotKey, capAt: later, n: 1, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 900 });
   await ap.waitForTimeout(250);
@@ -625,6 +634,13 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   // picture match, CardComp side: a reading with many printings asks for the ranking; a clear winner moves up, marked
+  // language misread: an English set number read as Japanese switches to English (awholes, Mega Eelektross ex 266/217)
+  await lotEnd();
+  const kE = Date.now() + 18000;
+  await send({ type: "cardcomp-auto", key: kE, capAt: kE, n: 1, manual: true, read: { card_visible: true, name: "Mega Eelektross ex", number: "266", total: "217", language: "jp", rarity: "Special Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1500, short: 1080 });
+  await ap.waitForTimeout(300);
+  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, lang: LANG, badge: (document.querySelector("#results .card .autobadge") || {}).textContent }));
+  ok(st.first === "me2pt5-266" && st.lang === "en" && st.badge === "auto?", "read as Japanese but 266/217 is only English: English Ascended Heroes #266 first, marked auto? (" + JSON.stringify(st) + ")");
   // an extension older than 0.7 (state without a version): nothing asked, the line says to reload it
   await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const rdChar = (k) => ({ type: "cardcomp-auto", key: k, capAt: k, n: 1, manual: true, read: { card_visible: true, name: "Charizard", number: "", total: "", language: "en", rarity: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });

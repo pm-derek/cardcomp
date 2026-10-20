@@ -281,8 +281,18 @@
   }
 
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.
+  // A read now pressed before the timer is keyed by when it was pressed; it becomes the lot's reading only when the
+  // picture is unchanged at the timer start (recog-adopt). The seller moving the card left it unattached, so most read
+  // nows never reached the log (Derek, 2026-10-20: 5 of ~30 lots). At lot end, the latest reading taken since the
+  // previous lot ended (and before this one sold) is this lot's.
+  let LAST_END = 0, PREV_END = 0;
   window.recogLotDone = (rec) => {
-    const key = rec && rec.startedAt; if (!key || !AUTO[key]) return;
+    let key = rec && rec.startedAt; if (!key) return;
+    if (!AUTO[key]) {
+      const to = rec.at || Date.now();
+      key = Object.keys(AUTO).map(Number).filter((k) => AUTO[k].best && k > PREV_END && k <= to).sort((a, b) => b - a)[0];
+      if (!key) return;
+    }
     const c = rec.card || null, b = AUTO[key].best;
     // The auto reading rides on the auction log row (private log repo), so results are scored from the log: no
     // export to upload (it had reached 109 MB with frames) and no hand review for lots with a tapped / opened card.
@@ -297,6 +307,7 @@
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
     delete AUTO[key];
+    for (const k of Object.keys(AUTO)) if (+k < Date.now() - 15 * 60e3) delete AUTO[k];
   };
 
   document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = ENGAGED = Date.now(); }, true);
@@ -304,7 +315,7 @@
   document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = ENGAGED = Date.now(); }, true);
   window.addEventListener("message", (e) => {
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
-    if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); return; }
+    if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); if (!(d.rec && d.rec.empty)) { PREV_END = LAST_END; LAST_END = Date.now(); } return; }
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
     else if (d.type === "cardcomp-auto-state") { EXT = true; const m0 = STATE.mode; STATE = { on: !!d.on, mode: d.mode || (d.on ? "auto" : "off"), model: d.model || "sonnet", hasKey: !!d.hasKey, ver: d.ver || "" }; if (!STATE.on || STATE.mode !== m0) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
