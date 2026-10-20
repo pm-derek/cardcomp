@@ -514,6 +514,20 @@ async function appPage(browser, base, blockRecog) {
   ok((await ap.evaluate(() => { const c = document.querySelector('#results .card[data-id="sv8pt5-40"] .pchip.on'); return c && c.dataset.k; })) === "Reverse Holofoil", "opening the card selects the printing read");
   await send({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); await ap.waitForTimeout(100);
   ok(fl && fl.card && fl.card.label === "tap" && fl.card.printing === "Master Ball Holofoil" && fl.bidsSent.length === 1, "Sold flicker between lots keeps the pre-start tap (Sylveon Master Ball)");
+  // taps carry their lot (extension sends lotStart): a stray "Sold" while the next lot is live (pullsafaritcg) keeps them
+  { const sA = Date.now() - 20000;
+    await send({ type: "cardcomp-lot", title: "#40", cur: 2, bids: 3, ended: false, lotStart: sA, endSent: false });
+    await send({ type: "cardcomp-lot-end", rec: { title: "#40", final: 2, bids: 3, startedAt: sA, at: Date.now(), seller: "p" } });
+    await send({ type: "cardcomp-lot", title: "#40", cur: 2, ended: true, sold: "x", lotStart: sA, endSent: true }); await ap.waitForTimeout(2700);
+    await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8pt5-40"] .bm b.cpy').click()); await ap.waitForTimeout(100);   // between lots: for the next one
+    const sB = Date.now();
+    await send({ type: "cardcomp-lot", title: "#41", cur: 1, bids: 0, ended: false, lotStart: sB, endSent: false }); await ap.waitForTimeout(80);
+    await send({ type: "cardcomp-lot", title: "#41", cur: 1, ended: true, sold: "x", lotStart: sB, endSent: false }); await ap.waitForTimeout(80);   // stray "Sold" mid-lot
+    await send({ type: "cardcomp-lot", title: "#41", cur: 2, ended: false, lotStart: sB, endSent: false }); await ap.waitForTimeout(1700);
+    await send({ type: "cardcomp-lot-end", rec: { title: "#41", final: 3, bids: 4, me: true, startedAt: sB, at: Date.now() + 200, seller: "p" } }); await ap.waitForTimeout(3000);
+    const g = await ap.evaluate(() => window.__logs.filter((r) => r.title === "#41").pop());
+    ok(g && g.card && g.card.label === "tap" && g.card.n === "Sylveon" && g.bidsSent.length === 1 && g.bidsSent[0].lot === "next", "tile bid tapped between lots keeps its lot through a stray 'Sold' (fast back-to-back lots)");
+  }
   await ap.waitForTimeout(1700); await lotEnd();   // typing within 1.5 s of a frame counts as engaged
   // Chinese card: English printings for reference, nothing marked, warning in red
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "", total: "", language: "zh", rarity: "Special Illustration Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });

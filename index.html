@@ -2665,7 +2665,7 @@ function sendToWhatnot(s, el, show, labelOnly){
       // printing: the chip selected in the open card, else the top printing the collapsed bid was priced from
       LAST_TAP=Object.assign(cardSnap(r, cond, pk?pk.dataset.k:topPrint(r), ds.mkt?+ds.mkt:0, name), { bid:+s, at:Date.now() });
     }
-    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n, snap:Object.assign({}, LAST_TAP)}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
+    TAPS_THIS_LOT.push({t:Date.now(), bid:+s, cond:LAST_TAP.cond, id:LAST_TAP.id, n:LAST_TAP.n, lot:tapLot(), snap:Object.assign({}, LAST_TAP)}); if(TAPS_THIS_LOT.length>50) TAPS_THIS_LOT.shift();
     if(Date.now()<LOT_START){   // inside the grace window: counted for the lot that just sold
       LATE_NOTE=Date.now(); setTimeout(paintLot, 3200);
       if(LAST_VIEW && LAST_VIEW.id===LAST_TAP.id) LOT_VIEW_START=Date.now()+1;   // the card opened for that late tap is used up, not offered for the next lot
@@ -2736,6 +2736,16 @@ let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], 
 const LABEL_MAX_MS=5*60000;
 const LATE_TAP_MS=2500;   // a tap up to 2.5 s after "Sold" is a late reaction to that card, not a pick for the next one
 let LOT_END_TITLE="";   // title of the lot whose end was last seen (safety net below)
+// Which lot a bid is for, decided when it is tapped (pullsafaritcg 2026-10-20: fast back-to-back lots, bids tapped from
+// the tiles before the timer, and a stray "Sold" between lots still wiped them, so wins logged with no card):
+// a live lot -> that lot (its startedAt, sent by the extension as lotStart); within LATE_TAP_MS after "Sold" -> the lot
+// that sold; between lots -> "next" (the next lot to end). null with an older extension (window rules below apply).
+let LAST_REAL_TO=0;   // end of the last logged lot's late-tap window: "next" taps before it belong to an earlier lot
+function tapLot(){
+  const L=LOT; if(!L || L.lotStart==null) return null;
+  if(!L.ended) return L.lotStart;
+  return Date.now()-Math.max(LOT_END_SEEN_AT, LOT_ENDED_AT) < LATE_TAP_MS ? L.lotStart : "next";
+}
 let LATE_NOTE=0, LOT_VIEW_START=0;   // opened cards: no grace window (opening right after "Sold" is looking up the next card)   // a tap or opened card older than this never labels a lot (a lot runs ~30-90 s)   // TAPS_THIS_LOT: every bid sent during the current lot {t, bid, cond}
 function lotFromExt(e){ const fromSelf=e.source===window && e.origin===location.origin, fromPanel=window.parent!==window && e.source===window.parent; return fromSelf||fromPanel; }
 function viewLabel(from, to, sellerCond){   // snapshot of the last card opened since the previous lot ended
@@ -3249,8 +3259,9 @@ window.addEventListener("message", e=>{
     // Only for a sale whose lot-end never came: d.endSent (the reader already sent this lot's end) or the title of
     // the lot that just ended means it is the same "Sold" flickering between lots. Before (gametower, 2026-10-16):
     // a flicker after Derek tapped a pre-start Sylveon bid wiped the tap and the $21 win was logged as only opened.
+    // tagged taps (x.lot) keep their lot whatever this net does
     const sameEnd=d.endSent===true || (d.endSent===undefined && d.title && d.title===LOT_END_TITLE);
-    if(d.ended && !LOT_ENDED_AT && !sameEnd){ const t=LOT_ENDED_AT=Date.now(); setTimeout(()=>{ if(LOT_END_SEEN_AT<t-1000 && LOT_START<t){ LOT_START=t+LATE_TAP_MS; TAPS_THIS_LOT=TAPS_THIS_LOT.filter(x=>x.t>t+LATE_TAP_MS); paintLot(); } }, 1500); }
+    if(d.ended && !LOT_ENDED_AT && !sameEnd){ const t=LOT_ENDED_AT=Date.now(); setTimeout(()=>{ if(LOT_END_SEEN_AT<t-1000 && LOT_START<t){ LOT_START=t+LATE_TAP_MS; TAPS_THIS_LOT=TAPS_THIS_LOT.filter(x=>x.lot!=null || x.t>t+LATE_TAP_MS); paintLot(); } }, 1500); }
     if(!d.ended) LOT_ENDED_AT=0;
     paintLot();
   }
@@ -3270,9 +3281,13 @@ window.addEventListener("message", e=>{
   }
 });
 function finishLot(rec, from, to, vFrom){
-  const mine=TAPS_THIS_LOT.filter(t=>t.t>=from && t.t<=to);
-  TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>t.t>to);   // taps after the grace window belong to the next lot
-  if(rec.empty){ paintLot(); return; }   // a lot that never showed a price: reset only, nothing to log
+  if(rec.empty){ TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>t.lot!=null || t.t>to); paintLot(); return; }   // a lot that never showed a price: nothing to log; tagged taps wait for their lot
+  // tagged taps: the ones made for this lot, plus "next" taps since the previous logged lot; untagged (older
+  // extension): the time window as before
+  const S=rec.startedAt, nextFrom=Math.max(LAST_REAL_TO, (S||Date.now())-180000);
+  const mine=TAPS_THIS_LOT.filter(t=> t.lot!=null ? (t.lot===S || (t.lot==="next" && t.t>=nextFrom && t.t<=to)) : (t.t>=from && t.t<=to));
+  TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>!mine.includes(t) && (t.lot!=null ? t.lot!=="next" || t.t>to : t.t>to));   // later taps belong to later lots
+  LAST_REAL_TO=Math.max(LAST_REAL_TO, to);
   const last=mine.length ? mine[mine.length-1] : null;
   const tap=last && last.snap && to-last.t<LABEL_MAX_MS+LATE_TAP_MS ? last.snap : null;
   if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; if(last.t>(rec.at||0)) rec.card.late=true; }

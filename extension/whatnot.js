@@ -378,6 +378,7 @@ function lotTick() {
   }
   if (lot && st.sold && !lot.ended) endLot(st);
   st.endSent = !!(lot && lot.ended);   // this lot's end was already sent: a "Sold" on screen now is not a missed sale
+  st.lotStart = lot ? lot.startedAt : null;   // the lot's id (its lot-end carries the same startedAt): a bid tapped now belongs to it
   lotLastState = st;
   if (window.__recogTick) try { window.__recogTick(st, lot); } catch (_) {}   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
   const key = JSON.stringify(st);

@@ -444,3 +444,10 @@ replayed, Sunflora and Ninjask now pick the Art Rare (Sunflora matches the card 
 (Rowlet read as JP, Derek opened the EN Perfect Order twin), and numbers on far cards. Opened cards are weak truth (one
 "Budew" lot was Derek looking up the Braviary he had just won).
 Speed: streamed replies fill the search once name / number are written (about 0.5-0.8 s sooner); short keys trim output.
+- Export of the same stream (169 readings in ~27 min, ~375/hour, the same card often read 4 times before the timer;
+  Derek hit the 240/hour cap and read-nows failed): modes off / manual / auto, separate allowances, 2 pre-start reads
+  per gap. The frames show the card ~300 px wide in a toploader in the middle of a busy playmat; Derek: numbers are
+  unreadable on this stream at any zoom (soft camera). Zoomed re-read added for streams where the card is small but
+  sharp; for soft streams the best case is the right name and rarity with its printings listed.
+- Collapsed-tile bids on that stream: 10 wins had a max set in Whatnot but no tap in the log (the tap reached Whatnot,
+  the app dropped it). Taps are now tagged with their lot when tapped (see CLAUDE.md, "Taps carry their lot").
