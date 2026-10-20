@@ -1542,7 +1542,7 @@ async function boot(){
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale(); if(location.hash==="#dash") dashOpen(true);
   if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
-  loadLive(); setInterval(loadLive, 5*60*1000);   // verified condition prices from the live branch; re-read every 5 min while open
+  loadLive(); setInterval(()=>{ if(document.visibilityState!=="hidden") liveFresh(55000); }, 60000);   // verified condition prices from the live branch: every minute while visible
   const en=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="en").length;
   const jp=CARDS.filter(c=>(c.game||"pkmn")==="pkmn"&&(c.lang||"en")==="jp").length;
   const lor=CARDS.filter(c=>(c.game||"pkmn")==="lorcana").length;
@@ -2598,9 +2598,22 @@ function thinFlag(pr){   // flag a bid built on shaky price data
 // applied to today's NM, so a 3-week-old read still moves with the market instead of freezing a dollar figure.
 const LIVE={}; let LIVE_STORE={}, LIVE_REDRAW=null, PID_INDEX=null;
 const LIVE_URL="https://raw.githubusercontent.com/pm-derek/cardcomp/live/live.json", LIVE_MAX_DAYS=60;
+// Phone freshness (Derek, 2026-10-20: "LP MP HP prices need to carry over into mobile"): they did, but only on load and
+// every 5 min, and a phone stops timers while Safari sits behind the Whatnot app, so a price verified on desktop could
+// take a long while to show. Now: the last copy is kept (shows before the network answers), and it is re-read when the
+// page comes back into view, when a card is opened (if older than 30 s) and every minute while visible. The ?t= query
+// skips GitHub's 5 min raw cache (x-cache MISS), so a read saved on desktop shows within ~30 s (store.js batches 20 s).
+let LIVE_AT=0;
+try{ LIVE_STORE=JSON.parse(localStorage.getItem("cardcomp_live")||"{}")||{}; }catch(_){ LIVE_STORE={}; }
 async function loadLive(){
-  try{ const r=await fetch(LIVE_URL+"?t="+Date.now(),{cache:"no-store"}); if(r.ok){ LIVE_STORE=(await r.json())||{}; if(LIVE_REDRAW) LIVE_REDRAW(); } }catch(_){ }
+  LIVE_AT=Date.now();
+  try{ const r=await fetch(LIVE_URL+"?t="+Date.now(),{cache:"no-store"}); if(r.ok){ const t=await r.text(), j=JSON.parse(t)||{};
+    const changed=JSON.stringify(j)!==JSON.stringify(LIVE_STORE); LIVE_STORE=j; try{ localStorage.setItem("cardcomp_live", t); }catch(_){ }
+    if(changed && LIVE_REDRAW) LIVE_REDRAW(); } }catch(_){ }
 }
+const liveFresh=(ms)=>{ if(Date.now()-LIVE_AT>(ms||30000)) loadLive(); };
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") liveFresh(15000); });
+window.addEventListener("pageshow", ()=>liveFresh(15000));
 // One TCGplayer product can carry several printings (Dark Gyarados 84606: 1st Edition Holofoil and Unlimited
 // Holofoil, picked by ?Printing=). A read keyed by product + condition alone was divided by the wrong printing's
 // NM (MP $33.82 / 1st Ed NM $222.18 x Unlimited NM $73.29 showed $11.15). Shared products key by printing too;
@@ -2743,7 +2756,7 @@ function renderPrices(host, data, prices, src){
   ["click","keydown","keyup","keypress"].forEach(ev=>ovrIn.addEventListener(ev, e=>e.stopPropagation()));
   ovrIn.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); ovrSend(); } });
   const draw=()=>{
-    LIVE_REDRAW=draw;
+    LIVE_REDRAW=draw; liveFresh();   // a card opened: re-read verified prices if the copy is 30 s+ old
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
     const yr=card?card.y:0;
