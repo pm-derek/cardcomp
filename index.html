@@ -166,21 +166,9 @@
   .multrow{display:flex;gap:8px;margin-top:6px}
   .multrow label{flex:1;text-align:center;font-size:10px;color:var(--faint)}
   .multrow input{text-align:center;padding:6px 2px}
-  .flagstrip{display:flex;gap:8px}
-  .fbtn{flex:1;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;line-height:1}
-  .fbtn.fg{color:var(--green)}
-  .fbtn.fy{color:var(--gold)}
-  .fbtn.fr{color:var(--red)}
-  .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
-  body.nofeedback .flagstrip,body.nofeedback .undobar,body.nofeedback .rails,body.nofeedback .detailflags{display:none!important}
-  .undobar{display:none;width:100%;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
   /* one size system for header controls: .tgl = segmented selectors (game/lang), .fpill = filter pills (era/mode/reset) */
   .tgl{font-family:inherit;font-size:12px;font-weight:600;padding:8px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
   .fpill{font-family:inherit;font-size:12px;font-weight:500;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
-  .rails{flex:none;display:flex;align-self:stretch;margin-left:8px;border-left:1px solid var(--line)}
-  .rail{width:30px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
-  .rail.rg{color:var(--green)}
-  .rail.ry{color:var(--gold);border-left:1px solid var(--line)}
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
   .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
@@ -215,7 +203,7 @@
   #results.grid .card img{width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;object-position:50% 0%}
   #results.grid .nm{font-size:13px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   #results.grid .tags{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #results.grid .xtra,#results.grid .rails,#results.grid .bids .bpc,#results.grid .bids .exact{display:none}
+  #results.grid .xtra,#results.grid .bids .bpc,#results.grid .bids .exact{display:none}
   #results.grid .bids .rounded{display:inline}
   #results.grid .bids{width:100%;min-width:0;display:flex;gap:4px 11px;flex-wrap:wrap;white-space:normal;text-align:left;align-self:auto}
   #results.grid .bids .brow{display:flex;gap:3px;align-items:baseline}
@@ -236,7 +224,6 @@
   #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
   #results.grid .card.open .tags{font-size:11px;white-space:normal}
   #results.grid .card.open .xtra{display:inline}
-  #results.grid .card.open .rails{display:flex}
   #results.grid .card.open .bids{width:auto;display:block;text-align:right;margin-left:auto;align-self:center}
   #results.grid .card.open .bids .bpc,#results.grid .card.open .bids .exact{display:inline}
   #results.grid .card.open .bids .rounded{display:none}
@@ -244,7 +231,6 @@
   .bids .brow b{font-size:15px;cursor:pointer}
   .bids .bm b{color:var(--gold)}
   .bids .bp b{color:var(--blue)}
-  .detailflags{display:flex;gap:8px;margin-top:12px}
   .sbtn{font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer}
   .sbtn:hover{color:var(--ink);border-color:var(--gold)}
   .zoom{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;cursor:zoom-out}
@@ -274,16 +260,6 @@
       <label>HP<input data-c="HP" type="number" value="0.55"></label>
       <label>DMG<input data-c="DMG" type="number" value="0.40"></label>
     </div>
-    <h4 style="margin-top:13px">search log</h4>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin-bottom:8px"><input type="checkbox" id="cfg-feedback" checked style="width:auto"> Feedback buttons (good / ok / bad) — uncheck to hide them and stop logging</label>
-    <div id="slogsum" style="font-size:12px;color:var(--dim);margin-bottom:8px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button id="slogview" class="sbtn" type="button">view log</button>
-      <button id="slogcopy" class="sbtn" type="button">copy JSON</button>
-      <button id="slogdl" class="sbtn" type="button">download</button>
-      <button id="slogclear" class="sbtn" type="button">clear log</button>
-    </div>
-    <div id="slogbody" style="display:none;margin-top:10px;font-size:12px;line-height:1.5"></div>
   </div>
   <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px;flex-direction:column;gap:8px">
     <div id="lotstrip" style="display:none;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.35;padding:6px 9px;border-radius:7px;background:var(--panel2);border-left:4px solid var(--gold)"></div>
@@ -306,14 +282,6 @@
     <div id="sug" class="sug"></div>
   </div>
   <div id="lotstats" style="display:none"></div>
-  <!-- outside the sticky row on purpose: pinning these cost ~44px of a ~315px split-screen viewport,
-       and an opened card carries its own good/ok/bad strip, so flagging is still one tap away -->
-  <div class="flagstrip idle" id="flagstrip">
-    <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
-    <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
-    <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
-  </div>
-  <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   <div id="filterbar" style="display:flex;gap:8px;margin:0 0 6px;align-items:center">
     <button class="fpill" id="filtertoggle" title="show or hide the era and result filters">⚙ Filters</button>
     <span id="filtersum" style="font-size:11px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -2427,7 +2395,8 @@ function checkStale(){
 }
 async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
-  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
+  // no-cache = revalidate: a 304 when prices have not changed since the last load (no-store re-downloaded ~1.4 MB every load)
+  try{ const d=await (await fetch("./data.json",{cache:"no-cache"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale(); if(location.hash==="#dash") dashOpen(true);
   if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
@@ -2461,8 +2430,6 @@ function tierFor(year, price){
   return {era, band, m:TIERS[era][band]};
 }
 function autoTiers(){ const el=$("#cfg-autotier"); return el ? !!el.checked : true; }
-function feedbackOn(){ const el=$("#cfg-feedback"); return el ? !!el.checked : true; }
-function applyFeedback(){ const on=feedbackOn(); document.body.classList.toggle("nofeedback", !on); if(!on){ CUR=null; if(typeof paintStrip==="function") paintStrip(); } }   // hide the good/ok/bad UI and drop any live episode when feedback is off
 function condMult(cond, year, price){
   if(cond==="NM") return 1;
   if(autoTiers()) return tierFor(year, price).m[cond];
@@ -3419,7 +3386,6 @@ async function loadPrices(card, host){
     for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l, p:v.p}; }   // p: this printing's own TCGplayer product (Shadowless, Master Ball...)
     renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
   }
-  addDetailFlags(host, card);
   if(PICK) addPickRow(host, card);
 }
 function renderPrices(host, data, prices, src){
@@ -3539,7 +3505,6 @@ function addToCart(item){
 }
 function clearCart(){ CART=[]; saveCart(); renderCart(); }
 function openFromCart(item){
-  finalize("u"); SUPPRESS_LOG=true;   // cart reopen is not a user search; close any live episode
   const isSealed = String(item.id||"").startsWith("sl:");
   // Reopen by id, not by re-searching the name. Promo/standalone names embed the collector
   // number (e.g. "Cyndaquil 047"); the parser turns that into a number filter but the stored
@@ -3559,7 +3524,6 @@ function openFromCart(item){
   requestAnimationFrame(()=>{
     const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===item.id);
     if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
-    SUPPRESS_LOG=false;
   });
 }
 function renderCart(){
@@ -3590,139 +3554,15 @@ function renderCart(){
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
 }
 
-/* ---------- search feedback log ---------- */
-// One record per search, ring-buffered in localStorage. Three grades: green (good),
-// yellow (worked, not great), red (bad). All three log and clear the field. Starting a
-// new search without flagging logs "unflagged" (moved on, no judgment). Never required.
-const SLOG_KEY="cardcomp_slog", SLOG_MAX=2000;
-let SLOG=[]; try{ SLOG=JSON.parse(localStorage.getItem(SLOG_KEY)||"[]")||[]; }catch(e){ SLOG=[]; }
-let CUR=null;            // live search episode: {t, raw, f, n, openedId}
-let SUPPRESS_LOG=false;  // cart reopen: its run() is not a user search
-let LAST=null, _snap=null;  // undo: LAST={rec,raw,openedId} restorable after a flag clear; _snap staged inside finalize
-function slogSave(){ try{ localStorage.setItem(SLOG_KEY, JSON.stringify(SLOG)); }catch(e){} }
-function compactFilters(f){
-  const o={};
-  const set=f.setName||(f.setCode?SET_CODES[f.setCode]:null);
-  if(set) o.set=set;
-  if(f.number) o.number=f.number;
-  if(f.rarity) o.rarity=f.rarity.label;
-  if(f.printing) o.printing=f.printingLabel||f.printing;
-  if(f.type) o.type=f.type;
-  if(f.stage) o.stage=f.stage;
-  if(f.subtype) o.subtype=f.subtype;
-  if(f.hp!=null) o.hp=f.hp;
-  if(f.eraMin!=null) o.eraMin=f.eraMin;
-  if(f.eraMax!=null) o.eraMax=f.eraMax;
-  if(f.jp) o.jp=f.jp.code;
-  return o;
-}
-function seedCUR(raw, f, n){
-  if(SUPPRESS_LOG || !feedbackOn()) return;   // feedback off: no live episode, nothing logs
-  LAST=null; _snap=null;   // starting or continuing a search retires any pending undo
-  if(!CUR) CUR={t:Date.now(), openedId:null};
-  CUR.raw=raw; CUR.f=compactFilters(f); CUR.n=n;
-  paintStrip();
-}
-function finalize(fl, cardId){
-  clearTimeout(t);
-  const qel=$("#q");
-  if(CUR && qel && qel.value.trim() && qel.value!==CUR.raw) run(qel.value);   // flush pending keystrokes into CUR
-  if(!CUR || !(CUR.raw||"").trim()){ CUR=null; paintStrip(); return null; }
-  const rec={t:CUR.t, q:CUR.raw, f:CUR.f, n:CUR.n, id:(cardId!==undefined&&cardId!==null)?cardId:(CUR.openedId||null), fl, g:GAME, l:LANG};
-  if(MODE) rec.mode=MODE;   // active result-gating toggle, matters like game/lang
-  if(ERA) rec.era=ERA;
-  SLOG.push(rec);
-  if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
-  slogSave();
-  _snap={rec, raw:CUR.raw, openedId:CUR.openedId};   // staged; armUndo() promotes it on the clear paths only
-  CUR=null; paintStrip();
-  return rec;
-}
-function clearSearch(){   // reset for the next search; never logs (callers finalize first)
+function clearSearch(){   // the search box's ✕: reset for the next search
   clearTimeout(t);
   const qel=$("#q");
   if(qel) qel.value="";
   $("#qclear").style.display="none";
   $("#results").innerHTML=""; $("#read").innerHTML=""; $("#status").textContent="";
-  CUR=null; paintStrip();
   if(qel) qel.focus();
 }
-function armUndo(){ if(_snap) LAST=_snap; _snap=null; }   // make the last flagged+cleared search restorable
-function flagGood(id){ finalize("g", id); armUndo(); clearSearch(); }
-function flagBad(){ finalize("r"); armUndo(); clearSearch(); }
-function flagOk(id){ finalize("y", id); armUndo(); clearSearch(); }
-function undoLast(){
-  if(!LAST) return;
-  const {rec, raw, openedId}=LAST;
-  if(SLOG.length && SLOG[SLOG.length-1]===rec){ SLOG.pop(); slogSave(); updateSlogUI(); }   // drop the flag we just logged
-  LAST=null; _snap=null;
-  const m=rec.mode||"";                                   // restore the result-gating toggle it ran under
-  MODE=["fa","bulk","val25","val50","promo","sealed"].includes(m)?m:""; paintToggles();
-  ERA=["vintage","mid","modern"].includes(rec.era)?rec.era:""; paintEra();
-  const qel=$("#q"); if(qel){ qel.value=raw||""; qel.focus(); }
-  $("#qclear").style.display=(raw&&raw.trim())?"block":"none";
-  run(raw||"");                                           // re-seed CUR + re-render results
-  if(openedId && CUR) CUR.openedId=openedId;
-  if(openedId){
-    requestAnimationFrame(()=>{
-      const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===openedId);
-      if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
-    });
-  }
-}
-function paintStrip(){
-  const live=!!(CUR&&(CUR.raw||"").trim());
-  const showUndo=!live && !!LAST;
-  const s=$("#flagstrip"), u=$("#undobar");
-  if(u) u.style.display=showUndo?"block":"none";
-  if(s){ s.style.display=showUndo?"none":"flex"; s.classList.toggle("idle", !live); }   // undo replaces the (idle) strip in the same slot
-}
-function addDetailFlags(host, card){
-  host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">~ ok</button><button class="fbtn fr" type="button">✗ bad</button></div>');
-  const d=host.querySelector(".detailflags"); if(!d) return;
-  d.querySelector(".fg").onclick=(e)=>{ e.stopPropagation(); flagGood(card?card.id:null); };
-  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagOk(card?card.id:null); };
-  d.querySelector(".fr").onclick=(e)=>{ e.stopPropagation(); flagBad(); };
-}
-
-/* log viewer (settings panel) */
-function slogSummaryHTML(){
-  if(!SLOG.length) return "no searches logged yet";
-  const c={g:0,y:0,r:0,u:0}; let uFound=0; SLOG.forEach(r=>{ if(c[r.fl]!=null) c[r.fl]++; if(r.fl==="u"&&r.id) uFound++; });
-  const uMoved=c.u-uFound;
-  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} ok</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged (${uFound} found, ${uMoved} moved on)`;
-}
 const escH=s=>String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
-function fmtFilters(f){ return Object.entries(f||{}).map(([k,v])=>k+" "+v).join(" · "); }
-function renderSlog(){
-  const body=$("#slogbody"); if(!body) return;
-  const freq=new Map();
-  SLOG.forEach(r=>{ const k=(r.q||"").toLowerCase().trim(); if(k.length>=3) freq.set(k,(freq.get(k)||0)+1); });   // skip 1-2 char interim noise
-  const top=[...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
-  const bad=SLOG.filter(r=>r.fl==="r"||r.fl==="y").slice(-50).reverse();
-  // corrections: a missed/ok/unflagged search immediately refined into a green hit (same first word, within 90s)
-  const w4=s=>(s||"").trim().toLowerCase().split(/\s+/)[0].slice(0,4);
-  const corr=[];
-  for(let i=1;i<SLOG.length;i++){ const p=SLOG[i-1], cc=SLOG[i]; if(cc.fl==="g" && p.fl!=="g" && p.q!==cc.q && w4(p.q)===w4(cc.q) && (cc.t-p.t)/1000<90 && w4(p.q)) corr.push([p,cc]); }
-  const corrShow=corr.slice(-40).reverse();
-  const h4=tt=>`<div style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:1px;margin:10px 0 5px">${tt}</div>`;
-  body.innerHTML =
-    h4("corrections · "+corr.length+" (query → fix)")+
-    (corrShow.length?corrShow.map(([p,cc])=>`<div style="padding:3px 0;border-bottom:1px solid var(--line);color:var(--dim)">${escH(p.q)} <span style="color:var(--faint)">[${p.fl==="r"?"✗":p.fl==="y"?"~":"·"} ${p.n}]</span> <b style="color:var(--green)">→</b> ${escH(cc.q)} <span style="color:var(--faint)">[${cc.n}]</span></div>`).join(""):'<div class="muted">none yet</div>')+
-    h4("top queries")+
-    (top.length?top.map(([q,n])=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;color:var(--dim)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(q)}</span><span style="flex:none">${n}</span></div>`).join(""):'<div class="muted">none</div>')+
-    h4("red + yellow · latest "+bad.length)+
-    (bad.length?bad.map(r=>{
-      const fs=fmtFilters(r.f);
-      const md={fa:"full art",bulk:"hide bulk",val25:"$25+",val50:"$50+",promo:"promos",sealed:"sealed"}[r.mode]||"";
-      const ea={vintage:"vintage",mid:"mid-era",modern:"modern"}[r.era]||"";
-      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${ea?" · "+ea:""}${md?" · "+md:""}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
-    }).join(""):'<div class="muted">none</div>');
-}
-function updateSlogUI(){
-  const s=$("#slogsum"); if(s) s.innerHTML=slogSummaryHTML();
-  const b=$("#slogbody"); if(b && b.style.display!=="none") renderSlog();
-}
 
 /* ---------- domain layer ---------- */
 const NICK = [
@@ -4245,7 +4085,6 @@ function run(raw){
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
   const multiWord = q.split(/\s+/).filter(Boolean).length >= 2;
   PRINT_HINT = f.printing || "";
-  if(raw.trim()) seedCUR(raw, f, res.length);   // live search episode for the feedback log
   render(res, literal, !hasFilter && !multiWord);
 }
 
@@ -4276,24 +4115,18 @@ function render(res, literal, newestFirst){
             : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}${liveTag(r)}</div>
         </div>
         ${bidHTML}
-        <div class="rails">
-          <div class="rail rg" title="good search · this card">✓</div>
-          <div class="rail ry" title="found it, but hard to find · this card">~</div>
-        </div>
       </div>
       <div class="detail"></div>`;
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
     // Opening a tile expanded it in place, so a card in the second row put the bid table below the
     // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
     // Anchoring on the card's top is height-independent, so it works before the detail has painted.
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } else if(open && PICK) addPickRow(det, r); if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } else if(open && PICK) addPickRow(det, r); if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.
     if(im) im.onclick = (e)=>{ if(VIEW==="grid" && !el.classList.contains("open")) return; e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
-    const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
-    const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
     wrap.appendChild(el);
   });
 }
@@ -4416,31 +4249,14 @@ function sugKey(e){   // true if the key was used by the suggestion chips
 
 /* ---------- wiring ---------- */
 let t=null;
-$("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
-$("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
+$("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; t=setTimeout(()=>run(e.target.value), 110); });
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(sugKey(e)) return; if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
-$("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
+$("#qclear").onclick = ()=>clearSearch();
 $("#q").addEventListener("input", renderSug);
 $("#q").addEventListener("focus", renderSug);
 $("#q").addEventListener("blur", ()=>setTimeout(renderSug,120));
 $("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a chip must not blur the input (keyboard stays up)
-(function(){
-  const s=$("#flagstrip");
-  if(s){
-    s.querySelector('[data-fl="g"]').onclick=()=>flagGood();
-    s.querySelector('[data-fl="y"]').onclick=()=>flagOk();
-    s.querySelector('[data-fl="r"]').onclick=()=>flagBad();
-  }
-  const ub=$("#undobar"); if(ub) ub.onclick=undoLast;
-  const v=$("#slogview"); if(v) v.onclick=()=>{ const b=$("#slogbody"); const show=b.style.display==="none"; b.style.display=show?"block":"none"; if(show) renderSlog(); };
-  const cp=$("#slogcopy"); if(cp) cp.onclick=()=>{ const str=JSON.stringify(SLOG); const flash=()=>{ const t0=cp.textContent; cp.textContent="copied ✓"; setTimeout(()=>{ cp.textContent=t0; },800); }; if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(str).then(flash,()=>copyFallback(str,flash)); else copyFallback(str,flash); };
-  const dl=$("#slogdl"); if(dl) dl.onclick=()=>{ const b=new Blob([JSON.stringify(SLOG)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="cardcomp-searchlog.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
-  const cl=$("#slogclear"); if(cl) cl.onclick=()=>{ if(confirm("clear search log?")){ SLOG=[]; slogSave(); updateSlogUI(); } };
-  window.addEventListener("pagehide", ()=>{ finalize("u"); });   // best effort; iOS killing a backgrounded tab from the app switcher never fires this, that one record is lost by design
-  window.addEventListener("pageshow", ()=>{ const qel=$("#q"); if(!CUR && qel && qel.value.trim() && window.__ready) run(qel.value); });   // bfcache restore after pagehide finalized: re-seed the visible query
-  paintStrip();
-})();
 
 /* settings: persist (safe if storage blocked), toggle, zoom close */
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
@@ -4454,9 +4270,8 @@ function migrateCfg(){   // 2026-10: speed-based margin treats this setting as i
   }catch(e){}
 }
 loadCfg(); migrateCfg();
-applyFeedback();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); applyFeedback(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
-$("#gear").onclick = ()=>{ const open=$("#settings").classList.toggle("open"); if(open) updateSlogUI(); };
+document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
+$("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
