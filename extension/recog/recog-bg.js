@@ -8,8 +8,6 @@
 //   card as the previous lot, i.e. the seller may still be holding the sold card).
 //   Every lot is recorded in IndexedDB "cardcomp-recog" (store "lots"): frames sent, readings, model, latency,
 //   cost, what CardComp matched, and what Derek tapped or opened. Results page: recog/debug.html.
-// Capture check (step 1): Ctrl+Shift+Y or right-click > "Recognition test: grab a frame" grabs one frame
-//   (store "frames"), then retries 5 s later with no key press.
 // Nothing here bids or touches Whatnot. Calls go straight to api.anthropic.com with Derek's key.
 
 const RECOG_DB = "cardcomp-recog";
@@ -36,15 +34,6 @@ async function recogTx(store, fn) {
     const tx = db.transaction(store, "readwrite"), st = tx.objectStore(store);
     let out; const q = fn(st); if (q) q.onsuccess = () => { out = q.result; };
     tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error);
-  });
-}
-const recogPut = (rec) => recogTx("frames", (st) => st.add(rec));
-async function recogPatch(id, patch) {
-  const db = await recogDb();
-  return new Promise((res) => {
-    const tx = db.transaction("frames", "readwrite"), st = tx.objectStore("frames"), g = st.get(id);
-    g.onsuccess = () => { if (g.result) st.put(Object.assign(g.result, patch)); };
-    tx.oncomplete = res; tx.onerror = res;
   });
 }
 // Read-modify-write one lot record (created on first use). A pre-start reading reused by a lot redirects there.
@@ -404,53 +393,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
 });
 
-// ---------------------------------------------------------------- capture check (step 1)
-async function recogGrabOnce(tab) {
-  const t0 = Date.now(), tries = [];
-  let r;
-  try { r = await chrome.tabs.sendMessage(tab.id, { type: "recog-grab" }); }
-  catch (e) { r = { ok: false, why: "Whatnot tab not ready (reload it once after installing)" }; }
-  if (r && r.ok) return { ok: true, method: "video", img: r.img, w: r.w, h: r.h, luma: r.luma, video: r.video, tries, ms: Date.now() - t0 };
-  tries.push("video copy: " + ((r && r.why) || "no answer"));
-  if (r && r.rect) {
-    try {
-      const shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 90 });
-      const c = await recogCrop(shot, r.rect, 1000);
-      return Object.assign({ ok: true, method: "screenshot", video: r.video, tries, ms: Date.now() - t0 }, c);
-    } catch (e) { tries.push("screenshot: " + e.message); }
-  }
-  return { ok: false, video: r && r.video, tries, ms: Date.now() - t0 };
-}
-async function recogGrab(tab) {
-  const g = await recogGrabOnce(tab);
-  const rec = { at: Date.now(), url: tab.url, trigger: "shortcut", ok: g.ok, method: g.method || "", w: g.w || 0, h: g.h || 0,
-    luma: g.luma, kb: g.img ? Math.round(g.img.length * 0.75 / 1024) : 0, ms: g.ms, video: g.video || null, tries: g.tries, img: g.img || "", later: "pending" };
-  let id = null;
-  try { id = await recogPut(rec); } catch (e) { rec.tries.push("save: " + e.message); }
-  chrome.tabs.sendMessage(tab.id, { type: "recog-grab-result", ok: rec.ok, method: rec.method, w: rec.w, h: rec.h, kb: rec.kb, luma: rec.luma, ms: rec.ms, tries: rec.tries }).catch(() => {});
-  // Same capture again in 5 s with no key press: can later lots be captured on their own?
-  setTimeout(async () => {
-    const again = await recogGrabOnce(tab).catch((e) => ({ ok: false, tries: [e.message] }));
-    const later = again.ok ? "ok (" + again.method + ")" : "failed: " + again.tries.join("; ");
-    if (id != null) recogPatch(id, { later });
-    chrome.tabs.sendMessage(tab.id, { type: "recog-later-result", ok: again.ok, later }).catch(() => {});
-  }, 5000);
-}
+// Ctrl+Shift+Y on a Whatnot tab: read now (manual and auto modes). The step-1 capture check and its right-click menu
+// are gone (2026-10-20): auto reads proved capture works, and read now covers a manual frame.
 chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (cmd !== "recog-grab") return;
   if (!tab || !tab.id) tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!tab || !/^https:\/\/([^/]*\.)?whatnot\.com\//.test(tab.url || "")) return;
   const s = await recogGet();
-  if (recogModeOf(s) !== "off") { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }   // manual or auto: the hotkey means "read now"
-  recogGrab(tab);
-});
-// Right-click menu: same grab, no key needed (Chrome keeps some keys for itself, e.g. Alt+Shift+R is Reading Mode).
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: "recog-grab", title: "Recognition test: grab a frame", contexts: ["page", "video", "image", "link"],
-    documentUrlPatterns: ["https://*.whatnot.com/*"] }, () => chrome.runtime.lastError);
-});
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== "recog-grab" || !tab || !tab.id) return;
-  if (recogModeOf(await recogGet()) !== "off") { chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {}); return; }
-  recogGrab(tab);
+  if (recogModeOf(s) !== "off") chrome.tabs.sendMessage(tab.id, { type: "recog-read-now" }).catch(() => {});
 });

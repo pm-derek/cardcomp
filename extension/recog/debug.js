@@ -84,14 +84,6 @@ async function paint() {
     const L = lots.find((x) => String(x.key) === b.dataset.k); if (!L) return;
     L.review = b.dataset.r; delete L.V; await put("lots", L); paint();
   });
-
-  const rows = (await all("frames")).sort((a, b) => b.at - a.at);
-  const by = (m) => rows.filter((r) => r.method === m).length;
-  document.getElementById("fsum").textContent = rows.length ? `${rows.length} grabs · ${rows.filter((r) => r.ok).length} worked (video copy ${by("video")}, screenshot ${by("screenshot")}) · automatic 5 s later worked ${rows.filter((r) => /^ok/.test(r.later || "")).length} of ${rows.length}` : "No capture checks.";
-  document.getElementById("flist").innerHTML = rows.slice(0, 20).map((r) => `<div class="row">${r.img ? `<img src="${r.img}">` : `<div style="width:150px" class="bad">no frame</div>`}<div>
-    <div><b class="${r.ok ? "ok" : "bad"}">${r.ok ? "grabbed by " + (r.method === "video" ? "video copy" : "screenshot") : "failed"}</b> · ${new Date(r.at).toLocaleString()}</div>
-    <div class="k">${r.w}x${r.h} · ${r.kb} KB · ${r.ms} ms · brightness ${r.luma == null ? "-" : r.luma} · 5 s later: ${esc(r.later)}</div>
-    ${r.tries && r.tries.length ? `<div class="k">${r.tries.map(esc).join("<br>")}</div>` : ""}<div><code>${esc(JSON.stringify(r.video))}</code></div></div></div>`).join("");
 }
 // Export: small by default (one 320 px picture per lot, about 15 KB). Full frames made the file 109 MB, too big to upload.
 const shrink = (src, edge) => new Promise((res) => { const im = new Image(); im.onload = () => { const k = Math.min(1, edge / Math.max(im.width, im.height)), c = document.createElement("canvas");

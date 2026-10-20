@@ -2,7 +2,7 @@
 // Finds the stream's <video> and copies its current frame:
 //   - auto mode (switch in the CardComp panel): before the timer, when a new card holds still (scene watcher);
 //     else ~1 s after the lot's timer starts. Full resolution, to recog-bg.js
-//   - capture check: on the shortcut / right-click, then shows the result in a toast
+//   - read now: CardComp's read button / right-click / ` key, or Ctrl+Shift+Y on the Whatnot tab
 // whatnot.js calls window.__recogTick(state, lot) on every lot read (one line tagged RECOG there); content
 // scripts of one extension share a window, and without this file the call is skipped.
 (() => {
@@ -101,8 +101,14 @@
   function status(phase, why, m, pk) {
     WATCH = { phase, why, mean: Math.round(m || 0), peak: Math.round(pk || 0), at: Date.now() };
   }
-  setInterval(() => {   // what the watcher is doing, for the auto line in CardComp (every 2 s, only when on)
+  // what the watcher is doing, for the auto line in CardComp: checked every 2 s, sent when the words change (or every
+  // 20 s), not every 2 s to every CardComp copy
+  let watchSent = "", watchAt = 0;
+  setInterval(() => {
     if (!on) return;
+    const k = WATCH.phase + "|" + WATCH.why;
+    if (k === watchSent && Date.now() - watchAt < 20000) return;
+    watchSent = k; watchAt = Date.now();
     try { chrome.runtime.sendMessage(Object.assign({ type: "cardcomp-auto-watch" }, WATCH, { hidden: document.hidden }), () => chrome.runtime.lastError); } catch (_) {}
   }, 2000);
   function readNow(trigger, t, vsRef) {
@@ -165,30 +171,9 @@
     setTimeout(() => { sendFrame(lot.startedAt, 1); PRE = { at: 0, n: 0, last: PRE.last, thumb: null, lot: lot.startedAt }; }, 600);   // live is seen ~1 s after the timer starts (it must tick once)
   };
 
-  // ---------- capture check toast
-  let el = null, timer = null;
-  function show(text, good) {
-    if (!el) {
-      el = document.createElement("div");
-      el.style.cssText = "position:fixed;bottom:16px;left:16px;z-index:2147483647;max-width:440px;padding:9px 13px;border-radius:8px;" +
-        "font:13px/1.45 system-ui,sans-serif;background:#0b0d10;color:#e8edf2;border:1px solid #4a90d9;box-shadow:0 4px 18px rgba(0,0,0,.5);white-space:pre-line";
-      document.documentElement.appendChild(el);
-    }
-    el.style.borderColor = good ? "#4a90d9" : "#ff6b6b";
-    el.textContent = "Recognition test\n" + text;
-    clearTimeout(timer); timer = setTimeout(() => { if (el) el.remove(); el = null; }, 12000);
-  }
-
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg) return;
-    if (msg.type === "recog-grab") { reply(grab(1000)); return; }
     if (msg.type === "recog-grab-again") { sendFrame(msg.key, msg.n || 2); return; }
     if (msg.type === "recog-read-now") { if (canRead) readNow("manual"); reply({ ok: canRead }); return; }   // "read now" button / hotkey
-    if (msg.type === "recog-grab-result") {
-      if (msg.ok) show(`Frame grabbed by ${msg.method === "video" ? "video copy" : "screenshot"}: ${msg.w}x${msg.h}, ${msg.kb} KB, ${msg.ms} ms.` +
-        (msg.luma < 12 ? "\nWarning: the frame is black (protected video?)." : "") + "\nChecking automatic capture in 5 s...", msg.luma >= 12);
-      else show("Could not grab a frame.\n" + (msg.tries || []).join("\n"), false);
-    }
-    if (msg.type === "recog-later-result") show(msg.ok ? "Automatic capture works: " + msg.later.replace(/^ok /, "") + ".\nResults: extension Options > Recognition test page." : "Automatic capture " + msg.later, msg.ok);
   });
 })();

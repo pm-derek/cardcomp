@@ -18,8 +18,6 @@
   h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:21px;margin:0;letter-spacing:-.5px}
   h1 .dot{color:var(--gold)}
   .sub{color:var(--faint);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:1px 0 7px}
-  .banner{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:10px 13px;font-size:12px;color:var(--dim);line-height:1.55;margin-bottom:14px}
-  .banner b{color:var(--ink)}
   .searchrow{display:flex;gap:10px}
   #q{flex:1;width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:var(--radius);padding:15px 16px;font-family:inherit;font-size:17px;outline:none}
   #q:focus{border-color:var(--gold)}
@@ -40,19 +38,10 @@
   .nm{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:15px;line-height:1.15}
   .tags{color:var(--dim);font-size:11px;margin-top:2px}
   .tags b{color:var(--blue);font-weight:500}
-  .attrs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
-  .pill{font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
-  .pill.hp{color:var(--green);border-color:#2d4a3c}
-  .pill.ty{color:#0b0d10;font-weight:700}
-  .pill.st{color:var(--ink)}
-  .atk{color:var(--faint);font-size:11px;margin-top:6px}
-  .atk b{color:var(--dim);font-weight:500}
-  .hit{box-shadow:0 0 0 1px var(--gold) inset}
   .card{display:block}
   .row{display:flex;gap:12px;cursor:pointer}
   .card.open{border-color:var(--gold)}
   .card img.noimg{visibility:hidden}
-  .tap{color:var(--faint);font-size:11px;margin-top:8px}
   .card.open .tap{display:none}
   .detail{display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:9px}
   .card.open .detail{display:block}
@@ -153,7 +142,6 @@
     .condgrid .pc{display:none}
   }
   .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
-  .finep{color:var(--faint);font-size:10.5px;margin-top:11px;line-height:1.5}
   .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
   .settings{display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
@@ -166,21 +154,9 @@
   .multrow{display:flex;gap:8px;margin-top:6px}
   .multrow label{flex:1;text-align:center;font-size:10px;color:var(--faint)}
   .multrow input{text-align:center;padding:6px 2px}
-  .flagstrip{display:flex;gap:8px}
-  .fbtn{flex:1;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;line-height:1}
-  .fbtn.fg{color:var(--green)}
-  .fbtn.fy{color:var(--gold)}
-  .fbtn.fr{color:var(--red)}
-  .flagstrip.idle .fbtn{opacity:.3;pointer-events:none}
-  body.nofeedback .flagstrip,body.nofeedback .undobar,body.nofeedback .rails,body.nofeedback .detailflags{display:none!important}
-  .undobar{display:none;width:100%;font-family:inherit;font-size:12px;font-weight:600;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--blue);cursor:pointer;line-height:1}
   /* one size system for header controls: .tgl = segmented selectors (game/lang), .fpill = filter pills (era/mode/reset) */
   .tgl{font-family:inherit;font-size:12px;font-weight:600;padding:8px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
   .fpill{font-family:inherit;font-size:12px;font-weight:500;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;line-height:1;white-space:nowrap}
-  .rails{flex:none;display:flex;align-self:stretch;margin-left:8px;border-left:1px solid var(--line)}
-  .rail{width:30px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
-  .rail.rg{color:var(--green)}
-  .rail.ry{color:var(--gold);border-left:1px solid var(--line)}
   .bids{flex:none;text-align:right;white-space:nowrap;align-self:center;line-height:1.35}
   .bids .brow .blab{color:var(--faint);font-size:9.5px;letter-spacing:.3px;margin-right:4px}
   .bids .brow .bpc{color:var(--dim);font-size:10px;margin-left:4px}
@@ -215,7 +191,7 @@
   #results.grid .card img{width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;object-position:50% 0%}
   #results.grid .nm{font-size:13px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   #results.grid .tags{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #results.grid .xtra,#results.grid .rails,#results.grid .bids .bpc,#results.grid .bids .exact{display:none}
+  #results.grid .xtra,#results.grid .bids .bpc,#results.grid .bids .exact{display:none}
   #results.grid .bids .rounded{display:inline}
   #results.grid .bids{width:100%;min-width:0;display:flex;gap:4px 11px;flex-wrap:wrap;white-space:normal;text-align:left;align-self:auto}
   #results.grid .bids .brow{display:flex;gap:3px;align-items:baseline}
@@ -236,7 +212,6 @@
   #results.grid .card.open .nm{font-size:15px;display:block;-webkit-line-clamp:none}
   #results.grid .card.open .tags{font-size:11px;white-space:normal}
   #results.grid .card.open .xtra{display:inline}
-  #results.grid .card.open .rails{display:flex}
   #results.grid .card.open .bids{width:auto;display:block;text-align:right;margin-left:auto;align-self:center}
   #results.grid .card.open .bids .bpc,#results.grid .card.open .bids .exact{display:inline}
   #results.grid .card.open .bids .rounded{display:none}
@@ -244,9 +219,6 @@
   .bids .brow b{font-size:15px;cursor:pointer}
   .bids .bm b{color:var(--gold)}
   .bids .bp b{color:var(--blue)}
-  .detailflags{display:flex;gap:8px;margin-top:12px}
-  .sbtn{font-family:inherit;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--dim);cursor:pointer}
-  .sbtn:hover{color:var(--ink);border-color:var(--gold)}
   .zoom{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;cursor:zoom-out}
   .zoom.open{display:flex}
   .zoom img{max-width:100%;max-height:100%;border-radius:12px}
@@ -262,7 +234,6 @@
       <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-speed" checked style="width:auto"> speed-based margin (fast cards keep the target above, slow cards up to 25%)</label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
       <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
-      <label>pokemontcg.io API key<input id="cfg-apikey" type="text" placeholder="optional · faster"></label>
     </div>
     <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">Fees &amp; shipping are modeled from verified TCGplayer rates (commission, txn, PWE/tracked postage, thresholds) — no longer manual.</div>
     <h4 style="margin-top:13px">condition multipliers</h4>
@@ -274,16 +245,6 @@
       <label>HP<input data-c="HP" type="number" value="0.55"></label>
       <label>DMG<input data-c="DMG" type="number" value="0.40"></label>
     </div>
-    <h4 style="margin-top:13px">search log</h4>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin-bottom:8px"><input type="checkbox" id="cfg-feedback" checked style="width:auto"> Feedback buttons (good / ok / bad) — uncheck to hide them and stop logging</label>
-    <div id="slogsum" style="font-size:12px;color:var(--dim);margin-bottom:8px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button id="slogview" class="sbtn" type="button">view log</button>
-      <button id="slogcopy" class="sbtn" type="button">copy JSON</button>
-      <button id="slogdl" class="sbtn" type="button">download</button>
-      <button id="slogclear" class="sbtn" type="button">clear log</button>
-    </div>
-    <div id="slogbody" style="display:none;margin-top:10px;font-size:12px;line-height:1.5"></div>
   </div>
   <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px;flex-direction:column;gap:8px">
     <div id="lotstrip" style="display:none;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.35;padding:6px 9px;border-radius:7px;background:var(--panel2);border-left:4px solid var(--gold)"></div>
@@ -306,14 +267,6 @@
     <div id="sug" class="sug"></div>
   </div>
   <div id="lotstats" style="display:none"></div>
-  <!-- outside the sticky row on purpose: pinning these cost ~44px of a ~315px split-screen viewport,
-       and an opened card carries its own good/ok/bad strip, so flagging is still one tap away -->
-  <div class="flagstrip idle" id="flagstrip">
-    <button class="fbtn fg" data-fl="g" title="good search · log and clear">✓ good</button>
-    <button class="fbtn fy" data-fl="y" title="worked, not great · log and clear">~ ok</button>
-    <button class="fbtn fr" data-fl="r" title="bad search · log and clear">✗ bad</button>
-  </div>
-  <button class="undobar" id="undobar" type="button" title="bring back the last cleared search and its open card">↶ undo last</button>
   <div id="filterbar" style="display:flex;gap:8px;margin:0 0 6px;align-items:center">
     <button class="fpill" id="filtertoggle" title="show or hide the era and result filters">⚙ Filters</button>
     <span id="filtersum" style="font-size:11px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -356,17 +309,10 @@
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.MiniSearch = factory());
 })(this, (function () { 'use strict';
 
-    /** @ignore */
     const ENTRIES = 'ENTRIES';
-    /** @ignore */
     const KEYS = 'KEYS';
-    /** @ignore */
     const VALUES = 'VALUES';
-    /** @ignore */
     const LEAF = '';
-    /**
-     * @private
-     */
     class TreeIterator {
         constructor(set, type) {
             const node = set._tree;
@@ -429,9 +375,6 @@
     };
 
     /* eslint-disable no-labels */
-    /**
-     * @ignore
-     */
     const fuzzySearch = (node, query, maxDistance) => {
         const results = new Map();
         if (query === undefined)
@@ -512,64 +455,12 @@
     };
 
     /* eslint-disable no-labels */
-    /**
-     * A class implementing the same interface as a standard JavaScript
-     * [`Map`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map)
-     * with string keys, but adding support for efficiently searching entries with
-     * prefix or fuzzy search. This class is used internally by {@link MiniSearch}
-     * as the inverted index data structure. The implementation is a radix tree
-     * (compressed prefix tree).
-     *
-     * Since this class can be of general utility beyond _MiniSearch_, it is
-     * exported by the `minisearch` package and can be imported (or required) as
-     * `minisearch/SearchableMap`.
-     *
-     * @typeParam T  The type of the values stored in the map.
-     */
     class SearchableMap {
-        /**
-         * The constructor is normally called without arguments, creating an empty
-         * map. In order to create a {@link SearchableMap} from an iterable or from an
-         * object, check {@link SearchableMap.from} and {@link
-         * SearchableMap.fromObject}.
-         *
-         * The constructor arguments are for internal use, when creating derived
-         * mutable views of a map at a prefix.
-         */
         constructor(tree = new Map(), prefix = '') {
             this._size = undefined;
             this._tree = tree;
             this._prefix = prefix;
         }
-        /**
-         * Creates and returns a mutable view of this {@link SearchableMap},
-         * containing only entries that share the given prefix.
-         *
-         * ### Usage:
-         *
-         * ```javascript
-         * let map = new SearchableMap()
-         * map.set("unicorn", 1)
-         * map.set("universe", 2)
-         * map.set("university", 3)
-         * map.set("unique", 4)
-         * map.set("hello", 5)
-         *
-         * let uni = map.atPrefix("uni")
-         * uni.get("unique") // => 4
-         * uni.get("unicorn") // => 1
-         * uni.get("hello") // => undefined
-         *
-         * let univer = map.atPrefix("univer")
-         * univer.get("unique") // => undefined
-         * univer.get("universe") // => 2
-         * univer.get("university") // => 3
-         * ```
-         *
-         * @param prefix  The prefix
-         * @return A {@link SearchableMap} representing a mutable view of the original
-         * Map at the given prefix
-         */
         atPrefix(prefix) {
             if (!prefix.startsWith(this._prefix)) {
                 throw new Error('Mismatched prefix');
@@ -587,100 +478,36 @@
             }
             return new SearchableMap(node, prefix);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/clear
-         */
         clear() {
             this._size = undefined;
             this._tree.clear();
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/delete
-         * @param key  Key to delete
-         */
         delete(key) {
             this._size = undefined;
             return remove(this._tree, key);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/entries
-         * @return An iterator iterating through `[key, value]` entries.
-         */
         entries() {
             return new TreeIterator(this, ENTRIES);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/forEach
-         * @param fn  Iteration function
-         */
         forEach(fn) {
             for (const [key, value] of this) {
                 fn(key, value, this);
             }
         }
-        /**
-         * Returns a Map of all the entries that have a key within the given edit
-         * distance from the search key. The keys of the returned Map are the matching
-         * keys, while the values are two-element arrays where the first element is
-         * the value associated to the key, and the second is the edit distance of the
-         * key to the search key.
-         *
-         * ### Usage:
-         *
-         * ```javascript
-         * let map = new SearchableMap()
-         * map.set('hello', 'world')
-         * map.set('hell', 'yeah')
-         * map.set('ciao', 'mondo')
-         *
-         * // Get all entries that match the key 'hallo' with a maximum edit distance of 2
-         * map.fuzzyGet('hallo', 2)
-         * // => Map(2) { 'hello' => ['world', 1], 'hell' => ['yeah', 2] }
-         *
-         * // In the example, the "hello" key has value "world" and edit distance of 1
-         * // (change "e" to "a"), the key "hell" has value "yeah" and edit distance of 2
-         * // (change "e" to "a", delete "o")
-         * ```
-         *
-         * @param key  The search key
-         * @param maxEditDistance  The maximum edit distance (Levenshtein)
-         * @return A Map of the matching keys to their value and edit distance
-         */
         fuzzyGet(key, maxEditDistance) {
             return fuzzySearch(this._tree, key, maxEditDistance);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/get
-         * @param key  Key to get
-         * @return Value associated to the key, or `undefined` if the key is not
-         * found.
-         */
         get(key) {
             const node = lookup(this._tree, key);
             return node !== undefined ? node.get(LEAF) : undefined;
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/has
-         * @param key  Key
-         * @return True if the key is in the map, false otherwise
-         */
         has(key) {
             const node = lookup(this._tree, key);
             return node !== undefined && node.has(LEAF);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/keys
-         * @return An `Iterable` iterating through keys
-         */
         keys() {
             return new TreeIterator(this, KEYS);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/set
-         * @param key  Key to set
-         * @param value  Value to associate to the key
-         * @return The {@link SearchableMap} itself, to allow chaining
-         */
         set(key, value) {
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
@@ -690,40 +517,16 @@
             node.set(LEAF, value);
             return this;
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/size
-         */
         get size() {
             if (this._size) {
                 return this._size;
             }
-            /** @ignore */
             this._size = 0;
             const iter = this.entries();
             while (!iter.next().done)
                 this._size += 1;
             return this._size;
         }
-        /**
-         * Updates the value at the given key using the provided function. The function
-         * is called with the current value at the key, and its return value is used as
-         * the new value to be set.
-         *
-         * ### Example:
-         *
-         * ```javascript
-         * // Increment the current value by one
-         * searchableMap.update('somekey', (currentValue) => currentValue == null ? 0 : currentValue + 1)
-         * ```
-         *
-         * If the value at the given key is or will be an object, it might not require
-         * re-assignment. In that case it is better to use `fetch()`, because it is
-         * faster.
-         *
-         * @param key  The key to update
-         * @param fn  The function used to compute the new value from the current one
-         * @return The {@link SearchableMap} itself, to allow chaining
-         */
         update(key, fn) {
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
@@ -733,22 +536,6 @@
             node.set(LEAF, fn(node.get(LEAF)));
             return this;
         }
-        /**
-         * Fetches the value of the given key. If the value does not exist, calls the
-         * given function to create a new value, which is inserted at the given key
-         * and subsequently returned.
-         *
-         * ### Example:
-         *
-         * ```javascript
-         * const map = searchableMap.fetch('somekey', () => new Map())
-         * map.set('foo', 'bar')
-         * ```
-         *
-         * @param key  The key to update
-         * @param initial  A function that creates a new value if the key does not exist
-         * @return The existing or new value at the given key
-         */
         fetch(key, initial) {
             if (typeof key !== 'string') {
                 throw new Error('key must be a string');
@@ -761,25 +548,12 @@
             }
             return value;
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/values
-         * @return An `Iterable` iterating through values.
-         */
         values() {
             return new TreeIterator(this, VALUES);
         }
-        /**
-         * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/@@iterator
-         */
         [Symbol.iterator]() {
             return this.entries();
         }
-        /**
-         * Creates a {@link SearchableMap} from an `Iterable` of entries
-         *
-         * @param entries  Entries to be inserted in the {@link SearchableMap}
-         * @return A new {@link SearchableMap} with the given entries
-         */
         static from(entries) {
             const tree = new SearchableMap();
             for (const [key, value] of entries) {
@@ -787,12 +561,6 @@
             }
             return tree;
         }
-        /**
-         * Creates a {@link SearchableMap} from the iterable properties of a JavaScript object
-         *
-         * @param object  Object of entries for the {@link SearchableMap}
-         * @return A new {@link SearchableMap} with the given entries
-         */
         static fromObject(object) {
             return SearchableMap.from(Object.entries(object));
         }
@@ -904,124 +672,7 @@
     const OR = 'or';
     const AND = 'and';
     const AND_NOT = 'and_not';
-    /**
-     * {@link MiniSearch} is the main entrypoint class, implementing a full-text
-     * search engine in memory.
-     *
-     * @typeParam T  The type of the documents being indexed.
-     *
-     * ### Basic example:
-     *
-     * ```javascript
-     * const documents = [
-     *   {
-     *     id: 1,
-     *     title: 'Moby Dick',
-     *     text: 'Call me Ishmael. Some years ago...',
-     *     category: 'fiction'
-     *   },
-     *   {
-     *     id: 2,
-     *     title: 'Zen and the Art of Motorcycle Maintenance',
-     *     text: 'I can see by my watch...',
-     *     category: 'fiction'
-     *   },
-     *   {
-     *     id: 3,
-     *     title: 'Neuromancer',
-     *     text: 'The sky above the port was...',
-     *     category: 'fiction'
-     *   },
-     *   {
-     *     id: 4,
-     *     title: 'Zen and the Art of Archery',
-     *     text: 'At first sight it must seem...',
-     *     category: 'non-fiction'
-     *   },
-     *   // ...and more
-     * ]
-     *
-     * // Create a search engine that indexes the 'title' and 'text' fields for
-     * // full-text search. Search results will include 'title' and 'category' (plus the
-     * // id field, that is always stored and returned)
-     * const miniSearch = new MiniSearch({
-     *   fields: ['title', 'text'],
-     *   storeFields: ['title', 'category']
-     * })
-     *
-     * // Add documents to the index
-     * miniSearch.addAll(documents)
-     *
-     * // Search for documents:
-     * let results = miniSearch.search('zen art motorcycle')
-     * // => [
-     * //   { id: 2, title: 'Zen and the Art of Motorcycle Maintenance', category: 'fiction', score: 2.77258 },
-     * //   { id: 4, title: 'Zen and the Art of Archery', category: 'non-fiction', score: 1.38629 }
-     * // ]
-     * ```
-     */
     class MiniSearch {
-        /**
-         * @param options  Configuration options
-         *
-         * ### Examples:
-         *
-         * ```javascript
-         * // Create a search engine that indexes the 'title' and 'text' fields of your
-         * // documents:
-         * const miniSearch = new MiniSearch({ fields: ['title', 'text'] })
-         * ```
-         *
-         * ### ID Field:
-         *
-         * ```javascript
-         * // Your documents are assumed to include a unique 'id' field, but if you want
-         * // to use a different field for document identification, you can set the
-         * // 'idField' option:
-         * const miniSearch = new MiniSearch({ idField: 'key', fields: ['title', 'text'] })
-         * ```
-         *
-         * ### Options and defaults:
-         *
-         * ```javascript
-         * // The full set of options (here with their default value) is:
-         * const miniSearch = new MiniSearch({
-         *   // idField: field that uniquely identifies a document
-         *   idField: 'id',
-         *
-         *   // extractField: function used to get the value of a field in a document.
-         *   // By default, it assumes the document is a flat object with field names as
-         *   // property keys and field values as string property values, but custom logic
-         *   // can be implemented by setting this option to a custom extractor function.
-         *   extractField: (document, fieldName) => document[fieldName],
-         *
-         *   // tokenize: function used to split fields into individual terms. By
-         *   // default, it is also used to tokenize search queries, unless a specific
-         *   // `tokenize` search option is supplied. When tokenizing an indexed field,
-         *   // the field name is passed as the second argument.
-         *   tokenize: (string, _fieldName) => string.split(SPACE_OR_PUNCTUATION),
-         *
-         *   // processTerm: function used to process each tokenized term before
-         *   // indexing. It can be used for stemming and normalization. Return a falsy
-         *   // value in order to discard a term. By default, it is also used to process
-         *   // search queries, unless a specific `processTerm` option is supplied as a
-         *   // search option. When processing a term from a indexed field, the field
-         *   // name is passed as the second argument.
-         *   processTerm: (term, _fieldName) => term.toLowerCase(),
-         *
-         *   // searchOptions: default search options, see the `search` method for
-         *   // details
-         *   searchOptions: undefined,
-         *
-         *   // fields: document fields to be indexed. Mandatory, but not set by default
-         *   fields: undefined
-         *
-         *   // storeFields: document fields to be stored and returned as part of the
-         *   // search results.
-         *   storeFields: []
-         * })
-         * ```
-         */
         constructor(options) {
             if ((options === null || options === void 0 ? void 0 : options.fields) == null) {
                 throw new Error('MiniSearch: option "fields" must be provided');
@@ -1053,11 +704,6 @@
             this._enqueuedVacuumConditions = defaultVacuumConditions;
             this.addFields(this._options.fields);
         }
-        /**
-         * Adds a document to the index
-         *
-         * @param document  The document to be indexed
-         */
         add(document) {
             const { extractField, stringifyField, tokenize, processTerm, fields, idField } = this._options;
             const id = extractField(document, idField);
@@ -1090,26 +736,10 @@
                 }
             }
         }
-        /**
-         * Adds all the given documents to the index
-         *
-         * @param documents  An array of documents to be indexed
-         */
         addAll(documents) {
             for (const document of documents)
                 this.add(document);
         }
-        /**
-         * Adds all the given documents to the index asynchronously.
-         *
-         * Returns a promise that resolves (to `undefined`) when the indexing is done.
-         * This method is useful when index many documents, to avoid blocking the main
-         * thread. The indexing is performed asynchronously and in chunks.
-         *
-         * @param documents  An array of documents to be indexed
-         * @param options  Configuration options
-         * @return A promise resolving to `undefined` when the indexing is done
-         */
         addAllAsync(documents, options = {}) {
             const { chunkSize = 10 } = options;
             const acc = { chunk: [], promise: Promise.resolve() };
@@ -1129,20 +759,6 @@
             }, acc);
             return promise.then(() => this.addAll(chunk));
         }
-        /**
-         * Removes the given document from the index.
-         *
-         * The document to remove must NOT have changed between indexing and removal,
-         * otherwise the index will be corrupted.
-         *
-         * This method requires passing the full document to be removed (not just the
-         * ID), and immediately removes the document from the inverted index, allowing
-         * memory to be released. A convenient alternative is {@link
-         * MiniSearch#discard}, which needs only the document ID, and has the same
-         * visible effect, but delays cleaning up the index until the next vacuuming.
-         *
-         * @param document  The document to be removed
-         */
         remove(document) {
             const { tokenize, processTerm, extractField, stringifyField, fields, idField } = this._options;
             const id = extractField(document, idField);
@@ -1179,15 +795,6 @@
             this._fieldLength.delete(shortId);
             this._documentCount -= 1;
         }
-        /**
-         * Removes all the given documents from the index. If called with no arguments,
-         * it removes _all_ documents from the index.
-         *
-         * @param documents  The documents to be removed. If this argument is omitted,
-         * all documents are removed. Note that, for removing all documents, it is
-         * more efficient to call this method with no arguments than to pass all
-         * documents.
-         */
         removeAll(documents) {
             if (documents) {
                 for (const document of documents)
@@ -1207,50 +814,6 @@
                 this._nextId = 0;
             }
         }
-        /**
-         * Discards the document with the given ID, so it won't appear in search results
-         *
-         * It has the same visible effect of {@link MiniSearch.remove} (both cause the
-         * document to stop appearing in searches), but a different effect on the
-         * internal data structures:
-         *
-         *   - {@link MiniSearch#remove} requires passing the full document to be
-         *   removed as argument, and removes it from the inverted index immediately.
-         *
-         *   - {@link MiniSearch#discard} instead only needs the document ID, and
-         *   works by marking the current version of the document as discarded, so it
-         *   is immediately ignored by searches. This is faster and more convenient
-         *   than {@link MiniSearch#remove}, but the index is not immediately
-         *   modified. To take care of that, vacuuming is performed after a certain
-         *   number of documents are discarded, cleaning up the index and allowing
-         *   memory to be released.
-         *
-         * After discarding a document, it is possible to re-add a new version, and
-         * only the new version will appear in searches. In other words, discarding
-         * and re-adding a document works exactly like removing and re-adding it. The
-         * {@link MiniSearch.replace} method can also be used to replace a document
-         * with a new version.
-         *
-         * #### Details about vacuuming
-         *
-         * Repetite calls to this method would leave obsolete document references in
-         * the index, invisible to searches. Two mechanisms take care of cleaning up:
-         * clean up during search, and vacuuming.
-         *
-         *   - Upon search, whenever a discarded ID is found (and ignored for the
-         *   results), references to the discarded document are removed from the
-         *   inverted index entries for the search terms. This ensures that subsequent
-         *   searches for the same terms do not need to skip these obsolete references
-         *   again.
-         *
-         *   - In addition, vacuuming is performed automatically by default (see the
-         *   `autoVacuum` field in {@link Options}) after a certain number of
-         *   documents are discarded. Vacuuming traverses all terms in the index,
-         *   cleaning up all references to discarded documents. Vacuuming can also be
-         *   triggered manually by calling {@link MiniSearch#vacuum}.
-         *
-         * @param id  The ID of the document to be discarded
-         */
         discard(id) {
             const shortId = this._idToShortId.get(id);
             if (shortId == null) {
@@ -1274,18 +837,6 @@
             const { minDirtFactor, minDirtCount, batchSize, batchWait } = this._options.autoVacuum;
             this.conditionalVacuum({ batchSize, batchWait }, { minDirtCount, minDirtFactor });
         }
-        /**
-         * Discards the documents with the given IDs, so they won't appear in search
-         * results
-         *
-         * It is equivalent to calling {@link MiniSearch#discard} for all the given
-         * IDs, but with the optimization of triggering at most one automatic
-         * vacuuming at the end.
-         *
-         * Note: to remove all documents from the index, it is faster and more
-         * convenient to call {@link MiniSearch.removeAll} with no argument, instead
-         * of passing all IDs to this method.
-         */
         discardAll(ids) {
             const autoVacuum = this._options.autoVacuum;
             try {
@@ -1299,66 +850,12 @@
             }
             this.maybeAutoVacuum();
         }
-        /**
-         * It replaces an existing document with the given updated version
-         *
-         * It works by discarding the current version and adding the updated one, so
-         * it is functionally equivalent to calling {@link MiniSearch#discard}
-         * followed by {@link MiniSearch#add}. The ID of the updated document should
-         * be the same as the original one.
-         *
-         * Since it uses {@link MiniSearch#discard} internally, this method relies on
-         * vacuuming to clean up obsolete document references from the index, allowing
-         * memory to be released (see {@link MiniSearch#discard}).
-         *
-         * @param updatedDocument  The updated document to replace the old version
-         * with
-         */
         replace(updatedDocument) {
             const { idField, extractField } = this._options;
             const id = extractField(updatedDocument, idField);
             this.discard(id);
             this.add(updatedDocument);
         }
-        /**
-         * Triggers a manual vacuuming, cleaning up references to discarded documents
-         * from the inverted index
-         *
-         * Vacuuming is only useful for applications that use the {@link
-         * MiniSearch#discard} or {@link MiniSearch#replace} methods.
-         *
-         * By default, vacuuming is performed automatically when needed (controlled by
-         * the `autoVacuum` field in {@link Options}), so there is usually no need to
-         * call this method, unless one wants to make sure to perform vacuuming at a
-         * specific moment.
-         *
-         * Vacuuming traverses all terms in the inverted index in batches, and cleans
-         * up references to discarded documents from the posting list, allowing memory
-         * to be released.
-         *
-         * The method takes an optional object as argument with the following keys:
-         *
-         *   - `batchSize`: the size of each batch (1000 by default)
-         *
-         *   - `batchWait`: the number of milliseconds to wait between batches (10 by
-         *   default)
-         *
-         * On large indexes, vacuuming could have a non-negligible cost: batching
-         * avoids blocking the thread for long, diluting this cost so that it is not
-         * negatively affecting the application. Nonetheless, this method should only
-         * be called when necessary, and relying on automatic vacuuming is usually
-         * better.
-         *
-         * It returns a promise that resolves (to undefined) when the clean up is
-         * completed. If vacuuming is already ongoing at the time this method is
-         * called, a new one is enqueued immediately after the ongoing one, and a
-         * corresponding promise is returned. However, no more than one vacuuming is
-         * enqueued on top of the ongoing one, even if this method is called more
-         * times (enqueuing multiple ones would be useless).
-         *
-         * @param options  Configuration options for the batch size and delay. See
-         * {@link VacuumOptions}.
-         */
         vacuum(options = {}) {
             return this.conditionalVacuum(options);
         }
@@ -1429,44 +926,18 @@
             minDirtFactor = minDirtFactor || defaultAutoVacuumOptions.minDirtFactor;
             return this.dirtCount >= minDirtCount && this.dirtFactor >= minDirtFactor;
         }
-        /**
-         * Is `true` if a vacuuming operation is ongoing, `false` otherwise
-         */
         get isVacuuming() {
             return this._currentVacuum != null;
         }
-        /**
-         * The number of documents discarded since the most recent vacuuming
-         */
         get dirtCount() {
             return this._dirtCount;
         }
-        /**
-         * A number between 0 and 1 giving an indication about the proportion of
-         * documents that are discarded, and can therefore be cleaned up by vacuuming.
-         * A value close to 0 means that the index is relatively clean, while a higher
-         * value means that the index is relatively dirty, and vacuuming could release
-         * memory.
-         */
         get dirtFactor() {
             return this._dirtCount / (1 + this._documentCount + this._dirtCount);
         }
-        /**
-         * Returns `true` if a document with the given ID is present in the index and
-         * available for search, `false` otherwise
-         *
-         * @param id  The document ID
-         */
         has(id) {
             return this._idToShortId.has(id);
         }
-        /**
-         * Returns the stored fields (as configured in the `storeFields` constructor
-         * option) for the given document ID. Returns `undefined` if the document is
-         * not present in the index.
-         *
-         * @param id  The document ID
-         */
         getStoredFields(id) {
             const shortId = this._idToShortId.get(id);
             if (shortId == null) {
@@ -1474,166 +945,6 @@
             }
             return this._storedFields.get(shortId);
         }
-        /**
-         * Search for documents matching the given search query.
-         *
-         * The result is a list of scored document IDs matching the query, sorted by
-         * descending score, and each including data about which terms were matched and
-         * in which fields.
-         *
-         * ### Basic usage:
-         *
-         * ```javascript
-         * // Search for "zen art motorcycle" with default options: terms have to match
-         * // exactly, and individual terms are joined with OR
-         * miniSearch.search('zen art motorcycle')
-         * // => [ { id: 2, score: 2.77258, match: { ... } }, { id: 4, score: 1.38629, match: { ... } } ]
-         * ```
-         *
-         * ### Restrict search to specific fields:
-         *
-         * ```javascript
-         * // Search only in the 'title' field
-         * miniSearch.search('zen', { fields: ['title'] })
-         * ```
-         *
-         * ### Field boosting:
-         *
-         * ```javascript
-         * // Boost a field
-         * miniSearch.search('zen', { boost: { title: 2 } })
-         * ```
-         *
-         * ### Prefix search:
-         *
-         * ```javascript
-         * // Search for "moto" with prefix search (it will match documents
-         * // containing terms that start with "moto" or "neuro")
-         * miniSearch.search('moto neuro', { prefix: true })
-         * ```
-         *
-         * ### Fuzzy search:
-         *
-         * ```javascript
-         * // Search for "ismael" with fuzzy search (it will match documents containing
-         * // terms similar to "ismael", with a maximum edit distance of 0.2 term.length
-         * // (rounded to nearest integer)
-         * miniSearch.search('ismael', { fuzzy: 0.2 })
-         * ```
-         *
-         * ### Combining strategies:
-         *
-         * ```javascript
-         * // Mix of exact match, prefix search, and fuzzy search
-         * miniSearch.search('ismael mob', {
-         *  prefix: true,
-         *  fuzzy: 0.2
-         * })
-         * ```
-         *
-         * ### Advanced prefix and fuzzy search:
-         *
-         * ```javascript
-         * // Perform fuzzy and prefix search depending on the search term. Here
-         * // performing prefix and fuzzy search only on terms longer than 3 characters
-         * miniSearch.search('ismael mob', {
-         *  prefix: term => term.length > 3
-         *  fuzzy: term => term.length > 3 ? 0.2 : null
-         * })
-         * ```
-         *
-         * ### Combine with AND:
-         *
-         * ```javascript
-         * // Combine search terms with AND (to match only documents that contain both
-         * // "motorcycle" and "art")
-         * miniSearch.search('motorcycle art', { combineWith: 'AND' })
-         * ```
-         *
-         * ### Combine with AND_NOT:
-         *
-         * There is also an AND_NOT combinator, that finds documents that match the
-         * first term, but do not match any of the other terms. This combinator is
-         * rarely useful with simple queries, and is meant to be used with advanced
-         * query combinations (see later for more details).
-         *
-         * ### Filtering results:
-         *
-         * ```javascript
-         * // Filter only results in the 'fiction' category (assuming that 'category'
-         * // is a stored field)
-         * miniSearch.search('motorcycle art', {
-         *   filter: (result) => result.category === 'fiction'
-         * })
-         * ```
-         *
-         * ### Wildcard query
-         *
-         * Searching for an empty string (assuming the default tokenizer) returns no
-         * results. Sometimes though, one needs to match all documents, like in a
-         * "wildcard" search. This is possible by passing the special value
-         * {@link MiniSearch.wildcard} as the query:
-         *
-         * ```javascript
-         * // Return search results for all documents
-         * miniSearch.search(MiniSearch.wildcard)
-         * ```
-         *
-         * Note that search options such as `filter` and `boostDocument` are still
-         * applied, influencing which results are returned, and their order:
-         *
-         * ```javascript
-         * // Return search results for all documents in the 'fiction' category
-         * miniSearch.search(MiniSearch.wildcard, {
-         *   filter: (result) => result.category === 'fiction'
-         * })
-         * ```
-         *
-         * ### Advanced combination of queries:
-         *
-         * It is possible to combine different subqueries with OR, AND, and AND_NOT,
-         * and even with different search options, by passing a query expression
-         * tree object as the first argument, instead of a string.
-         *
-         * ```javascript
-         * // Search for documents that contain "zen" and ("motorcycle" or "archery")
-         * miniSearch.search({
-         *   combineWith: 'AND',
-         *   queries: [
-         *     'zen',
-         *     {
-         *       combineWith: 'OR',
-         *       queries: ['motorcycle', 'archery']
-         *     }
-         *   ]
-         * })
-         *
-         * // Search for documents that contain ("apple" or "pear") but not "juice" and
-         * // not "tree"
-         * miniSearch.search({
-         *   combineWith: 'AND_NOT',
-         *   queries: [
-         *     {
-         *       combineWith: 'OR',
-         *       queries: ['apple', 'pear']
-         *     },
-         *     'juice',
-         *     'tree'
-         *   ]
-         * })
-         * ```
-         *
-         * Each node in the expression tree can be either a string, or an object that
-         * supports all {@link SearchOptions} fields, plus a `queries` array field for
-         * subqueries.
-         *
-         * Note that, while this can become complicated to do by hand for complex or
-         * deeply nested queries, it provides a formalized expression tree API for
-         * external libraries that implement a parser for custom query languages.
-         *
-         * @param query  Search query
-         * @param searchOptions  Search options. Each option, if not given, defaults to the corresponding value of `searchOptions` given to the constructor, or to the library default.
-         */
         search(query, searchOptions = {}) {
             const { searchOptions: globalSearchOptions } = this._options;
             const searchOptionsWithDefaults = { ...globalSearchOptions, ...searchOptions };
@@ -1665,67 +976,6 @@
             results.sort(byScore);
             return results;
         }
-        /**
-         * Provide suggestions for the given search query
-         *
-         * The result is a list of suggested modified search queries, derived from the
-         * given search query, each with a relevance score, sorted by descending score.
-         *
-         * By default, it uses the same options used for search, except that by
-         * default it performs prefix search on the last term of the query, and
-         * combine terms with `'AND'` (requiring all query terms to match). Custom
-         * options can be passed as a second argument. Defaults can be changed upon
-         * calling the {@link MiniSearch} constructor, by passing a
-         * `autoSuggestOptions` option.
-         *
-         * ### Basic usage:
-         *
-         * ```javascript
-         * // Get suggestions for 'neuro':
-         * miniSearch.autoSuggest('neuro')
-         * // => [ { suggestion: 'neuromancer', terms: [ 'neuromancer' ], score: 0.46240 } ]
-         * ```
-         *
-         * ### Multiple words:
-         *
-         * ```javascript
-         * // Get suggestions for 'zen ar':
-         * miniSearch.autoSuggest('zen ar')
-         * // => [
-         * //  { suggestion: 'zen archery art', terms: [ 'zen', 'archery', 'art' ], score: 1.73332 },
-         * //  { suggestion: 'zen art', terms: [ 'zen', 'art' ], score: 1.21313 }
-         * // ]
-         * ```
-         *
-         * ### Fuzzy suggestions:
-         *
-         * ```javascript
-         * // Correct spelling mistakes using fuzzy search:
-         * miniSearch.autoSuggest('neromancer', { fuzzy: 0.2 })
-         * // => [ { suggestion: 'neuromancer', terms: [ 'neuromancer' ], score: 1.03998 } ]
-         * ```
-         *
-         * ### Filtering:
-         *
-         * ```javascript
-         * // Get suggestions for 'zen ar', but only within the 'fiction' category
-         * // (assuming that 'category' is a stored field):
-         * miniSearch.autoSuggest('zen ar', {
-         *   filter: (result) => result.category === 'fiction'
-         * })
-         * // => [
-         * //  { suggestion: 'zen archery art', terms: [ 'zen', 'archery', 'art' ], score: 1.73332 },
-         * //  { suggestion: 'zen art', terms: [ 'zen', 'art' ], score: 1.21313 }
-         * // ]
-         * ```
-         *
-         * @param queryString  Query string to be expanded into suggestions
-         * @param options  Search options. The supported options and default values
-         * are the same as for the {@link MiniSearch#search} method, except that by
-         * default prefix search is performed on the last term in the query, and terms
-         * are combined with `'AND'`.
-         * @return  A sorted array of suggestions sorted by relevance score.
-         */
         autoSuggest(queryString, options = {}) {
             options = { ...this._options.autoSuggestOptions, ...options };
             const suggestions = new Map();
@@ -1747,85 +997,24 @@
             results.sort(byScore);
             return results;
         }
-        /**
-         * Total number of documents available to search
-         */
         get documentCount() {
             return this._documentCount;
         }
-        /**
-         * Number of terms in the index
-         */
         get termCount() {
             return this._index.size;
         }
-        /**
-         * Deserializes a JSON index (serialized with `JSON.stringify(miniSearch)`)
-         * and instantiates a MiniSearch instance. It should be given the same options
-         * originally used when serializing the index.
-         *
-         * ### Usage:
-         *
-         * ```javascript
-         * // If the index was serialized with:
-         * let miniSearch = new MiniSearch({ fields: ['title', 'text'] })
-         * miniSearch.addAll(documents)
-         *
-         * const json = JSON.stringify(miniSearch)
-         * // It can later be deserialized like this:
-         * miniSearch = MiniSearch.loadJSON(json, { fields: ['title', 'text'] })
-         * ```
-         *
-         * @param json  JSON-serialized index
-         * @param options  configuration options, same as the constructor
-         * @return An instance of MiniSearch deserialized from the given JSON.
-         */
         static loadJSON(json, options) {
             if (options == null) {
                 throw new Error('MiniSearch: loadJSON should be given the same options used when serializing the index');
             }
             return this.loadJS(JSON.parse(json), options);
         }
-        /**
-         * Async equivalent of {@link MiniSearch.loadJSON}
-         *
-         * This function is an alternative to {@link MiniSearch.loadJSON} that returns
-         * a promise, and loads the index in batches, leaving pauses between them to avoid
-         * blocking the main thread. It tends to be slower than the synchronous
-         * version, but does not block the main thread, so it can be a better choice
-         * when deserializing very large indexes.
-         *
-         * @param json  JSON-serialized index
-         * @param options  configuration options, same as the constructor
-         * @return A Promise that will resolve to an instance of MiniSearch deserialized from the given JSON.
-         */
         static async loadJSONAsync(json, options) {
             if (options == null) {
                 throw new Error('MiniSearch: loadJSON should be given the same options used when serializing the index');
             }
             return this.loadJSAsync(JSON.parse(json), options);
         }
-        /**
-         * Returns the default value of an option. It will throw an error if no option
-         * with the given name exists.
-         *
-         * @param optionName  Name of the option
-         * @return The default value of the given option
-         *
-         * ### Usage:
-         *
-         * ```javascript
-         * // Get default tokenizer
-         * MiniSearch.getDefault('tokenize')
-         *
-         * // Get default term processor
-         * MiniSearch.getDefault('processTerm')
-         *
-         * // Unknown options will throw an error
-         * MiniSearch.getDefault('notExisting')
-         * // => throws 'MiniSearch: unknown option "notExisting"'
-         * ```
-         */
         static getDefault(optionName) {
             if (defaultOptions.hasOwnProperty(optionName)) {
                 return getOwnProperty(defaultOptions, optionName);
@@ -1834,9 +1023,6 @@
                 throw new Error(`MiniSearch: unknown option "${optionName}"`);
             }
         }
-        /**
-         * @ignore
-         */
         static loadJS(js, options) {
             const { index, documentIds, fieldLength, storedFields, serializationVersion } = js;
             const miniSearch = this.instantiateMiniSearch(js, options);
@@ -1860,9 +1046,6 @@
             }
             return miniSearch;
         }
-        /**
-         * @ignore
-         */
         static async loadJSAsync(js, options) {
             const { index, documentIds, fieldLength, storedFields, serializationVersion } = js;
             const miniSearch = this.instantiateMiniSearch(js, options);
@@ -1889,9 +1072,6 @@
             }
             return miniSearch;
         }
-        /**
-         * @ignore
-         */
         static instantiateMiniSearch(js, options) {
             const { documentCount, nextId, fieldIds, averageFieldLength, dirtCount, serializationVersion } = js;
             if (serializationVersion !== 1 && serializationVersion !== 2) {
@@ -1907,9 +1087,6 @@
             miniSearch._index = new SearchableMap();
             return miniSearch;
         }
-        /**
-         * @ignore
-         */
         executeQuery(query, searchOptions = {}) {
             if (query === MiniSearch.wildcard) {
                 return this.executeWildcardQuery(searchOptions);
@@ -1929,9 +1106,6 @@
             const results = queries.map(query => this.executeQuerySpec(query, options));
             return this.combineResults(results, options.combineWith);
         }
-        /**
-         * @ignore
-         */
         executeQuerySpec(query, searchOptions) {
             const options = { ...this._options.searchOptions, ...searchOptions };
             const boosts = (options.fields || this._options.fields).reduce((boosts, field) => ({ ...boosts, [field]: getOwnProperty(options.boost, field) || 1 }), {});
@@ -1982,9 +1156,6 @@
             }
             return results;
         }
-        /**
-         * @ignore
-         */
         executeWildcardQuery(searchOptions) {
             const results = new Map();
             const options = { ...this._options.searchOptions, ...searchOptions };
@@ -1998,9 +1169,6 @@
             }
             return results;
         }
-        /**
-         * @ignore
-         */
         combineResults(results, combineWith = OR) {
             if (results.length === 0) {
                 return new Map();
@@ -2012,30 +1180,6 @@
             }
             return results.reduce(combinator) || new Map();
         }
-        /**
-         * Allows serialization of the index to JSON, to possibly store it and later
-         * deserialize it with {@link MiniSearch.loadJSON}.
-         *
-         * Normally one does not directly call this method, but rather call the
-         * standard JavaScript `JSON.stringify()` passing the {@link MiniSearch}
-         * instance, and JavaScript will internally call this method. Upon
-         * deserialization, one must pass to {@link MiniSearch.loadJSON} the same
-         * options used to create the original instance that was serialized.
-         *
-         * ### Usage:
-         *
-         * ```javascript
-         * // Serialize the index:
-         * let miniSearch = new MiniSearch({ fields: ['title', 'text'] })
-         * miniSearch.addAll(documents)
-         * const json = JSON.stringify(miniSearch)
-         *
-         * // Later, to deserialize it:
-         * miniSearch = MiniSearch.loadJSON(json, { fields: ['title', 'text'] })
-         * ```
-         *
-         * @return A plain-object serializable representation of the search index.
-         */
         toJSON() {
             const index = [];
             for (const [term, fieldIndex] of this._index) {
@@ -2058,9 +1202,6 @@
                 serializationVersion: 2
             };
         }
-        /**
-         * @ignore
-         */
         termResults(sourceTerm, derivedTerm, termWeight, termBoost, fieldTermData, fieldBoosts, boostDocumentFn, bm25params, results = new Map()) {
             if (fieldTermData == null)
                 return results;
@@ -2114,9 +1255,6 @@
             }
             return results;
         }
-        /**
-         * @ignore
-         */
         addTerm(fieldId, documentId, term) {
             const indexData = this._index.fetch(term, createMap);
             let fieldIndex = indexData.get(fieldId);
@@ -2130,9 +1268,6 @@
                 fieldIndex.set(documentId, (docs || 0) + 1);
             }
         }
-        /**
-         * @ignore
-         */
         removeTerm(fieldId, documentId, term) {
             if (!this._index.has(term)) {
                 this.warnDocumentChanged(documentId, fieldId, term);
@@ -2158,9 +1293,6 @@
                 this._index.delete(term);
             }
         }
-        /**
-         * @ignore
-         */
         warnDocumentChanged(shortDocumentId, fieldId, term) {
             for (const fieldName of Object.keys(this._fieldIds)) {
                 if (this._fieldIds[fieldName] === fieldId) {
@@ -2169,9 +1301,6 @@
                 }
             }
         }
-        /**
-         * @ignore
-         */
         addDocumentId(documentId) {
             const shortDocumentId = this._nextId;
             this._idToShortId.set(documentId, shortDocumentId);
@@ -2180,17 +1309,11 @@
             this._nextId += 1;
             return shortDocumentId;
         }
-        /**
-         * @ignore
-         */
         addFields(fields) {
             for (let i = 0; i < fields.length; i++) {
                 this._fieldIds[fields[i]] = i;
             }
         }
-        /**
-         * @ignore
-         */
         addFieldLength(documentId, fieldId, count, length) {
             let fieldLengths = this._fieldLength.get(documentId);
             if (fieldLengths == null)
@@ -2200,9 +1323,6 @@
             const totalFieldLength = (averageFieldLength * count) + length;
             this._avgFieldLength[fieldId] = totalFieldLength / (count + 1);
         }
-        /**
-         * @ignore
-         */
         removeFieldLength(documentId, fieldId, count, length) {
             if (count === 1) {
                 this._avgFieldLength[fieldId] = 0;
@@ -2211,9 +1331,6 @@
             const totalFieldLength = (this._avgFieldLength[fieldId] * count) - length;
             this._avgFieldLength[fieldId] = totalFieldLength / (count - 1);
         }
-        /**
-         * @ignore
-         */
         saveStoredFields(documentId, doc) {
             const { storeFields, extractField } = this._options;
             if (storeFields == null || storeFields.length === 0) {
@@ -2229,10 +1346,6 @@
             }
         }
     }
-    /**
-     * The special wildcard symbol that can be passed to {@link MiniSearch#search}
-     * to match all documents
-     */
     MiniSearch.wildcard = Symbol('*');
     const getOwnProperty = (object, property) => Object.prototype.hasOwnProperty.call(object, property) ? object[property] : undefined;
     const combinators = {
@@ -2427,7 +1540,8 @@ function checkStale(){
 }
 async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
-  try{ const d=await (await fetch("./data.json",{cache:"no-store"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
+  // no-cache = revalidate: a 304 when prices have not changed since the last load (no-store re-downloaded ~1.4 MB every load)
+  try{ const d=await (await fetch("./data.json",{cache:"no-cache"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale(); if(location.hash==="#dash") dashOpen(true);
   if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
@@ -2461,14 +1575,11 @@ function tierFor(year, price){
   return {era, band, m:TIERS[era][band]};
 }
 function autoTiers(){ const el=$("#cfg-autotier"); return el ? !!el.checked : true; }
-function feedbackOn(){ const el=$("#cfg-feedback"); return el ? !!el.checked : true; }
-function applyFeedback(){ const on=feedbackOn(); document.body.classList.toggle("nofeedback", !on); if(!on){ CUR=null; if(typeof paintStrip==="function") paintStrip(); } }   // hide the good/ok/bad UI and drop any live episode when feedback is off
 function condMult(cond, year, price){
   if(cond==="NM") return 1;
   if(autoTiers()) return tierFor(year, price).m[cond];
   return mult(cond);
 }
-function tierLabel(year, price){ const t=tierFor(year,price); return t.era+" · "+(t.band==="hi"?"$100+":t.band==="mid"?"$20\u2013100":"<$20"); }
 /* ---- Bid Math v2: piecewise-affine net proceeds. net(p)=A*p-B over fee/shipping
    thresholds. Constants are verified real TCGplayer fees + measured postage; only the
    margin floor is operator-tuned. See CARDCOMP_BID_MATH_SPEC.md. ---- */
@@ -2502,7 +1613,6 @@ function buildSealedFeeTiers(key){   // sealed never ships PWE; postage from pic
 const FEE_TIERS = buildFeeTiers();
 function feeTierFor(p, tiers){ tiers=tiers||FEE_TIERS; return tiers.find(x=>p>=x.lo && p<x.hi) || tiers[tiers.length-1]; }
 function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B
-function marginAt(sale,cost){ if(cost<=0)return 0; return (netProceeds(sale)-cost)/cost; }      // profit ÷ cost
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? np/(1+mf) : 0; }  // highest cost that still nets >= mf margin
 /* ---- Velocity-tiered margin (see CLAUDE.md "Planned: velocity-tiered margin").
    From 12 months of Derek's TCGplayer sales + one inventory snapshot. Pokemon singles only.
@@ -2612,7 +1722,6 @@ function bestMarket(r){   // top printing market for the collapsed card
   return best;
 }
 function topPrint(r){ let k="", best=-1; for(const p in (r&&r.px)||{}){ const v=r.px[p], m=(v.m!=null?v.m:v.l)||0; if(m>best){ best=m; k=p; } } return k; }   // the printing bestMarket prices (collapsed bids use it)
-function rowBid(r){ const b=bestMarket(r); return b>0 ? bidForMargin(b, speedOf(r,b,"NM").margin) : null; }   // NM margin bid at the top printing
 function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
@@ -2732,7 +1841,7 @@ window.addEventListener("message", e=>{
 // now / next / timer / bids / ship / who leads. Red once the current bid passes the last bid you sent,
 // green while you lead. New lot: the title shows as a chip (tap to search it) and the search box is selected.
 let DBG_NOTE="";
-let LOT=null, LOT_TITLE="", LOT_N=0, LOT_WON=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false, LOT_ENDED_AT=0, LOT_END_SEEN_AT=0;
+let LOT=null, LOT_TITLE="", LOT_N=0, LOT_FLASH="", TAPS_THIS_LOT=[], LOT_START=0, LOT_UNDER=null, LOTSTATS_OPEN=false, LOT_ENDED_AT=0, LOT_END_SEEN_AT=0;
 const LABEL_MAX_MS=5*60000;
 const LATE_TAP_MS=2500;   // a tap up to 2.5 s after "Sold" is a late reaction to that card, not a pick for the next one
 let LOT_END_TITLE="";   // title of the lot whose end was last seen (safety net below)
@@ -2758,6 +1867,46 @@ function viewLabel(from, to, sellerCond){   // snapshot of the last card opened 
   s.label="view"; s.viewAt=v.at; s.condFrom=sellerCond?"seller":"assumed NM";
   return s;
 }
+// ---- Buyers (Derek, 2026-10-20: "who is sharp, alert me when sharp buyers are in a stream"). Profiles from every
+// logged lot (this browser's rows, synced from the private log): wins, wins on known cards and their median price
+// as a share of market, lots they took from a max you set. Tags need BUYER_MIN known-card wins:
+//   sharp = median <= 85% of market (knows values, stops in time), whale = median >= 105% (pays over market),
+//   rival = beat your max RIVAL_MIN+ times. Presence: the room list each lot end carries (seen in the last 30 min)
+//   plus whoever leads now.
+const BUYER_MIN=3, SHARP_MAX=0.85, WHALE_MIN=1.05, RIVAL_MIN=3;
+let BUYERS=null, BUYERS_AT=0, ROOM={seller:"", users:new Map()};
+function buyerProfiles(){
+  if(BUYERS && Date.now()-BUYERS_AT<60000) return BUYERS;
+  const M=new Map();
+  for(const r of loadLots()){
+    const w=r.w; if(!w || r.me || w==="me" || w==="?" || w===r.s) continue;
+    const u=M.get(w)||{wins:0, lab:0, pcts:[], beat:0, sellers:new Set()};
+    u.wins++; u.sellers.add(r.s);
+    if(r.m>0 && r.f>0){ u.lab++; u.pcts.push(r.f/r.m); }
+    if(Math.max(r.mx||0, r.pm||0)>0) u.beat++;
+    M.set(w, u);
+  }
+  for(const u of M.values()){
+    u.med=med(u.pcts); u.tags=[];
+    if(u.lab>=BUYER_MIN && u.med<=SHARP_MAX) u.tags.push("sharp");
+    if(u.lab>=BUYER_MIN && u.med>=WHALE_MIN) u.tags.push("whale");
+    if(u.beat>=RIVAL_MIN) u.tags.push("rival");
+    delete u.pcts;
+  }
+  BUYERS=M; BUYERS_AT=Date.now(); return M;
+}
+function roomSee(seller, users){   // users: [[name, msAgo]]
+  if(seller && ROOM.seller!==seller) ROOM={seller, users:new Map()};
+  const now=Date.now();
+  for(const [u, ago] of users) if(u && u!==seller){ const t=now-(ago||0); if(t>(ROOM.users.get(u)||0)) ROOM.users.set(u, t); }
+}
+function taggedHere(){   // tagged buyers seen in this stream in the last 30 min, sharp first
+  const B=buyerProfiles(), cut=Date.now()-30*60000, out=[];
+  for(const [u, t] of ROOM.users){ const b=B.get(u); if(t>=cut && b && b.tags.length) out.push(Object.assign({u}, b)); }
+  return out.sort((a,b)=>(b.tags.includes("sharp")-a.tags.includes("sharp")) || (b.lab-a.lab));
+}
+const TAG_COL={sharp:"var(--red)", rival:"var(--gold)", whale:"var(--blue)"};
+const buyerTxt=b=>`${b.u}: ${b.tags.join(", ")}${b.med!=null?`, wins at ${Math.round(b.med*100)}% of market`:""} (${b.lab} known wins)${b.beat?`, beat your max ${b.beat}x`:""}`;
 function paintLot(){
   const el=$("#lotstrip"); if(!el) return;
   const d=LOT; if(!d){ el.style.display="none"; return; }
@@ -2778,7 +1927,11 @@ function paintLot(){
   if(d.bids!=null) parts.push(`${d.bids} bids`);
   if(d.ship!=null) parts.push(`ship $${d.ship.toFixed(2)}`);
   if(d.ended){ const w=d.sold==="me"||d.me ? `<span style="color:var(--green)">you won</span>` : `sold${d.sold&&d.sold!=="?"?" to "+escH(d.sold).slice(0,14):""}`; parts.push(w); }
-  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`); else if(d.lead) parts.push(`lead ${escH(d.lead).slice(0,14)}`);
+  else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`);
+  else if(d.lead){ const b=buyerProfiles().get(d.lead), tg=b&&b.tags.length?b.tags[0]:"";   // a tagged buyer leading: the price is probably near value (sharp) or past it (whale)
+    parts.push(tg ? `<span title="${escH(buyerTxt(Object.assign({u:d.lead}, b)))}" style="color:${TAG_COL[tg]}">⚠ ${tg} buyer leads: ${escH(d.lead).slice(0,14)}</span>` : `lead ${escH(d.lead).slice(0,14)}`); }
+  { const here=taggedHere(); if(here.length){ const n=t=>here.filter(b=>b.tags.includes(t)).length;
+    parts.push(`<span title="${escH(here.map(buyerTxt).join("\n"))}" style="color:var(--dim)">here: ${["sharp","rival","whale"].filter(n).map(t=>`<b style="color:${TAG_COL[t]}">${t} ${n(t)}</b>`).join(" · ")}</span>`); } }
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
@@ -2849,6 +2002,7 @@ function lotRow(rec){
     return row;
 }
 function storeLotRows(add){   // merge rows into this browser's stats by lot key
+  BUYERS=null;
   const cut=Date.now()-120*86400000;
   let rows=loadLots().filter(r=>r.at>=cut);
   const at=new Map(rows.map((r,i)=>[r.k,i]));
@@ -2930,6 +2084,7 @@ function paintLotStats(){
       <select class="lssel">${sellers.map(s=>`<option${s===seller?" selected":""}>${escH(s)}</option>`).join("")}</select>
       <span class="lschips"><span data-sc="stream" class="${LOTSTATS_SCOPE==="stream"?"on":""}">this stream</span><span data-sc="all" class="${LOTSTATS_SCOPE==="all"?"on":""}">all time</span></span><button class="lsclose" title="close">✕</button></div>
     <div class="lsverdict" style="border-color:${vc}"><span class="lsicon" style="color:${vc}">${vi}</span><span>${vt}</span></div>
+    ${(()=>{ const here=seller===ROOM.seller?taggedHere():[]; return here.length?`<div class="lsx" style="color:var(--dim);margin:-4px 0 9px">In this stream: ${here.map(b=>`<b style="color:${TAG_COL[b.tags[0]]}">${escH(b.u)}</b> ${b.tags.join("/")}${b.med!=null?` ${Math.round(b.med*100)}%`:""}${b.beat?` · beat you ${b.beat}x`:""}`).join(" · ")}</div>`:""; })()}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
     <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
@@ -2984,6 +2139,7 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .note li{padding:7px 0;border-bottom:1px solid var(--line);line-height:1.45}
   #dash .note li b{color:var(--ink)}
   #dash .pos{color:var(--green)} #dash .neg{color:var(--red)} #dash .mut{color:var(--faint)}
+  #dash .dclr{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:8px 10px;cursor:pointer}
   #dash .dadd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
   #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
   @media (max-width:640px){ #dash .d2{grid-template-columns:1fr} #dash .dv{font-size:22px} #dash .hide-s{display:none} }
@@ -3086,9 +2242,14 @@ function paintDash(){
       <div><h3>${worst.some(r=>r.np-r.f<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
     <h3>Streamers<span>tap one to filter${DASH.seller?"":", best net first"}</span></h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Seller</th><th class="hide-s">Streams</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th><th title="median sale price as a share of market, over lots with a card">Sells at</th><th class="hide-s" title="lots you put a max on that you won">Your bids won</th></tr></thead><tbody>${sHtml}</tbody></table></div>
+    ${(()=>{ const B=[...buyerProfiles().entries()].filter(([u,b])=>!DASH.seller || b.sellers.has(DASH.seller)).map(([u,b])=>Object.assign({u},b)).filter(b=>b.lab>=1 || b.beat>=1)
+        .sort((a,b)=>(b.tags.length-a.tags.length) || (b.lab-a.lab) || (b.wins-a.wins)).slice(0,15);
+      return B.length?`<h3>Buyers<span>sharp: ${BUYER_MIN}+ known wins at ${Math.round(SHARP_MAX*100)}% of market or less · whale: ${Math.round(WHALE_MIN*100)}%+ · rival: beat your max ${RIVAL_MIN}+ times</span></h3>
+        <div class="scroll"><table class="dtab"><thead><tr><th>Buyer</th><th>Tag</th><th>Wins</th><th title="wins where the card is known">Known</th><th title="median price paid as a share of market">Pays</th><th>Beat you</th><th class="hide-s">Sellers</th></tr></thead><tbody>${B.map(b=>`<tr><td>${escH(b.u)}</td><td>${b.tags.map(t=>`<b style="color:${TAG_COL[t]}">${t}</b>`).join(" ")||'<span class="mut">–</span>'}</td><td>${b.wins}</td><td>${b.lab}</td><td>${b.med!=null?Math.round(b.med*100)+"%":"–"}</td><td>${b.beat||"–"}</td><td class="hide-s">${b.sellers.size}</td></tr>`).join("")}</tbody></table></div>`:""; })()}
     <h3>By day</h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
-    ${S.unl?`<h3>Wins without a card<span>add the card so net and margin count them</span></h3>${S.wins.filter(r=>!(r.m>0)).slice().sort((a,b)=>b.at-a.at).map(r=>`<div class="buy"><div style="min-width:0"><div class="n">$${r.f} win · ${escH(r.s)}</div><div class="m">${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</div></div><div class="r"><button class="dadd" data-k="${escH(r.k||"")}">+ card</button></div></div>`).join("")}`:""}
+    ${S.wins.length?`<h3>Your wins<span>${S.unl?S.unl+" without a card · ":""}change or clear a card that is wrong</span></h3>${S.wins.slice().sort((a,b)=>b.at-a.at).slice(0, DASH.allWins?1e9:30).map(r=>{ const has=r.m>0||!!r.n;
+      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f} · ${has?escH(r.n||"?")+` <span class="mut">${escH(r.c||"")}${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
     ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
     <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
   </div>`;
@@ -3100,6 +2261,8 @@ function dashWire(el){
   const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
+  const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
+  el.querySelectorAll(".dclr").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r && confirm(`Remove ${r.n||"the card"} from your $${r.f} win?`)) clearLotCard(r); });
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
 window.addEventListener("hashchange", ()=>{ if(location.hash==="#dash" && !DASH.on && window.__ready) dashOpen(true); });
@@ -3128,7 +2291,7 @@ function clearLots(range){
   const what = range==="hour" ? "the last hour" : range==="today" ? "today" : "all time";
   if(!confirm(`Delete ${gone} lot${gone===1?"":"s"} logged in ${what} from stream stats, and the matching rows in your private GitHub log? This cannot be undone. Verified TCGplayer prices are kept.`)) return;
   try{ localStorage.setItem(LOTS_KEY, JSON.stringify(rows.filter(r=>r.at<since))); }catch(_){ }
-  LAST_TAP=null; LAST_VIEW=null; TAPS_THIS_LOT=[]; LOT_START=Date.now(); LOT_N=0; LOT_WON=0;   // nothing stale carries into the next lot
+  LAST_TAP=null; LAST_VIEW=null; TAPS_THIS_LOT=[]; LOT_START=Date.now(); LOT_N=0;   // nothing stale carries into the next lot
   CLEAR_NOTE=`Cleared ${gone} from this browser. ${WN_EXT?"Clearing the GitHub log…":"GitHub log: open CardComp in the extension side panel to clear it there too."}`;
   if(WN_EXT) extPost({type:"cardcomp-log-prune", since});
   paintLot(); paintLotStats();
@@ -3188,7 +2351,7 @@ function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that on
 let PICK=null, PICK_MSG="", PICK_MSG_T=null;
 function pickFor(r, from){
   const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
-  PICK={ k:r.k, s:r.s, at:at||r.at, startedAt:st===""||st==null?null:+st, f:r.f, from };
+  PICK={ k:r.k, s:r.s, at:at||r.at, startedAt:st===""||st==null?null:+st, f:r.f, from, was:r.n||"" };
   PICK_MSG=""; if(DASH.on) dashOpen(false); LOTSTATS_OPEN=false; paintLot(); paintLotStats();
   document.querySelectorAll("#results .card.open .detail").forEach(det=>{ const c=CARDS.find(x=>x.id===det.closest(".card").dataset.id); if(c && !det.querySelector(".pickrow")) addPickRow(det, c); });
   paintPick(); const q=$("#q"); if(q){ q.focus(); q.select(); }
@@ -3200,7 +2363,7 @@ function paintPick(){
   el.style.display="block";
   if(PICK){
     const when=new Date(PICK.at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
-    el.innerHTML=`<b>Adding the card to your $${PICK.f} win</b> (${escH(PICK.s)}, ${when}). Search it, open it, tap its condition.<button class="pickx">cancel</button>`;
+    el.innerHTML=`<b>${PICK.was?`Changing the card on your $${PICK.f} win (now ${escH(PICK.was)})`:`Adding the card to your $${PICK.f} win`}</b> (${escH(PICK.s)}, ${when}). Search it, open it, tap its condition.<button class="pickx">cancel</button>`;
     el.querySelector(".pickx").onclick=()=>{ PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove()); paintPick(); };
   } else el.innerHTML=PICK_MSG;
 }
@@ -3219,7 +2382,7 @@ function assignPick(card, cond, k){
     const rows=loadLots(), r=rows.find(x=>x.k===P.k);
     if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
   }catch(_){ }
-  PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
+  PICK=null; BUYERS=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
   const net=condM>0?netProceeds(listSale(condM))-P.f:null;
   PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to your $${P.f} win${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
   if(WN_EXT && P.startedAt!=null) extPost({type:"cardcomp-log-edit", key:{seller:P.s, startedAt:P.startedAt, at:P.at}, card:snap});
@@ -3228,6 +2391,15 @@ function assignPick(card, cond, k){
   try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
   paintLot();
   if(P.from==="dash") dashOpen(true); else if(P.from==="stats"){ LOTSTATS_OPEN=true; paintLotStats(); }
+}
+function clearLotCard(r){   // a card added to the wrong win: back to "no card", here and in the log
+  BUYERS=null;
+  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n:"", c:"", lab:"", m:0, np:null, id:"", pr:"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+  const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
+  PICK_MSG=`<b>Removed ${escH(r.n||"the card")}</b> from your $${r.f} win <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
+  if(WN_EXT && st!=="" && st!=null) extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, card:null, clear:true});
+  clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
+  paintPick(); try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ } paintLot(); if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats();
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-edit-ack" || !lotFromExt(e)) return;
@@ -3251,6 +2423,7 @@ window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
     LOT=d;
+    if(d.lead) roomSee(d.seller, [[d.lead, 0]]);
     // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
     // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
     if(d.title && d.title!==LOT_TITLE){ LOT_TITLE=d.title; LOT_N++; const q=$("#q"); if(q && document.activeElement!==q){ q.focus(); q.select(); } }
@@ -3267,6 +2440,7 @@ window.addEventListener("message", e=>{
   }
   if(d.type==="cardcomp-lot-end" && d.rec){
     LOT_END_SEEN_AT=Date.now(); LOT_END_TITLE=d.rec.title||"";
+    if(!d.rec.empty) roomSee(d.rec.seller, Object.entries(d.rec.room||{}).map(([u,x])=>[u, ((x&&x.ago)||0)*60000]).concat((d.rec.leaders||[]).map(u=>[u,0])));
     // Card label: the last bid sent since the previous lot ended (pre-start taps included, at most 3 min
     // before this lot started). Sellers rarely name the card, so this tap is the only record of what sold;
     // a stale tap would label the lot with the previous card. NM, LP, NM taps on one card are one lot,
@@ -3293,7 +2467,7 @@ function finishLot(rec, from, to, vFrom){
   if(tap){ rec.card=Object.assign({}, tap); rec.card.myMax=tap.bid; delete rec.card.bid; rec.card.tapAt=tap.at; delete rec.card.at; rec.card.label="tap"; if(last.t>(rec.at||0)) rec.card.late=true; }
   else { const v=viewLabel(vFrom, rec.at||to, rec.sellerCond); if(v) rec.card=v; }   // no bid: the card Derek opened during the lot, at the seller's stated condition
   rec.bidsSent=mine.map(t=>{ const o=Object.assign({}, t); delete o.snap; return o; });
-  if(rec.me){ LOT_WON++; LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
+  if(rec.me){ LOT_FLASH=`won $${rec.final}${tap?" · "+escH(tap.n)+" "+tap.cond:""}`; setTimeout(()=>{ LOT_FLASH=""; paintLot(); }, 12000); }
   recordLotStat(rec);
   if(window.recogLotDone) try{ recogLotDone(rec); }catch(_){ }   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
   extPost({type:"cardcomp-log-save", rec});   // stored by the extension in log-YYYY-MM-DD.json (needs the token)
@@ -3391,26 +2565,6 @@ function condGridHTML(prices, key, mf, year, pid, card){
   }).join("");
   return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
-let PRICE_INDEX=null, PRICE_UPDATED="", _indexLoad=null;
-function loadIndex(){
-  if(_indexLoad) return _indexLoad;
-  _indexLoad=(async()=>{
-    try{
-      const r=await fetch("./prices.json",{cache:"no-store"});
-      if(!r.ok) throw new Error("HTTP "+r.status);
-      const d=await r.json();
-      PRICE_INDEX=d.prices||{}; PRICE_UPDATED=d.updated||"";
-    }catch(e){ PRICE_INDEX=null; }
-    indexStatus();
-    return PRICE_INDEX;
-  })();
-  return _indexLoad;
-}
-function indexStatus(){
-  const el=$("#pxstat"); if(!el) return;
-  if(PRICE_INDEX){ const n=Object.keys(PRICE_INDEX).length; el.textContent="✓ prices loaded — "+n+" cards"+(PRICE_UPDATED?(" · "+String(PRICE_UPDATED).slice(0,10)):""); el.style.color="var(--green)"; }
-  else { el.textContent="prices.json not loaded — tap uses pokemontcg.io fallback"; el.style.color="var(--gold)"; }
-}
 async function loadPrices(card, host){
   const e = card && card.px;
   if(!e || !Object.keys(e).length){ host.innerHTML='<div class="muted">No price for this card (below the bid floor, or not on TCGplayer).</div>'; }
@@ -3419,7 +2573,6 @@ async function loadPrices(card, host){
     for(const k in e){ const v=e[k]; const mk=(v.m!=null?v.m:v.l); prices[k]={market:mk, mid:mk, low:v.l, p:v.p}; }   // p: this printing's own TCGplayer product (Shadowless, Master Ball...)
     renderPrices(host, {tcgplayer:{updatedAt:DATA_UPDATED}, pid:card.pid||null, card}, prices, "TCGCSV");
   }
-  addDetailFlags(host, card);
   if(PICK) addPickRow(host, card);
 }
 function renderPrices(host, data, prices, src){
@@ -3539,7 +2692,6 @@ function addToCart(item){
 }
 function clearCart(){ CART=[]; saveCart(); renderCart(); }
 function openFromCart(item){
-  finalize("u"); SUPPRESS_LOG=true;   // cart reopen is not a user search; close any live episode
   const isSealed = String(item.id||"").startsWith("sl:");
   // Reopen by id, not by re-searching the name. Promo/standalone names embed the collector
   // number (e.g. "Cyndaquil 047"); the parser turns that into a number filter but the stored
@@ -3559,7 +2711,6 @@ function openFromCart(item){
   requestAnimationFrame(()=>{
     const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===item.id);
     if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
-    SUPPRESS_LOG=false;
   });
 }
 function renderCart(){
@@ -3590,139 +2741,15 @@ function renderCart(){
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
 }
 
-/* ---------- search feedback log ---------- */
-// One record per search, ring-buffered in localStorage. Three grades: green (good),
-// yellow (worked, not great), red (bad). All three log and clear the field. Starting a
-// new search without flagging logs "unflagged" (moved on, no judgment). Never required.
-const SLOG_KEY="cardcomp_slog", SLOG_MAX=2000;
-let SLOG=[]; try{ SLOG=JSON.parse(localStorage.getItem(SLOG_KEY)||"[]")||[]; }catch(e){ SLOG=[]; }
-let CUR=null;            // live search episode: {t, raw, f, n, openedId}
-let SUPPRESS_LOG=false;  // cart reopen: its run() is not a user search
-let LAST=null, _snap=null;  // undo: LAST={rec,raw,openedId} restorable after a flag clear; _snap staged inside finalize
-function slogSave(){ try{ localStorage.setItem(SLOG_KEY, JSON.stringify(SLOG)); }catch(e){} }
-function compactFilters(f){
-  const o={};
-  const set=f.setName||(f.setCode?SET_CODES[f.setCode]:null);
-  if(set) o.set=set;
-  if(f.number) o.number=f.number;
-  if(f.rarity) o.rarity=f.rarity.label;
-  if(f.printing) o.printing=f.printingLabel||f.printing;
-  if(f.type) o.type=f.type;
-  if(f.stage) o.stage=f.stage;
-  if(f.subtype) o.subtype=f.subtype;
-  if(f.hp!=null) o.hp=f.hp;
-  if(f.eraMin!=null) o.eraMin=f.eraMin;
-  if(f.eraMax!=null) o.eraMax=f.eraMax;
-  if(f.jp) o.jp=f.jp.code;
-  return o;
-}
-function seedCUR(raw, f, n){
-  if(SUPPRESS_LOG || !feedbackOn()) return;   // feedback off: no live episode, nothing logs
-  LAST=null; _snap=null;   // starting or continuing a search retires any pending undo
-  if(!CUR) CUR={t:Date.now(), openedId:null};
-  CUR.raw=raw; CUR.f=compactFilters(f); CUR.n=n;
-  paintStrip();
-}
-function finalize(fl, cardId){
-  clearTimeout(t);
-  const qel=$("#q");
-  if(CUR && qel && qel.value.trim() && qel.value!==CUR.raw) run(qel.value);   // flush pending keystrokes into CUR
-  if(!CUR || !(CUR.raw||"").trim()){ CUR=null; paintStrip(); return null; }
-  const rec={t:CUR.t, q:CUR.raw, f:CUR.f, n:CUR.n, id:(cardId!==undefined&&cardId!==null)?cardId:(CUR.openedId||null), fl, g:GAME, l:LANG};
-  if(MODE) rec.mode=MODE;   // active result-gating toggle, matters like game/lang
-  if(ERA) rec.era=ERA;
-  SLOG.push(rec);
-  if(SLOG.length>SLOG_MAX) SLOG=SLOG.slice(-SLOG_MAX);
-  slogSave();
-  _snap={rec, raw:CUR.raw, openedId:CUR.openedId};   // staged; armUndo() promotes it on the clear paths only
-  CUR=null; paintStrip();
-  return rec;
-}
-function clearSearch(){   // reset for the next search; never logs (callers finalize first)
+function clearSearch(){   // the search box's ✕: reset for the next search
   clearTimeout(t);
   const qel=$("#q");
   if(qel) qel.value="";
   $("#qclear").style.display="none";
   $("#results").innerHTML=""; $("#read").innerHTML=""; $("#status").textContent="";
-  CUR=null; paintStrip();
   if(qel) qel.focus();
 }
-function armUndo(){ if(_snap) LAST=_snap; _snap=null; }   // make the last flagged+cleared search restorable
-function flagGood(id){ finalize("g", id); armUndo(); clearSearch(); }
-function flagBad(){ finalize("r"); armUndo(); clearSearch(); }
-function flagOk(id){ finalize("y", id); armUndo(); clearSearch(); }
-function undoLast(){
-  if(!LAST) return;
-  const {rec, raw, openedId}=LAST;
-  if(SLOG.length && SLOG[SLOG.length-1]===rec){ SLOG.pop(); slogSave(); updateSlogUI(); }   // drop the flag we just logged
-  LAST=null; _snap=null;
-  const m=rec.mode||"";                                   // restore the result-gating toggle it ran under
-  MODE=["fa","bulk","val25","val50","promo","sealed"].includes(m)?m:""; paintToggles();
-  ERA=["vintage","mid","modern"].includes(rec.era)?rec.era:""; paintEra();
-  const qel=$("#q"); if(qel){ qel.value=raw||""; qel.focus(); }
-  $("#qclear").style.display=(raw&&raw.trim())?"block":"none";
-  run(raw||"");                                           // re-seed CUR + re-render results
-  if(openedId && CUR) CUR.openedId=openedId;
-  if(openedId){
-    requestAnimationFrame(()=>{
-      const el=[...$("#results").querySelectorAll(".card")].find(c=>c.dataset.id===openedId);
-      if(el){ if(!el.classList.contains("open")){ const row=el.querySelector(".row"); if(row) row.click(); } el.scrollIntoView({behavior:"smooth",block:"center"}); }
-    });
-  }
-}
-function paintStrip(){
-  const live=!!(CUR&&(CUR.raw||"").trim());
-  const showUndo=!live && !!LAST;
-  const s=$("#flagstrip"), u=$("#undobar");
-  if(u) u.style.display=showUndo?"block":"none";
-  if(s){ s.style.display=showUndo?"none":"flex"; s.classList.toggle("idle", !live); }   // undo replaces the (idle) strip in the same slot
-}
-function addDetailFlags(host, card){
-  host.insertAdjacentHTML("beforeend", '<div class="detailflags"><button class="fbtn fg" type="button">✓ good</button><button class="fbtn fy" type="button">~ ok</button><button class="fbtn fr" type="button">✗ bad</button></div>');
-  const d=host.querySelector(".detailflags"); if(!d) return;
-  d.querySelector(".fg").onclick=(e)=>{ e.stopPropagation(); flagGood(card?card.id:null); };
-  d.querySelector(".fy").onclick=(e)=>{ e.stopPropagation(); flagOk(card?card.id:null); };
-  d.querySelector(".fr").onclick=(e)=>{ e.stopPropagation(); flagBad(); };
-}
-
-/* log viewer (settings panel) */
-function slogSummaryHTML(){
-  if(!SLOG.length) return "no searches logged yet";
-  const c={g:0,y:0,r:0,u:0}; let uFound=0; SLOG.forEach(r=>{ if(c[r.fl]!=null) c[r.fl]++; if(r.fl==="u"&&r.id) uFound++; });
-  const uMoved=c.u-uFound;
-  return `${SLOG.length} logged · <b style="color:var(--green)">${c.g} good</b> · <b style="color:var(--gold)">${c.y} ok</b> · <b style="color:var(--red)">${c.r} bad</b> · ${c.u} unflagged (${uFound} found, ${uMoved} moved on)`;
-}
 const escH=s=>String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
-function fmtFilters(f){ return Object.entries(f||{}).map(([k,v])=>k+" "+v).join(" · "); }
-function renderSlog(){
-  const body=$("#slogbody"); if(!body) return;
-  const freq=new Map();
-  SLOG.forEach(r=>{ const k=(r.q||"").toLowerCase().trim(); if(k.length>=3) freq.set(k,(freq.get(k)||0)+1); });   // skip 1-2 char interim noise
-  const top=[...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
-  const bad=SLOG.filter(r=>r.fl==="r"||r.fl==="y").slice(-50).reverse();
-  // corrections: a missed/ok/unflagged search immediately refined into a green hit (same first word, within 90s)
-  const w4=s=>(s||"").trim().toLowerCase().split(/\s+/)[0].slice(0,4);
-  const corr=[];
-  for(let i=1;i<SLOG.length;i++){ const p=SLOG[i-1], cc=SLOG[i]; if(cc.fl==="g" && p.fl!=="g" && p.q!==cc.q && w4(p.q)===w4(cc.q) && (cc.t-p.t)/1000<90 && w4(p.q)) corr.push([p,cc]); }
-  const corrShow=corr.slice(-40).reverse();
-  const h4=tt=>`<div style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:1px;margin:10px 0 5px">${tt}</div>`;
-  body.innerHTML =
-    h4("corrections · "+corr.length+" (query → fix)")+
-    (corrShow.length?corrShow.map(([p,cc])=>`<div style="padding:3px 0;border-bottom:1px solid var(--line);color:var(--dim)">${escH(p.q)} <span style="color:var(--faint)">[${p.fl==="r"?"✗":p.fl==="y"?"~":"·"} ${p.n}]</span> <b style="color:var(--green)">→</b> ${escH(cc.q)} <span style="color:var(--faint)">[${cc.n}]</span></div>`).join(""):'<div class="muted">none yet</div>')+
-    h4("top queries")+
-    (top.length?top.map(([q,n])=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;color:var(--dim)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(q)}</span><span style="flex:none">${n}</span></div>`).join(""):'<div class="muted">none</div>')+
-    h4("red + yellow · latest "+bad.length)+
-    (bad.length?bad.map(r=>{
-      const fs=fmtFilters(r.f);
-      const md={fa:"full art",bulk:"hide bulk",val25:"$25+",val50:"$50+",promo:"promos",sealed:"sealed"}[r.mode]||"";
-      const ea={vintage:"vintage",mid:"mid-era",modern:"modern"}[r.era]||"";
-      return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b style="color:${r.fl==="r"?"var(--red)":"var(--gold)"}">${r.fl==="r"?"✗":"~"}</b> ${escH(r.q)} <span style="color:var(--faint)">· ${r.n} result${r.n===1?"":"s"}${ea?" · "+ea:""}${md?" · "+md:""}${fs?" · "+escH(fs):""} · ${r.g}${r.g==="pkmn"?" "+(r.l||"en"):""} · ${new Date(r.t).toLocaleString()}</span></div>`;
-    }).join(""):'<div class="muted">none</div>');
-}
-function updateSlogUI(){
-  const s=$("#slogsum"); if(s) s.innerHTML=slogSummaryHTML();
-  const b=$("#slogbody"); if(b && b.style.display!=="none") renderSlog();
-}
 
 /* ---------- domain layer ---------- */
 const NICK = [
@@ -3745,8 +2772,6 @@ function nameBigrams(){   // consecutive word pairs from every card name in the 
 const TYPES = {fire:"Fire",water:"Water",grass:"Grass",lightning:"Lightning",electric:"Lightning",
   psychic:"Psychic",fighting:"Fighting",darkness:"Darkness",dark:"Darkness",metal:"Metal",steel:"Metal",
   dragon:"Dragon",fairy:"Fairy",colorless:"Colorless",normal:"Colorless"};
-const TYPE_COLOR = {Fire:"#ff7043",Water:"#4fc3f7",Grass:"#7cc576",Lightning:"#ffd54f",Psychic:"#ba68c8",
-  Fighting:"#d4a05a",Darkness:"#78909c",Metal:"#b0bec5",Dragon:"#cyan",Fairy:"#f06292",Colorless:"#cfd8dc"};
 // set codes from the data; skip codes that are also Pokemon names
 let NAMESET = new Set(), NUMSETS = new Set(), SET_NAMES = [];
 const SET_CODES = {};
@@ -4139,11 +3164,24 @@ let ms = null;
 function buildIndex(){
   ms = new MiniSearch({
     fields:["n","atk","s","kind"],
-    storeFields:["n","sup","s","c","y","num","r","hp","t","st","atk","img","lang","game","px","pid","sealed","kind","o","d7","d30","ps"],
+    storeFields:[],   // results are looked up in CARDS by id (msq): every field is present, and the index holds no copies
     searchOptions:{ boost:{n:3,atk:2}, fuzzy: t => t.length>4 ? 0.2 : false, prefix: t => t.length>=3 }
   });
   ms.addAll(CARDS);
+  BY_ID = new Map(CARDS.map(c=>[c.id, c]));
 }
+// MiniSearch hits -> full card objects with the hit's score. Before, results carried only storeFields, and every new
+// card field had to be added there or searched results silently lost it ("works browsing, breaks searching").
+let BY_ID = new Map();
+// Card image: data.json leaves out links that follow the pattern (ingest.js slim): TCGplayer from the product id for
+// standalone entries ("tc:", "jp:"...), pokemontcg.io from the id for joined ones ("sv8pt5-40").
+function imgOf(r){
+  if(!r) return "";
+  if(r.img!=null) return r.img;
+  if(/:/.test(r.id||"")) return r.pid ? `https://tcgplayer-cdn.tcgplayer.com/product/${r.pid}_200w.jpg` : "";
+  const id=r.id||"", i=id.lastIndexOf("-"); return i>0 ? `https://images.pokemontcg.io/${id.slice(0,i)}/${id.slice(i+1)}.png` : "";
+}
+function msq(q, opts){ const out=[]; for(const h of ms.search(q, opts)){ const c=BY_ID.get(h.id); if(c) out.push(Object.assign({}, c, {score:h.score})); } return out; }
 
 /* ---------- search ---------- */
 function run(raw){
@@ -4222,20 +3260,20 @@ function run(raw){
 
   let res, literal=false;
   if(q){
-    res = ms.search(q,{combineWith:"AND"}).filter(r=>passFilters(r));
-    if(!res.length) res = ms.search(q).filter(r=>passFilters(r));
-    if(!res.length){ let relaxed = ms.search(q).filter(r=>passFilters(r,1)); if(!relaxed.length) relaxed = ms.search(q).filter(r=>passFilters(r,2)); if(relaxed.length){ res=relaxed; literal=true; } }   // over-narrow qualifier zeroed it: retry dropping loose descriptors, then subtype/stage, keeping set/number identity
-    if(!res.length && qFull && qFull!==q){ res = ms.search(qFull).filter(passId); literal=true; }   // name/keyword collision safety net (still anchored to set/number)
+    res = msq(q,{combineWith:"AND"}).filter(r=>passFilters(r));
+    if(!res.length) res = msq(q).filter(r=>passFilters(r));
+    if(!res.length){ let relaxed = msq(q).filter(r=>passFilters(r,1)); if(!relaxed.length) relaxed = msq(q).filter(r=>passFilters(r,2)); if(relaxed.length){ res=relaxed; literal=true; } }   // over-narrow qualifier zeroed it: retry dropping loose descriptors, then subtype/stage, keeping set/number identity
+    if(!res.length && qFull && qFull!==q){ res = msq(qFull).filter(passId); literal=true; }   // name/keyword collision safety net (still anchored to set/number)
     if(res.length < 4){   // sounds-like fallback for misspellings beyond fuzzy's reach
       const seen=new Set(res.map(r=>r.id)), names=new Set();
       for(const t of q.split(/\s+/)){ if(t.length<4) continue; const hit=PHON.get(phonKey(t)); if(hit) hit.forEach(n=>names.add(n)); }
-      for(const nm of [...names].slice(0,6)){ ms.search(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
+      for(const nm of [...names].slice(0,6)){ msq(nm).filter(r=>passFilters(r)).forEach(r=>{ if(!seen.has(r.id)){ seen.add(r.id); res.push(r); } }); }
     }
     // exact name (typed in full or picked from a suggestion chip): only cards carrying that whole name.
     // "mew" -> Mew, Mew ex, Ancient Mew; never Mewtwo. "meowth" keeps Alolan / Team Rocket's Meowth.
     if(isBaseName(q)){ const qq=" "+q+" ", ex=res.filter(r=>(" "+normName(r.n)+" ").includes(qq)); if(ex.length) res=ex; }
   } else {
-    res = CARDS.map(c=>({...c, score:1})).filter(r=>passFilters(r));
+    res = CARDS.filter(r=>passFilters(r)).map(c=>({...c, score:1}));   // filter first: copying all ~37k cards cost ~30% of this path
   }
   // relevance-first when the *typed query* has a discriminating signal; newest-first for a bare name.
   // FA toggle is a mode, not a query qualifier, so it must NOT flip the sort.
@@ -4245,7 +3283,6 @@ function run(raw){
   // padding buries a vintage exact hit (Gym Heroes owner cards) under newer loose matches.
   const multiWord = q.split(/\s+/).filter(Boolean).length >= 2;
   PRINT_HINT = f.printing || "";
-  if(raw.trim()) seedCUR(raw, f, res.length);   // live search episode for the feedback log
   render(res, literal, !hasFilter && !multiWord);
 }
 
@@ -4268,7 +3305,7 @@ function render(res, literal, newestFirst){
       </div>` : "";
     el.innerHTML = `
       <div class="row">
-        <img src="${r.img}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
+        <img src="${imgOf(r)}" loading="lazy" alt="" onerror="this.classList.add('noimg')">
         <div class="meta">
           <div class="nm">${r.n}</div>
           <div class="tags">${r.sealed
@@ -4276,24 +3313,18 @@ function render(res, literal, newestFirst){
             : `<b>${r.s}</b><span class="xtra"> ${r.c?("· "+r.c):""} ${r.num?("· #"+r.num):""} · ${r.r||"—"}</span>`}${trendTag(r)}${liveTag(r)}</div>
         </div>
         ${bidHTML}
-        <div class="rails">
-          <div class="rail rg" title="good search · this card">✓</div>
-          <div class="rail ry" title="found it, but hard to find · this card">~</div>
-        </div>
       </div>
       <div class="detail"></div>`;
     const row = el.querySelector(".row"), det = el.querySelector(".detail");
     // Opening a tile expanded it in place, so a card in the second row put the bid table below the
     // fold and every comp started with a scroll. Pull the opened card to the top of the viewport.
     // Anchoring on the card's top is height-independent, so it works before the detail has painted.
-    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open && CUR) CUR.openedId=r.id; if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } else if(open && PICK) addPickRow(det, r); if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
+    row.onclick = () => { const qel=$("#q"); if(qel) qel.blur(); const open = el.classList.toggle("open"); if(open){ LAST_VIEW={id:r.id, at:Date.now(), el}; if(typeof paintLot==="function") paintLot(); } if(open && !det.dataset.loaded){ det.dataset.loaded="1"; loadPrices(r, det); } else if(open && PICK) addPickRow(det, r); if(open) requestAnimationFrame(()=>{ const sr=document.querySelector(".searchrow"); el.style.scrollMarginTop=((sr?sr.offsetHeight:0)+8)+"px"; el.scrollIntoView({behavior:"smooth",block:"start"}); }); };
     const im = el.querySelector("img");
     // in tile view the art IS the tap target, so let the click bubble to the row and open the card;
     // once open the tile is list-shaped again and the thumbnail goes back to zooming.
-    if(im) im.onclick = (e)=>{ if(VIEW==="grid" && !el.classList.contains("open")) return; e.stopPropagation(); zoom((r.img||"").replace(/\.png$/,"_hires.png")); };
+    if(im) im.onclick = (e)=>{ if(VIEW==="grid" && !el.classList.contains("open")) return; e.stopPropagation(); zoom(imgOf(r).replace(/\.png$/,"_hires.png")); };
     el.querySelectorAll(".row .cpy").forEach(c=>c.onclick=(e)=>{ e.stopPropagation(); copyAmt(c.dataset.bid, c); });
-    const rg=el.querySelector(".rail.rg"); if(rg) rg.onclick=(e)=>{ e.stopPropagation(); flagGood(r.id); };
-    const ry=el.querySelector(".rail.ry"); if(ry) ry.onclick=(e)=>{ e.stopPropagation(); flagOk(r.id); };
     wrap.appendChild(el);
   });
 }
@@ -4416,31 +3447,14 @@ function sugKey(e){   // true if the key was used by the suggestion chips
 
 /* ---------- wiring ---------- */
 let t=null;
-$("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; if(!e.target.value.trim()) finalize("u"); t=setTimeout(()=>run(e.target.value), 110); });
-$("#q").addEventListener("beforeinput", e=>{ const el=e.target, L=el.value.length; if(L>0 && el.selectionStart===0 && el.selectionEnd===L) finalize("u"); });   // type-over after focus select-all = new search, old one logs unflagged
+$("#q").addEventListener("input", e=>{ clearTimeout(t); $("#qclear").style.display = e.target.value?"block":"none"; t=setTimeout(()=>run(e.target.value), 110); });
 $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(sugKey(e)) return; if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
-$("#qclear").onclick = ()=>{ finalize("u"); armUndo(); clearSearch(); };
+$("#qclear").onclick = ()=>clearSearch();
 $("#q").addEventListener("input", renderSug);
 $("#q").addEventListener("focus", renderSug);
 $("#q").addEventListener("blur", ()=>setTimeout(renderSug,120));
 $("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a chip must not blur the input (keyboard stays up)
-(function(){
-  const s=$("#flagstrip");
-  if(s){
-    s.querySelector('[data-fl="g"]').onclick=()=>flagGood();
-    s.querySelector('[data-fl="y"]').onclick=()=>flagOk();
-    s.querySelector('[data-fl="r"]').onclick=()=>flagBad();
-  }
-  const ub=$("#undobar"); if(ub) ub.onclick=undoLast;
-  const v=$("#slogview"); if(v) v.onclick=()=>{ const b=$("#slogbody"); const show=b.style.display==="none"; b.style.display=show?"block":"none"; if(show) renderSlog(); };
-  const cp=$("#slogcopy"); if(cp) cp.onclick=()=>{ const str=JSON.stringify(SLOG); const flash=()=>{ const t0=cp.textContent; cp.textContent="copied ✓"; setTimeout(()=>{ cp.textContent=t0; },800); }; if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(str).then(flash,()=>copyFallback(str,flash)); else copyFallback(str,flash); };
-  const dl=$("#slogdl"); if(dl) dl.onclick=()=>{ const b=new Blob([JSON.stringify(SLOG)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="cardcomp-searchlog.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
-  const cl=$("#slogclear"); if(cl) cl.onclick=()=>{ if(confirm("clear search log?")){ SLOG=[]; slogSave(); updateSlogUI(); } };
-  window.addEventListener("pagehide", ()=>{ finalize("u"); });   // best effort; iOS killing a backgrounded tab from the app switcher never fires this, that one record is lost by design
-  window.addEventListener("pageshow", ()=>{ const qel=$("#q"); if(!CUR && qel && qel.value.trim() && window.__ready) run(qel.value); });   // bfcache restore after pagehide finalized: re-seed the visible query
-  paintStrip();
-})();
 
 /* settings: persist (safe if storage blocked), toggle, zoom close */
 function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
@@ -4454,9 +3468,8 @@ function migrateCfg(){   // 2026-10: speed-based margin treats this setting as i
   }catch(e){}
 }
 loadCfg(); migrateCfg();
-applyFeedback();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); applyFeedback(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
-$("#gear").onclick = ()=>{ const open=$("#settings").classList.toggle("open"); if(open) updateSlogUI(); };
+document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
+$("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();

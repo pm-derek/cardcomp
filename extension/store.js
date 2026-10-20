@@ -101,8 +101,9 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
 }
 // Put a card on a logged lot after the fact (Derek, 2026-10-20: wins where no card was registered). key = {seller,
 // startedAt, at}. A lot sits in the day file of the UTC day it was flushed, so look at its day and the next.
-async function editLog(key, card) {
-  const k = lotKey(key); if (!k || !card) return { ok: false, why: "bad request" };
+async function editLog(key, card, clear) {
+  const k = lotKey(key); if (!k || (!card && !clear)) return { ok: false, why: "bad request" };   // clear: card removed (it was put on the wrong win)
+  if (clear) card = null;
   let hit = false;
   pendingLog.forEach((r) => { if (lotKey(r) === k) { r.card = card; hit = true; } });
   const tok = await token();
@@ -116,7 +117,7 @@ async function editLog(key, card) {
       const row = j.rows.find((r) => lotKey(r) === k); if (!row) break;
       row.card = card;
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr),
-        body: JSON.stringify({ message: `Card added to a lot: ${card.n || "?"}`, branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
+        body: JSON.stringify({ message: card ? `Card added to a lot: ${card.n || "?"}` : "Card removed from a lot", branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
       if (r.status === 409 || r.status === 422) continue;
       return r.ok ? { ok: true, file: "log-" + day + ".json" } : { ok: false, why: "GitHub PUT " + r.status };
     }
