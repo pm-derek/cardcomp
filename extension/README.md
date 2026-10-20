@@ -15,6 +15,9 @@ Edge and Brave work the same way. Firefox does not (no side panel API, different
 1. Open the Whatnot show at whatnot.com in a tab.
 2. Click the extension icon. CardComp opens in Chrome's side panel next to the stream.
    (A normal CardComp tab in another window works too.)
+   Two streams at once: one Chrome window per stream, each with its own side panel. Each CardComp
+   talks only to the stream in its own window (bids, read now, readings, lots). A CardComp tab in a
+   window with no stream follows the stream you used last.
 3. Search the card, tap the bid you want. The bid chip says `Whatnot $42` when it landed.
    In the Whatnot tab a toast at the top says one of:
    - `$42 entered ... Place the bid when ready.` -> the box is filled, press Place bid.

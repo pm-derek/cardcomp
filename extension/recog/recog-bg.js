@@ -252,7 +252,8 @@ async function recogState() {
   const s = await recogGet(), mode = recogModeOf(s);
   return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey };
 }
-function recogToApp(msg) {   // side panel page + any CardComp tab (same path as lot messages)
+function recogToApp(msg, tab) {   // to the CardComp copies paired with that tab's window (bg.js toApps); no tab = every copy
+  if (typeof toApps === "function") { toApps(msg, tab); return; }
   try { const p = chrome.runtime.sendMessage(msg); if (p && p.catch) p.catch(() => {}); } catch (_) {}
   try { chrome.tabs.query({ url: "https://pm-derek.github.io/cardcomp/*" }, (tabs) => (tabs || []).forEach((t) => { const p = chrome.tabs.sendMessage(t.id, msg); if (p && p.catch) p.catch(() => {}); })); } catch (_) {}
 }
@@ -282,23 +283,23 @@ async function recogOnFrame(msg, tab) {
   if (!frame) {
     const error = "no frame: " + (msg.why || "unknown");
     await recogLot(key, (rec) => { lotHead(rec); rec.reads.push({ n, error }); });
-    recogToApp(Object.assign(head, { error })); return;
+    recogToApp(Object.assign(head, { error }), tab); return;
   }
   const fr = { n, trigger: msg.trigger || "start", diff: msg.diff, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
   let res;
   if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
   else if (!recogCapOK(kind)) {
     if (kind === "auto") {   // pause quietly: say so on the watcher line, never over the results or a read-now
-      recogToApp({ type: "cardcomp-auto-watch", phase: "paused", why: "auto paused: " + RECOG_HOURLY_CAP + " reads this hour (read now still works)" });
+      recogToApp({ type: "cardcomp-auto-watch", phase: "paused", why: "auto paused: " + RECOG_HOURLY_CAP + " reads this hour (read now still works)" }, tab);
       return;
     }
     res = { error: "read-now limit reached (" + RECOG_HOURLY_CAP + " an hour)" };
   }
   else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey, (read, ms) =>
-    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) })));
+    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) }), tab));
   const prev = recogPrev[tab ? tab.id : 0];
   await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "sonnet" }, res)); });
-  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
+  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
   // no number (or unsure): read the enlarged card from the same frame; CardComp keeps it only if it is better
   let best = res.read;
   if (res.read && res.read.card_visible !== false && res.read.name && (!res.read.number || (res.read.confidence || 0) < 0.7) && s.recogKey) {
@@ -309,7 +310,7 @@ async function recogOnFrame(msg, tab) {
       await recogLot(key, (rec) => { rec.frames.push(zf); rec.reads.push(Object.assign({ n, zoom: zc.z, modelPicked: s.recogModel || "sonnet" }, zr)); });
       if (zr.read && recogBetter(zr.read, res.read)) {
         best = zr.read;
-        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }));
+        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
       }
     }
   }
@@ -322,16 +323,17 @@ async function recogOnFrame(msg, tab) {
   }
 }
 
-// "Read now": the Whatnot tab Derek is watching (active first, else the one touched last) reads its frame right away.
-async function recogReadNow() {
+// "Read now": the stream in the asking CardComp's window (its active Whatnot tab first), else the one touched last.
+async function recogReadNow(win) {
   const tabs = await chrome.tabs.query({ url: "https://*.whatnot.com/*" });
   if (!tabs.length) return { ok: false, why: "no Whatnot tab" };
-  tabs.sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
-  try { const r = await chrome.tabs.sendMessage(tabs[0].id, { type: "recog-read-now" }); return r && r.ok ? { ok: true } : { ok: false, why: "auto is off" }; }
+  const here = win != null ? tabs.filter((t) => t.windowId === win) : [];
+  const pick = (here.length ? here : tabs).sort((a, b) => (b.active - a.active) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)))[0];
+  try { const r = await chrome.tabs.sendMessage(pick.id, { type: "recog-read-now" }); return r && r.ok ? { ok: true } : { ok: false, why: "auto is off" }; }
   catch (_) { return { ok: false, why: "Whatnot tab not ready, reload it" }; }
 }
 
-async function recogAdopt(msg) {
+async function recogAdopt(msg, tab) {
   RECOG_ADOPT[msg.from] = msg.to;   // a reading still on its way lands on the lot
   const db = await recogDb();
   await new Promise((res) => {
@@ -350,17 +352,20 @@ async function recogAdopt(msg) {
     };
     tx.oncomplete = res; tx.onerror = res;
   });
-  recogToApp({ type: "cardcomp-auto-adopt", from: msg.from, to: msg.to });
+  recogToApp({ type: "cardcomp-auto-adopt", from: msg.from, to: msg.to }, tab);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg.type !== "string") return;
   if (msg.type === "recog-frame") { recogOnFrame(msg, sender.tab); reply({ ok: true }); return; }
   if (msg.type === "recog-adopt") {   // a card read before the timer started, picture unchanged: it is this lot's reading
-    recogAdopt(msg); reply({ ok: true }); return;
+    recogAdopt(msg, sender.tab); reply({ ok: true }); return;
   }
-  if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg); return; }   // watcher status -> CardComp
-  if (msg.type === "cardcomp-auto-read") { recogReadNow().then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r)); }); return true; }   // "read now" button
+  if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg, sender.tab); return; }   // watcher status -> CardComp
+  if (msg.type === "cardcomp-auto-read") {   // read the stream in the asking CardComp's window
+    const win = sender.tab ? sender.tab.windowId : msg.win;
+    recogReadNow(win).then((r) => { reply(r); recogToApp(Object.assign({ type: "cardcomp-auto-readack" }, r), win != null ? { windowId: win } : null); }); return true;
+  }   // "read now" button
   if (msg.type === "cardcomp-auto-hello") { recogState().then(recogToApp); reply({ ok: true }); return; }
   if (msg.type === "cardcomp-auto-config") {
     const set = {};
