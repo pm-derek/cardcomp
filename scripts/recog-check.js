@@ -745,6 +745,19 @@ async function appPage(browser, base, blockRecog) {
   const strip = await ap.evaluate(() => document.querySelector("#lotstrip").innerText.replace(/\s+/g, " "));
   ok(by === "sharp" && /sharp buyer leads: sharpie/.test(strip) && /here: sharp 1/.test(strip), "buyers: 3 wins at 80% of market tag 'sharp'; in the room and leading, the strip says so (" + strip.slice(0, 80) + ")");
   await send({ type: "cardcomp-lot-end", rec: { title: "#91", final: 3, bids: 2, startedAt: Date.now() - 20000, at: Date.now(), seller: "s9", room: {} } }); await ap.waitForTimeout(2800);
+  // dashboard daily charts: lots on two days -> spent / net / running net charts and the "where lots sell" strip
+  const dch = await ap.evaluate(() => {
+    const d1 = Date.now() - 2 * 86400000, d2 = Date.now() - 86400000, mk = (o) => lotRow(Object.assign({ startedAt: o.at - 20000, bids: 3, seller: "sD" }, o));
+    storeLotRows([mk({ at: d1, final: 5, me: true, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 10, label: "tap" } }),
+      mk({ at: d2, final: 9, me: true, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 8, label: "tap" } })]);
+    DASH.per = "7"; DASH.seller = "sD"; dashOpen(true);
+    const svgs = document.querySelectorAll("#ddaily svg").length, strip = !!document.querySelector("#dstrip svg"), cols = document.querySelectorAll("#ddaily svg")[1].querySelectorAll("path").length;
+    const hit = document.querySelectorAll("#ddaily .dhit"); hit[hit.length - 1].dispatchEvent(new PointerEvent("pointerenter"));
+    const tip = document.querySelector("#ddaily .dtip").textContent;
+    DASH.seller = ""; dashOpen(false); localStorage.setItem("cardcomp_lots", JSON.stringify(loadLots().filter((r) => r.s !== "sD")));
+    return { svgs, strip, cols, tip };
+  });
+  ok(dch.svgs === 3 && dch.strip && dch.cols === 2 && /running net/.test(dch.tip), "dashboard: daily spent / net / running net charts and the where-lots-sell strip (" + dch.tip.replace(/\s+/g, " ").slice(0, 60) + ")");
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);

@@ -2142,6 +2142,21 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .dclr{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:8px 10px;cursor:pointer}
   #dash .dadd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
   #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
+  #dash #ddaily{position:relative} #dash .dchart{position:relative;margin-bottom:4px}
+  #dash .dchart .cap{font-size:11px;color:var(--dim);margin:8px 0 2px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  #dash .dchart .cap b{color:var(--ink);font-weight:600}
+  #dash .dchart .cap i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  #dash .dax{fill:var(--faint);font-size:10px;font-variant-numeric:tabular-nums}
+  #dash .dlab{fill:var(--dim);font-size:10.5px;font-variant-numeric:tabular-nums}
+  #dash .dhit{fill:transparent;cursor:default;outline:none}
+  #dash .dhit.on,#dash .dhit:focus{fill:rgba(139,151,165,.10)}
+  #dash .dtip{position:absolute;z-index:5;width:200px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11.5px;line-height:1.5;color:var(--dim);pointer-events:none;font-variant-numeric:tabular-nums}
+  #dash .dtip b{color:var(--ink)}
+  #dash .lslegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-bottom:2px}
+  #dash .lslegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px;box-sizing:border-box}
+  #dash .lsmuted{color:var(--faint)} #dash .lsax{fill:var(--faint);font-size:10px} #dash .lsref{fill:var(--dim);font-size:10px}
+  #dash .lstip{position:absolute;z-index:5;width:190px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11.5px;line-height:1.45;color:var(--dim);pointer-events:none}
+  #dash .lstip b{color:var(--ink)}
   @media (max-width:640px){ #dash .d2{grid-template-columns:1fr} #dash .dv{font-size:22px} #dash .hide-s{display:none} }
 `; document.head.appendChild(st); })();
 function dashOpen(on){
@@ -2238,6 +2253,8 @@ function paintDash(){
   if(soft.length) notes.push(`<b>Softest hours</b>: ${soft.map(o=>`${hl(o.h)} ${P(o.p)} of market (${o.n} lots)`).join(" · ")}.`);
   el.innerHTML=`<div class="dw">${head}
     <div class="dtiles">${tiles}</div>
+    <div id="ddaily"></div>
+    <div id="dstripw"><h3>Where lots sell<span>every lot with a card, sale price as % of market</span></h3><div id="dstrip" style="position:relative"></div></div>
     <div class="d2"><div><h3>Best buys<span>net if listed at market</span></h3>${best.map(buy).join("")||'<div class="mut">no priced wins</div>'}</div>
       <div><h3>${worst.some(r=>r.np-r.f<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
     <h3>Streamers<span>tap one to filter${DASH.seller?"":", best net first"}</span></h3>
@@ -2254,7 +2271,81 @@ function paintDash(){
     <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
   </div>`;
   dashWire(el);
+  try{ dashDaily(el.querySelector("#ddaily"), rows); }catch(_){ }
+  try{ const sw=el.querySelector("#dstripw"), mf=getNum("tgtmargin",10)/100, withMax=S.lab.filter(r=>r.mx>0);
+    const maxPct=withMax.length>=3 ? med(withMax.map(r=>r.mx/r.m)) : med(S.lab.filter(r=>r.np>0).map(r=>r.np/(1+mf)/r.m));
+    if(S.lab.length) lotDotStrip(el.querySelector("#dstrip"), { n:S.lab.length, lab:S.lab, maxPct }); else sw.style.display="none"; }catch(_){ }
 }
+// Daily charts (Derek, 2026-10-20: "daily charts for $ spent, $ net, whatever gives the most insight"). Small multiples on
+// one day axis: spent (columns, neutral gray), net if listed (diverging columns from zero: blue gain, red loss; the
+// dataviz diverging pair, validated on #14181d: CVD dE 19.2), running net (a 2px line with a 10% wash, end label).
+// One day per slot from the first day with lots in the period (days without lots stay as empty slots), last 60 at most.
+// Hover / focus on a day shows its numbers in all three; the By day table below is the table view.
+function dashDaily(host, rows){
+  if(!host) return;
+  const k0=t=>{ const d=new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const by=new Map(); rows.forEach(r=>{ const k=k0(r.at); if(!by.has(k)) by.set(k, []); by.get(k).push(r); });
+  if(!by.size){ host.innerHTML=""; return; }
+  const today=k0(Date.now()), first=Math.max(Math.min(...by.keys()), k0(today-59*86400000));
+  const days=[]; for(let d=new Date(first); d.getTime()<=today; d=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1)){ const t=d.getTime(), rs=by.get(t)||[]; days.push({ t, rs, s:dashSum(rs) }); }
+  if(days.length<2){ host.innerHTML=""; return; }
+  let run=0; days.forEach(d=>{ d.net=d.s.priced.length?d.s.net:null; run+=d.net||0; d.run=run; });
+  const W=Math.max(280, host.clientWidth||600), padL=46, padR=10, n=days.length, band=(W-padL-padR)/n, bw=Math.max(2, Math.min(24, band*0.68));
+  const cx=i=>padL+band*(i+0.5);
+  const nice=v=>{ if(v<=0) return 1; const p=Math.pow(10, Math.floor(Math.log10(v))), m=v/p; return (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p; };
+  const money=v=>(v<0?"−":"")+"$"+(Math.abs(v)>=1000?(Math.abs(v)/1000).toFixed(1)+"K":Math.abs(v)>=100?Math.round(Math.abs(v)):Math.abs(v).toFixed(Math.abs(v)<10?2:0));
+  const GRAY="#7d8896", UP="#3987e5", DOWN="#e66767";
+  // a column with a 4px rounded data end, square at the baseline
+  const col=(x, yb, yv, w, c)=>{ const h=Math.abs(yv-yb); if(h<0.5) return ""; const r=Math.min(4, h, w/2), l=x-w/2, up=yv<yb;
+    return up ? `<path d="M${l},${yb}V${yv+r}Q${l},${yv} ${l+r},${yv}H${l+w-r}Q${l+w},${yv} ${l+w},${yv+r}V${yb}Z" fill="${c}"/>`
+              : `<path d="M${l},${yb}V${yv-r}Q${l},${yv} ${l+r},${yv}H${l+w-r}Q${l+w},${yv} ${l+w},${yv-r}V${yb}Z" fill="${c}"/>`; };
+  const hits=(H)=>days.map((d,i)=>`<rect class="dhit" data-i="${i}" tabindex="0" x="${padL+band*i}" y="0" width="${band}" height="${H}"/>`).join("");
+  const grid=(ys)=>ys.map(([y,l])=>`<line x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${padL-6}" y="${y+3.5}" text-anchor="end" class="dax">${l}</text>`).join("");
+  // 1. spent
+  const H1=92, t1=10, b1=H1-6, mS=nice(Math.max(...days.map(d=>d.s.spent))), y1=v=>b1-(v/mS)*(b1-t1);
+  const iS=days.reduce((a,d,i)=>d.s.spent>days[a].s.spent?i:a, 0);
+  const svg1=`<svg width="${W}" height="${H1}" role="img" aria-label="Spent per day">${grid([[y1(0),"$0"],[y1(mS/2),money(mS/2)],[y1(mS),money(mS)]])}
+    ${days.map((d,i)=>col(cx(i), y1(0), y1(d.s.spent), bw, GRAY)).join("")}
+    ${days[iS].s.spent>0?`<text x="${cx(iS)}" y="${y1(days[iS].s.spent)-4}" text-anchor="middle" class="dlab">${money(days[iS].s.spent)}</text>`:""}${hits(H1)}</svg>`;
+  // 2. net if listed: diverging around zero
+  const nets=days.map(d=>d.net||0), hiN=Math.max(0, ...nets), loN=Math.min(0, ...nets), span=nice(Math.max(hiN, -loN, 0.01));
+  const top2=hiN>0?span:0, bot2=loN<0?-span:0, H2=hiN>0&&loN<0?120:80, t2=10, b2=H2-6, y2=v=>t2+((top2-v)/((top2-bot2)||1))*(b2-t2);
+  const iHi=nets.indexOf(hiN), iLo=nets.indexOf(loN);
+  const svg2=`<svg width="${W}" height="${H2}" role="img" aria-label="Net if listed per day">${grid([top2?[y2(top2),money(top2)]:null, bot2?[y2(bot2),money(bot2)]:null].filter(Boolean))}
+    <line x1="${padL}" x2="${W-padR}" y1="${y2(0)}" y2="${y2(0)}" stroke="var(--faint)" stroke-width="1"/><text x="${padL-6}" y="${y2(0)+3.5}" text-anchor="end" class="dax">$0</text>
+    ${days.map((d,i)=>d.net==null?"":col(cx(i), y2(0), y2(d.net), bw, d.net>=0?UP:DOWN)).join("")}
+    ${hiN>0?`<text x="${cx(iHi)}" y="${y2(hiN)-4}" text-anchor="middle" class="dlab">+${money(hiN)}</text>`:""}
+    ${loN<0?`<text x="${cx(iLo)}" y="${y2(loN)+12}" text-anchor="middle" class="dlab">${money(loN)}</text>`:""}${hits(H2)}</svg>`;
+  // 3. running net: line + wash to zero, end dot with a surface ring and the end value
+  const runs=days.map(d=>d.run), hiR=Math.max(0, ...runs), loR=Math.min(0, ...runs), sR=nice(Math.max(hiR, -loR, 0.01));
+  const top3=hiR>0?sR:0, bot3=loR<0?-sR:0, H3=96, t3=12, b3=H3-24, y3=v=>t3+((top3-v)/((top3-bot3)||1))*(b3-t3);
+  const pts=days.map((d,i)=>[cx(i), y3(d.run)]), line=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+","+p[1].toFixed(1)).join("");
+  const last=pts[pts.length-1], step=Math.max(1, Math.ceil(n/Math.max(2, Math.floor((W-padL-padR)/70))));   // a date label every ~70 px
+  const xl=days.map((d,i)=>(i%step===0 || i===n-1) && !(i!==n-1 && n-1-i<step/2) ? `<text x="${cx(i)}" y="${H3-6}" text-anchor="${i===0?"start":i===n-1?"end":"middle"}" class="dax">${new Date(d.t).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</text>` : "").join("");
+  const svg3=`<svg width="${W}" height="${H3}" role="img" aria-label="Running net">${grid([top3?[y3(top3),money(top3)]:null, bot3?[y3(bot3),money(bot3)]:null].filter(Boolean))}
+    <line x1="${padL}" x2="${W-padR}" y1="${y3(0)}" y2="${y3(0)}" stroke="var(--faint)" stroke-width="1"/><text x="${padL-6}" y="${y3(0)+3.5}" text-anchor="end" class="dax">$0</text>
+    <path d="${line}L${last[0].toFixed(1)},${y3(0)}L${pts[0][0].toFixed(1)},${y3(0)}Z" fill="${UP}" fill-opacity="0.10"/>
+    <path d="${line}" fill="none" stroke="${UP}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="4" fill="${UP}" stroke="var(--bg)" stroke-width="2"/>
+    <text x="${last[0]-8}" y="${last[1]+(last[1]<t3+14?14:-8)}" text-anchor="end" class="dlab">${money(days[n-1].run)}</text>${xl}${hits(H3)}</svg>`;
+  host.innerHTML=`<h3>Daily<span>hover a day for its numbers · table below</span></h3>
+    <div class="dchart"><div class="cap"><b>Spent</b><span><i style="background:${GRAY}"></i>won lots</span></div>${svg1}</div>
+    <div class="dchart"><div class="cap"><b>Net if listed</b><span><i style="background:${UP}"></i>up day</span><span><i style="background:${DOWN}"></i>down day</span><span class="lsmuted">wins with a card, at market after fees</span></div>${svg2}</div>
+    <div class="dchart"><div class="cap"><b>Running net</b><span class="lsmuted">net added up day by day</span></div>${svg3}</div>
+    <div class="dtip" style="display:none"></div>`;
+  const tip=host.querySelector(".dtip"), D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2);
+  const show=(i, el)=>{ const d=days[i], s=d.s;
+    host.querySelectorAll(".dhit").forEach(h=>h.classList.toggle("on", +h.dataset.i===i));
+    tip.innerHTML=`<b>${new Date(d.t).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</b><br>`+
+      (d.rs.length ? `${d.rs.length} lots seen · <b>${s.wins.length}</b> won<br>spent <b>${D(s.spent)}</b><br>net <b>${d.net==null?"–":(d.net>=0?"+":"")+D(d.net)}</b>${s.margin!=null?` · margin ${Math.round(s.margin*100)}%`:""}${s.unl?`<br>${s.unl} win${s.unl===1?"":"s"} without a card`:""}` : "no lots")+
+      `<br>running net <b>${D(d.run)}</b>`;
+    tip.style.display="block";
+    const hb=host.getBoundingClientRect(), eb=el.getBoundingClientRect(), x=eb.left-hb.left+eb.width/2;
+    tip.style.left=Math.max(0, Math.min(hb.width-206, x+12>hb.width-206 ? x-218 : x+12))+"px"; tip.style.top=(eb.top-hb.top+8)+"px"; };
+  const hide=()=>{ tip.style.display="none"; host.querySelectorAll(".dhit.on").forEach(h=>h.classList.remove("on")); };
+  host.querySelectorAll(".dhit").forEach(h=>{ h.addEventListener("pointerenter", ()=>show(+h.dataset.i, h)); h.addEventListener("focus", ()=>show(+h.dataset.i, h)); h.addEventListener("pointerleave", hide); h.addEventListener("blur", hide); });
+}
+let DASH_RS=0; window.addEventListener("resize", ()=>{ if(!DASH.on) return; clearTimeout(DASH_RS); DASH_RS=setTimeout(paintDash, 200); });
 function dashWire(el){
   el.querySelectorAll("[data-per]").forEach(c=>c.onclick=()=>{ DASH.per=c.dataset.per; paintDash(); });
   el.querySelectorAll("tr[data-s]").forEach(t=>t.onclick=()=>{ DASH.seller=t.dataset.s; paintDash(); el.scrollTop=0; });
