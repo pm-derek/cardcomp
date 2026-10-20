@@ -31,7 +31,9 @@
     "#autoline a{color:var(--blue);cursor:pointer}#autoline .bad{color:var(--red)}#autoline .gold{color:var(--gold)}" +
     ".autobadge{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:700;vertical-align:middle}" +
     ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}" +
-    ".autobadge.pic{background:rgba(245,179,1,.18);border:1px solid var(--gold);color:var(--gold)}";
+    // the mark says who picked (Derek, 2026-10-20): gold = the auto read, blue = the picture alone, green = both agree
+    ".card.autosug{box-shadow:0 0 0 1px var(--gold)}.card.autosug.bypic{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}.card.autosug.byboth{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}" +
+    ".autobadge.pic{border:1px solid var(--blue);color:var(--blue)}.autobadge.both{background:var(--green);color:#000}";
   document.head.appendChild(css);
 
   function lineEl() {
@@ -62,7 +64,11 @@
     const read = esc(queryText(r)) + (r.rarity ? ` <span style="color:var(--faint)">${esc(r.rarity)}${r.stamp ? " · " + esc(r.stamp) : ""}</span>` : "");
     const sug = m.suggestion && m.cards.find((c) => c.id === m.suggestion);
     let what;
-    if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
+    // (until 2026-10-20 the foreign / note branch hung off the printing check, so a pick without a printing read showed
+    // "no match": Derek's Mewtwo V SWSH229 said "no match" while marked "auto + picture")
+    if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
+    else if (!sug) what = esc(m.note || "no match");
+    else if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
     else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
     if (sug && m.printing) {   // the finish read names a printing; warn when the collapsed bid is priced from another one
       const c = typeof CARDS !== "undefined" && CARDS.find((x) => x.id === sug.id), top = c && typeof topPrint === "function" ? topPrint(c) : "";
@@ -70,8 +76,6 @@
       what += ` &middot; <b>${esc(m.printing)}</b>`;
       if (top && top !== m.printing) what += ` <span class="bad">&middot; tile bid is ${esc(top)} $${pm(top).toFixed(2)}, read ${esc(m.printing)} $${pm(m.printing).toFixed(2)}: open the card</span>`;
     }
-    else if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
-    else what = esc(m.note || "no match");
     const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
     return `${d.pre ? "before start: " : d.manual ? "read now: " : ""}${d.zoom ? "zoomed " + d.zoom + "x: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
@@ -153,9 +157,10 @@
       const el = document.querySelector(`#results .card[data-id="${CSS.escape(m.suggestion)}"]`);
       if (el) {
         el.classList.add("autosug");
+        if (m.pic === "pick") el.classList.add("bypic"); else if (m.pic === "agree") el.classList.add("byboth");
         const nm = el.querySelector(".nm");
         if (nm) nm.insertAdjacentHTML("beforeend", m.strength === "strong" ? '<span class="autobadge strong">&#10003; auto</span>' :
-          m.pic === "agree" ? '<span class="autobadge pic">auto + picture</span>' : m.pic === "pick" ? '<span class="autobadge pic">picture</span>' : '<span class="autobadge weak">auto?</span>');
+          m.pic === "agree" ? '<span class="autobadge both">auto + picture</span>' : m.pic === "pick" ? '<span class="autobadge pic">picture</span>' : '<span class="autobadge weak">auto?</span>');
       }
     }
     if (document.activeElement === q) q.select();
@@ -276,8 +281,18 @@
   }
 
   // Lot ended (called from finishLot): what Derek tapped or opened is the truth for the results page.
+  // A read now pressed before the timer is keyed by when it was pressed; it becomes the lot's reading only when the
+  // picture is unchanged at the timer start (recog-adopt). The seller moving the card left it unattached, so most read
+  // nows never reached the log (Derek, 2026-10-20: 5 of ~30 lots). At lot end, the latest reading taken since the
+  // previous lot ended (and before this one sold) is this lot's.
+  let LAST_END = 0, PREV_END = 0;
   window.recogLotDone = (rec) => {
-    const key = rec && rec.startedAt; if (!key || !AUTO[key]) return;
+    let key = rec && rec.startedAt; if (!key) return;
+    if (!AUTO[key]) {
+      const to = rec.at || Date.now();
+      key = Object.keys(AUTO).map(Number).filter((k) => AUTO[k].best && k > PREV_END && k <= to).sort((a, b) => b - a)[0];
+      if (!key) return;
+    }
     const c = rec.card || null, b = AUTO[key].best;
     // The auto reading rides on the auction log row (private log repo), so results are scored from the log: no
     // export to upload (it had reached 109 MB with frames) and no hand review for lots with a tapped / opened card.
@@ -292,6 +307,7 @@
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
     delete AUTO[key];
+    for (const k of Object.keys(AUTO)) if (+k < Date.now() - 15 * 60e3) delete AUTO[k];
   };
 
   document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = ENGAGED = Date.now(); }, true);
@@ -299,7 +315,7 @@
   document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = ENGAGED = Date.now(); }, true);
   window.addEventListener("message", (e) => {
     const d = e.data; if (!d || typeof d.type !== "string" || !fromExt(e)) return;
-    if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); return; }
+    if (d.type === "cardcomp-lot-end") { LOT_RESET = Date.now(); if (!(d.rec && d.rec.empty)) { PREV_END = LAST_END; LAST_END = Date.now(); } return; }
     if (d.type === "cardcomp-ext-ready") { EXT = true; post({ type: "cardcomp-auto-hello" }); paint(); }
     else if (d.type === "cardcomp-auto-state") { EXT = true; const m0 = STATE.mode; STATE = { on: !!d.on, mode: d.mode || (d.on ? "auto" : "off"), model: d.model || "sonnet", hasKey: !!d.hasKey, ver: d.ver || "" }; if (!STATE.on || STATE.mode !== m0) MSG = ""; paint(); }
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }

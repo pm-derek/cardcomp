@@ -473,7 +473,7 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
   await ap.waitForTimeout(300);
   let st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
-  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /Fomantis/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
+  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /✓ Fomantis/.test(st.line) && !/no match/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
   // early (streamed) reading for the next lot: fills now, nothing logged; the full reply then marks the best guess
   await lotEnd(); const pk = Date.now();
   const nMatch = (await posted()).filter((m) => m.type === "cardcomp-auto-match").length;
@@ -525,6 +525,15 @@ async function appPage(browser, base, blockRecog) {
   const lrec2 = await ap.evaluate(() => window.__lastRecog || null);
   ok(oc2 && oc2.key === lotKey && oc2.outcome.card.id === "me2pt5-223", "reused reading: the lot's outcome is reported under the lot");
   ok(lrec2 && lrec2.sug && lrec2.sug.id === "me2pt5-223" && /Illustration/.test(lrec2.sug.r) && lrec2.pre === true, "log row reading: suggested card with its rarity (" + (lrec2 && lrec2.sug ? lrec2.sug.n + ", " + lrec2.sug.r : "none") + "), read before the timer");
+  // a read now before the timer that was never adopted (the seller moved the card): still this lot's reading at lot end
+  await lotEnd(); const k7 = Date.now();
+  await send({ type: "cardcomp-auto", key: k7, capAt: k7, n: 1, manual: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(250);
+  const lr7 = await ap.evaluate((k) => { const rec = { startedAt: k + 4000, at: k + 30000, card: { id: "me2pt5-223", n: "Numel", label: "tap" }, final: 3, me: false }; window.recogLotDone(rec); return rec.recog || null; }, k7);
+  await ap.waitForTimeout(150);
+  const oc7 = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
+  ok(lr7 && lr7.read.name === "Numel" && lr7.manual && oc7 && oc7.key === k7, "read now before the timer, never adopted: still logged as the lot's reading, outcome under the reading");
+  await lotEnd();
   const later = Date.now();
   await send({ type: "cardcomp-auto", key: lotKey, capAt: later, n: 1, read: { card_visible: true, name: "Carbink", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 900 });
   await ap.waitForTimeout(250);
@@ -625,6 +634,13 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto-readack", ok: false, why: "no Whatnot tab" }); await ap.waitForTimeout(100);
   ok(/read now: no Whatnot tab/.test(await ap.textContent("#autoline")), "read now failure is shown");
   // picture match, CardComp side: a reading with many printings asks for the ranking; a clear winner moves up, marked
+  // language misread: an English set number read as Japanese switches to English (awholes, Mega Eelektross ex 266/217)
+  await lotEnd();
+  const kE = Date.now() + 18000;
+  await send({ type: "cardcomp-auto", key: kE, capAt: kE, n: 1, manual: true, read: { card_visible: true, name: "Mega Eelektross ex", number: "266", total: "217", language: "jp", rarity: "Special Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1500, short: 1080 });
+  await ap.waitForTimeout(300);
+  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, lang: LANG, badge: (document.querySelector("#results .card .autobadge") || {}).textContent }));
+  ok(st.first === "me2pt5-266" && st.lang === "en" && st.badge === "auto?", "read as Japanese but 266/217 is only English: English Ascended Heroes #266 first, marked auto? (" + JSON.stringify(st) + ")");
   // an extension older than 0.7 (state without a version): nothing asked, the line says to reload it
   await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const rdChar = (k) => ({ type: "cardcomp-auto", key: k, capAt: k, n: 1, manual: true, read: { card_visible: true, name: "Charizard", number: "", total: "", language: "en", rarity: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
@@ -640,8 +656,9 @@ async function appPage(browser, base, blockRecog) {
   const want = ask.cands[7].id;
   // as extension 0.7.0-0.7.1 delivered it: the reply's own n (candidate count) over the reading's n
   await send(Object.assign(ackFor(pk2, want, ask.cands[0].id, true), { n: ask.cands.length })); await ap.waitForTimeout(250);
-  st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
-  ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
+  st = await ap.evaluate(() => { const c = document.querySelector("#results .card"); return { first: (c || {}).dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent, blue: c && c.classList.contains("bypic") && getComputedStyle(c).borderTopColor === "rgb(109, 181, 255)" }; });
+  ok(st.blue, "picture-only pick: blue border");
+  ok(st.first === want && st.badge === "picture" && /picture: Charizard/.test(st.line) && /best guess Charizard/.test(st.line) && !/no match/.test(st.line), "picture match: clear winner listed first, marked 'picture' (" + st.line.replace(/\s+/g, " ").slice(-70) + ")");
   // pointer over the results: nothing moves, "show" is offered
   await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
   const pk3 = Date.now() + 21000; await send(rdChar(pk3)); await ap.waitForTimeout(300);
@@ -660,6 +677,18 @@ async function appPage(browser, base, blockRecog) {
   await send(ackFor(pk4, ask4.cands[5].id, ask4.cands[6].id, false)); await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ first: document.querySelector("#results .card").dataset.id, badge: (document.querySelector("#results .card .autobadge") || {}).textContent || "", line: document.querySelector("#autoline").textContent }));
   ok(st.first === ask4.cands[5].id && st.badge !== "picture" && /picture unsure/.test(st.line), "picture match unsure: sorted by likeness, no 'picture' mark");
+  // the picture agrees with the auto pick: green border, "auto + picture"; the auto pick alone stays gold
+  await lotEnd(); await ap.evaluate(() => { window.__posted.length = 0; });
+  const pk5 = Date.now() + 23000;
+  await send({ type: "cardcomp-auto", key: pk5, capAt: pk5, n: 1, manual: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 900 });
+  await ap.waitForTimeout(300);
+  const sug5 = ((await posted()).find((m) => m.type === "cardcomp-auto-match") || {}).suggestion, ask5 = (await posted()).find((m) => m.type === "cardcomp-auto-img");
+  const gold = await ap.evaluate(() => { const c = document.querySelector("#results .card.autosug"); return c && getComputedStyle(c).borderTopColor; });
+  await send({ type: "cardcomp-auto-img-ack", key: pk5, n: 1, ok: true, cands: 3, ranked: [{ id: sug5, s: 0.7 }], v: { top: sug5, s: 0.7, group: [sug5], next: null, ns: null, sure: true }, pics: 3, ms: 90, box: true });
+  await ap.waitForTimeout(250);
+  st = await ap.evaluate(() => { const c = document.querySelector("#results .card.autosug"); return { id: c && c.dataset.id, both: c && c.classList.contains("byboth"), color: c && getComputedStyle(c).borderTopColor, badge: c && (c.querySelector(".autobadge") || {}).textContent }; });
+  ok(sug5 && ask5 && gold === "rgb(245, 179, 1)" && st.id === sug5 && st.both && st.color === "rgb(95, 214, 160)" && st.badge === "auto + picture", "auto pick alone: gold border; picture agrees: green border, 'auto + picture' (" + JSON.stringify(st) + ")");
+  await ap.screenshot({ path: path.join(OUT, "recog-pic-both.png") });
   await ap.click('#automodes span[data-m="manual"]'); await ap.waitForTimeout(100);
   ok((await posted()).some((m) => m.type === "cardcomp-auto-config" && m.mode === "manual"), "mode switch posts 'manual' to the extension");
   await send({ type: "cardcomp-auto-state", on: true, mode: "manual", model: "sonnet", hasKey: true }); await ap.waitForTimeout(100);
@@ -716,6 +745,19 @@ async function appPage(browser, base, blockRecog) {
   const strip = await ap.evaluate(() => document.querySelector("#lotstrip").innerText.replace(/\s+/g, " "));
   ok(by === "sharp" && /sharp buyer leads: sharpie/.test(strip) && /here: sharp 1/.test(strip), "buyers: 3 wins at 80% of market tag 'sharp'; in the room and leading, the strip says so (" + strip.slice(0, 80) + ")");
   await send({ type: "cardcomp-lot-end", rec: { title: "#91", final: 3, bids: 2, startedAt: Date.now() - 20000, at: Date.now(), seller: "s9", room: {} } }); await ap.waitForTimeout(2800);
+  // dashboard daily charts: lots on two days -> spent / net / running net charts and the "where lots sell" strip
+  const dch = await ap.evaluate(() => {
+    const d1 = Date.now() - 2 * 86400000, d2 = Date.now() - 86400000, mk = (o) => lotRow(Object.assign({ startedAt: o.at - 20000, bids: 3, seller: "sD" }, o));
+    storeLotRows([mk({ at: d1, final: 5, me: true, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 10, label: "tap" } }),
+      mk({ at: d2, final: 9, me: true, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 8, label: "tap" } })]);
+    DASH.per = "7"; DASH.seller = "sD"; dashOpen(true);
+    const svgs = document.querySelectorAll("#ddaily svg").length, strip = !!document.querySelector("#dstrip svg"), cols = document.querySelectorAll("#ddaily svg")[1].querySelectorAll("path").length;
+    const hit = document.querySelectorAll("#ddaily .dhit"); hit[hit.length - 1].dispatchEvent(new PointerEvent("pointerenter"));
+    const tip = document.querySelector("#ddaily .dtip").textContent;
+    DASH.seller = ""; dashOpen(false); localStorage.setItem("cardcomp_lots", JSON.stringify(loadLots().filter((r) => r.s !== "sD")));
+    return { svgs, strip, cols, tip };
+  });
+  ok(dch.svgs === 3 && dch.strip && dch.cols === 2 && /running net/.test(dch.tip), "dashboard: daily spent / net / running net charts and the where-lots-sell strip (" + dch.tip.replace(/\s+/g, " ").slice(0, 60) + ")");
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);

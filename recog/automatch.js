@@ -117,6 +117,23 @@
         note: foreign + " card: no " + foreign + " prices in CardComp. English printings below are for reference only, " + foreign + " usually sells for much less" });
     }
     const lang = rl === "jp" ? "jp" : "en";
+    // Language misread (awholes 2026-10-20: Mega Eelektross ex 266/217, an English Ascended Heroes SIR, read as Japanese,
+    // so only the Japanese printings were listed): when the number AND set total read only exist in the other language's
+    // catalog, use that language. Number without total is not enough to switch.
+    if (!ctx.noSwap) {
+      const n0 = depad(read.number), t0 = parseInt(read.total, 10) || 0;
+      if (n0 && t0) {
+        const hit = (lg) => byName(read.name, lg).cards.some((c) => depad(c.num) === n0 && ((SET_SIZE[c.s] || []).includes(t0) || new RegExp("\\b0*\\d+ 0*" + t0 + "\\b").test(norm(c.n))));
+        const other = lang === "jp" ? "en" : "jp";
+        if (!hit(lang) && hit(other)) {
+          const m = autoMatch(Object.assign({}, read, { language: other }), Object.assign({}, ctx, { noSwap: true }));
+          m.why.unshift("read as " + (lang === "jp" ? "Japanese" : "English") + ", but #" + read.number + "/" + read.total + " is only in the " + (other === "jp" ? "Japanese" : "English") + " catalog");
+          m.swapped = other;
+          if (m.strength === "strong") { m.strength = "weak"; m.why.push("weak: the language was misread"); }   // a strong pick is never the wrong card
+          return m;
+        }
+      }
+    }
     const why = [];
     const nm = byName(read.name, lang);
     if (nm.level > 1) why.push("name matched loosely (level " + nm.level + ")");
