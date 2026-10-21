@@ -19,7 +19,8 @@
   h1 .dot{color:var(--gold)}
   .sub{color:var(--faint);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:1px 0 7px}
   .searchrow{display:flex;gap:10px}
-  #q{flex:1;width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:var(--radius);padding:15px 16px;font-family:inherit;font-size:17px;outline:none}
+  #q{flex:1;width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:var(--radius);padding:15px 14px;font-family:inherit;font-size:17px;outline:none}
+  #q.long{font-size:14.5px}
   #q:focus{border-color:var(--gold)}
   .ex{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
   .ex span{background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:999px;padding:6px 11px;font-size:12px;cursor:pointer}
@@ -255,14 +256,8 @@
         <button id="qclear" title="clear" style="position:absolute;right:38px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--faint);font-size:18px;cursor:pointer;line-height:1;display:none">✕</button>
         <button id="resetbtn" title="clear all filters (mode + era), keep the search text" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;line-height:1">⟳</button>
       </div>
-      <select id="gamesel" title="game" style="flex:none;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:6px 4px;max-width:92px">
-        <option value="pkmn">Pokémon</option>
-        <option value="lorcana">Lorcana</option>
-        <option value="onepiece">One Piece</option>
-      </select>
-      <div id="langtoggle" style="display:flex;gap:4px;flex:none">
-        <button class="tgl" data-lang="en">EN</button>
-        <button class="tgl" data-lang="jp">JP</button>
+      <div id="langtoggle" style="display:flex;flex:none;align-self:stretch">
+        <button class="tgl" id="langbtn" title="English / Japanese cards: tap to switch" style="padding:8px 10px;min-width:46px;font-size:13px">EN</button>
       </div>
     </div>
     <div id="sug" class="sug"></div>
@@ -271,7 +266,12 @@
   <div id="filterbar" style="display:flex;gap:8px;margin:0 0 6px;align-items:center">
     <button class="fpill" id="filtertoggle" title="show or hide the era and result filters">⚙ Filters</button>
     <span id="filtersum" style="font-size:11px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-    <button class="fpill" id="coltoggle" style="margin-left:auto;flex:none;display:none" title="tiles per row">▦ 3</button>
+    <select id="gamesel" title="game" style="margin-left:auto;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:6px 4px;max-width:92px">
+      <option value="pkmn">Pokémon</option>
+      <option value="lorcana">Lorcana</option>
+      <option value="onepiece">One Piece</option>
+    </select>
+    <button class="fpill" id="coltoggle" style="flex:none;display:none" title="tiles per row">▦ 3</button>
     <button class="fpill" id="viewtoggle" style="flex:none" title="switch between list and big-art tiles">▦ Tiles</button>
   </div>
   <div id="filterwrap" style="display:none">
@@ -1510,7 +1510,7 @@ const GAMES = new Set(["pkmn","lorcana","onepiece"]);
 function setGame(game){
   GAME = GAMES.has(game) ? game : "pkmn";
   try{ localStorage.setItem("cardcomp_game", GAME); }catch(e){}
-  const gs=$("#gamesel"); if(gs){ gs.value=GAME; gs.style.color=GAME==="pkmn"?"var(--dim)":"var(--gold)"; }   // one small select in the search row; gold when off Pokémon so it is noticed
+  const gs=$("#gamesel"); if(gs){ gs.value=GAME; gs.style.color=GAME==="pkmn"?"var(--dim)":"var(--gold)"; gs.style.borderColor=GAME==="pkmn"?"var(--line)":"var(--gold)"; }   // small select on the Filters row (moved off the search row for room); gold when off Pokémon so it is noticed
   const lt=$("#langtoggle"); if(lt) lt.style.display = GAME==="pkmn" ? "flex" : "none";
   const fa=$("#fatoggle"); if(fa) fa.textContent = GAME==="lorcana" ? "\u2726 Enchanted+" : GAME==="onepiece" ? "\u2726 Chase (SR+)" : "\u2726 Full Art only";
   const er=$("#erarow"); if(er) er.style.display = GAME==="pkmn" ? "flex" : "none";   // era only meaningful for pkmn (other games are all 2022+)
@@ -1521,12 +1521,8 @@ function setGame(game){
 function setLang(lang, silent){
   LANG = lang;
   try{ localStorage.setItem("cardcomp_lang", LANG); }catch(e){}
-  document.querySelectorAll("#langtoggle button").forEach(b=>{
-    const on=b.dataset.lang===LANG;
-    b.style.borderColor=on?"var(--gold)":"var(--line)";
-    b.style.color=on?"var(--ink)":"var(--dim)";
-    b.style.background=on?"rgba(245,179,1,.10)":"var(--panel)";
-  });
+  const b=$("#langbtn");   // one button, flips EN <-> JP; gold on JP so it is noticed (search room, Derek 2026-10-21)
+  if(b){ const jp=LANG==="jp"; b.textContent=jp?"JP":"EN"; b.style.borderColor=jp?"var(--gold)":"var(--line)"; b.style.color=jp?"var(--gold)":"var(--dim)"; b.style.background=jp?"rgba(245,179,1,.12)":"var(--panel)"; }
   if(!silent && window.__ready) run($("#q").value);
 }
 function checkStale(){
@@ -3289,6 +3285,7 @@ function msq(q, opts){ const out=[]; for(const h of ms.search(q, opts)){ const c
 
 /* ---------- search ---------- */
 function run(raw){
+  if(typeof fitQ==="function") try{ fitQ(); }catch(_){ }   // query box: smaller type when the text is long (also after chip / auto fills)
   const {q,qFull,f} = parse(raw);
   if(f.jp){ setLang("jp", true); }
   // read-as line
@@ -3595,6 +3592,8 @@ $("#q").addEventListener("focus", e=>{ try{ e.target.select(); }catch(_){} });
 $("#q").addEventListener("keydown", e=>{ if(sugKey(e)) return; if(e.key==="Enter"){ e.preventDefault(); clearTimeout(t); run(e.target.value); e.target.blur(); } });
 $("#qclear").onclick = ()=>clearSearch();
 $("#q").addEventListener("input", renderSug);
+function fitQ(){ const q=$("#q"); if(!q) return; q.classList.remove("long"); if(q.scrollWidth>q.clientWidth+2) q.classList.add("long"); }   // long query: smaller type so more of it shows
+$("#q").addEventListener("input", fitQ);
 $("#q").addEventListener("focus", renderSug);
 $("#q").addEventListener("blur", ()=>setTimeout(renderSug,120));
 $("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a chip must not blur the input (keyboard stays up)
@@ -3616,7 +3615,7 @@ $("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
-document.querySelectorAll("#langtoggle button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
+{ const lb=$("#langbtn"); if(lb) lb.onclick=()=>setLang(LANG==="jp"?"en":"jp"); }
 { const gs=$("#gamesel"); if(gs) gs.onchange=()=>setGame(gs.value); }
 const MODE_SEL = {bulk:"#bulktoggle", val25:"#val25toggle", val50:"#val50toggle", fa:"#fatoggle", promo:"#promotoggle", sealed:"#sealedtoggle"};
 const ERA_SEL  = {vintage:"#eravintage", mid:"#eramid", modern:"#eramodern"};
