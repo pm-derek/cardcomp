@@ -1732,7 +1732,7 @@ function copyAmt(val, el){
   if(s==="0"){ show("under $1"); sendToWhatnot(s, el, show, true); return; }
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(s).then(flash, ()=>copyFallback(s,flash)); }
   else copyFallback(s,flash);
-  document.querySelectorAll(".ovrin").forEach(i=>{ if(document.activeElement!==i) i.value=s; });   // "your bid" follows the last tap, so +1 starts from it
+  document.querySelectorAll(".ovrin").forEach(i=>{ if(document.activeElement!==i){ i.value=s; i.dispatchEvent(new Event("ovrset")); } });   // "your bid" follows the last tap, so +1 starts from it
   sendToWhatnot(s, el, show);
 }
 // Desktop: the "CardComp to Whatnot" Chrome extension (extension/) listens for this message and types the
@@ -2684,7 +2684,8 @@ function renderPrices(host, data, prices, src){
   if(card && card.sealed){ return renderSealed(host, prices, card, pid); }
   const OVR_BTN="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:7px 10px";
   host.innerHTML=`<div class="pchips"></div><div class="maxbid"></div>
-    <div class="ovr" style="display:flex;align-items:center;gap:6px;margin:8px 0 9px"><span class="blab" style="color:var(--faint);font-size:10px">your bid $</span><button class="ovrdn" style="${OVR_BTN};padding:7px 9px">−1</button><input class="ovrin" type="text" inputmode="numeric" pattern="[0-9]*" style="width:52px;text-align:center;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:14px;padding:6px 6px"><button class="ovrup" style="${OVR_BTN};padding:7px 9px">+1</button><button class="ovrsend" style="${OVR_BTN}">send</button></div>
+    <div class="ovr" style="display:flex;align-items:center;gap:6px;margin:8px 0 9px"><span class="blab" style="color:var(--faint);font-size:10px">your bid $</span><button class="ovrdn" style="${OVR_BTN};padding:7px 9px">−1</button><input class="ovrin" type="text" inputmode="numeric" pattern="[0-9]*" style="width:52px;text-align:center;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:14px;padding:6px 6px"><button class="ovrup" style="${OVR_BTN};padding:7px 9px">+1</button><button class="ovrsend" style="${OVR_BTN}">send</button><span class="ovrnet" style="font-size:12px;white-space:nowrap"></span></div>
+    <div class="ovrgo" style="display:none;flex-wrap:wrap;align-items:center;gap:6px;margin:-3px 0 9px"></div>
     <div class="condgrid"></div>
     <div class="livenote" style="display:none;font-size:11px;color:var(--gold);margin-top:7px"></div>
     <div class="tcglink" style="margin:9px 0 2px"></div>`;
@@ -2693,9 +2694,29 @@ function renderPrices(host, data, prices, src){
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
   const ovrSend=()=>{ if(!(parseFloat(ovrIn.value)>0)) return; copyAmt(ovrIn.value, ovrBtn); };
   ovrBtn.onclick=(e)=>{ e.stopPropagation(); ovrSend(); };
-  const step=(d)=>{ const v=Math.max(1, (parseInt(ovrIn.value,10)||0)+d); ovrIn.value=String(v); };
-  host.querySelector(".ovrdn").onclick=(e)=>{ e.stopPropagation(); step(-1); };
-  host.querySelector(".ovrup").onclick=(e)=>{ e.stopPropagation(); step(1); };
+  // Bid above the margin bid on pricey cards (Derek, 2026-10-22: "$10-20 profit on a high-value card is worth it, but I
+  // have to type it"): the steps grow with the bid, the net at that bid shows beside send (for the condition last
+  // tapped on this card, else NM), and profit buttons fill the bid that nets $20 / $10 / $5. Send still commits it.
+  const dnB=host.querySelector(".ovrdn"), upB=host.querySelector(".ovrup"), netEl=host.querySelector(".ovrnet"), goEl=host.querySelector(".ovrgo");
+  const stepOf=v=>v>=200?10:v>=40?5:1;
+  const ovrMkt=()=>{ const c=ovrIn.dataset.cond||"NM", r=cgEl.querySelector(`.bd.cpy[data-cond="${c}"]`); return { cond:c, mkt:r?+r.dataset.mkt:0, rec:r?+r.dataset.bid:0 }; };
+  const ovrUpd=()=>{
+    const v=parseInt(ovrIn.value,10)||0, st=stepOf(v), {cond,mkt,rec}=ovrMkt();
+    dnB.textContent="−"+st; upB.textContent="+"+st;
+    if(!(mkt>0) || !(v>=1)){ netEl.textContent=""; goEl.style.display="none"; return; }
+    const np=netProceeds(listSale(mkt)), net=np-v;
+    netEl.innerHTML=`<span style="color:var(--faint)">${cond}</span> <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b> <span style="color:var(--faint)">${Math.round(net/v*100)}%</span>`;
+    netEl.title=`net if you list ${cond} at market ($${mkt.toFixed(2)}) and it sells, after TCGplayer fees and shipping`;
+    const opts = np>=8 ? [20,10,5,3,2].map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1 && o.b>Math.floor(rec)).slice(0,3) : [];   // only bids above the recommended max; the three biggest profits left
+    goEl.style.display=opts.length?"flex":"none";
+    goEl.innerHTML=opts.length?`<span style="color:var(--faint);font-size:10px">${cond} for</span>`+opts.map(o=>`<button class="ovrgob" data-b="${o.b}" title="bid $${o.b}: nets $${o.d} if you list ${cond} at market ($${mkt.toFixed(2)})" style="background:${o.b===v?"rgba(51,168,118,.18)":"var(--panel2)"};border:1px solid ${o.b===v?"var(--green)":"var(--line)"};border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;padding:7px 10px"><span style="color:var(--green)">+$${o.d}</span> → $${o.b}</button>`).join(""):"";
+    goEl.querySelectorAll(".ovrgob").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ovrIn.value=b.dataset.b; mine(); });
+  };
+  const step=(dir)=>{ const cur=parseInt(ovrIn.value,10)||0, st=stepOf(dir>0?cur:Math.max(1,cur-1)); ovrIn.value=String(Math.max(1, cur+dir*st)); mine(); };
+  dnB.onclick=(e)=>{ e.stopPropagation(); step(-1); };
+  upB.onclick=(e)=>{ e.stopPropagation(); step(1); };
+  const mine=()=>{ delete ovrIn.dataset.auto; ovrUpd(); };   // a tap, a step or typing makes it Derek's number
+  ovrIn.addEventListener("input", mine); ovrIn.addEventListener("ovrset", mine);
   ["click","keydown","keyup","keypress"].forEach(ev=>ovrIn.addEventListener(ev, e=>e.stopPropagation()));
   ovrIn.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); ovrSend(); } });
   const draw=()=>{
@@ -2734,9 +2755,10 @@ function renderPrices(host, data, prices, src){
     const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
-    if(!ovrIn.value && bid>=1) ovrIn.value=String(Math.floor(bid));   // starts at the NM margin bid; after that it follows taps and typing
+    if((!ovrIn.value || ovrIn.dataset.auto) && bid>=1){ ovrIn.value=String(Math.floor(bid)); ovrIn.dataset.auto="1"; ovrIn.dataset.cond="NM"; }   // starts at the selected printing's NM margin bid (and follows a printing switch); after that it follows taps and typing
+    ovrUpd();
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
-    [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); }));
+    [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); ovrIn.dataset.cond=(scope===cgEl && el.dataset.cond)||"NM"; copyAmt(el.dataset.bid, el); }));
   };
   chipsEl.innerHTML=keys.map(k=>`<span class="pchip${k===sel?' on':''}" data-k="${k}">${prettyPrinting(k)} $${(prices[k].market??prices[k].mid??0).toFixed(2)}</span>`).join("");
   chipsEl.querySelectorAll(".pchip").forEach(ch=>ch.onclick=(e)=>{ e.stopPropagation(); sel=ch.dataset.k; chipsEl.querySelectorAll(".pchip").forEach(x=>x.classList.toggle("on",x===ch)); draw(); });
