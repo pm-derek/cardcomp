@@ -2707,10 +2707,17 @@ function renderPrices(host, data, prices, src){
     const np=netProceeds(listSale(mkt)), net=np-v;
     netEl.innerHTML=`<span style="color:var(--faint)">${cond}</span> <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b> <span style="color:var(--faint)">${Math.round(net/v*100)}%</span>`;
     netEl.title=`net if you list ${cond} at market ($${mkt.toFixed(2)}) and it sells, after TCGplayer fees and shipping`;
-    const opts = np>=8 ? [20,10,5,3,2].map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1 && o.b>Math.floor(rec)).slice(0,3) : [];   // only bids above the recommended max; the three biggest profits left
+    // profit buttons (Derek, 2026-10-22: "bid by target profit, not by margin"): one tap sends the bid that nets $5 / $10 /
+    // $15 / $20 if listed at market, straight to Whatnot's Custom box like a grid tap; shown whatever the margin bid says
+    const opts=[5,10,15,20].map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1);
+    const sig=cond+"|"+mkt.toFixed(2)+"|"+opts.map(o=>o.b).join(",");
+    if(goEl.dataset.sig!==sig){   // rebuild only when the prices change, so a tapped button keeps its "Whatnot $X" flash
+      goEl.dataset.sig=sig;
+      goEl.innerHTML=opts.length?`<span style="color:var(--faint);font-size:10px">${cond} profit</span>`+opts.map(o=>`<button class="ovrgob" data-b="${o.b}" data-bid="${o.b}" data-cond="${cond}" data-mkt="${mkt.toFixed(2)}" title="send $${o.b}: nets $${o.d} if you list ${cond} at market ($${mkt.toFixed(2)})" style="background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;padding:8px 10px;min-height:36px">+$${o.d} → $${o.b}</button>`).join(""):"";
+      goEl.querySelectorAll(".ovrgob").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ovrIn.dataset.cond=b.dataset.cond; copyAmt(b.dataset.b, b); });
+    }
     goEl.style.display=opts.length?"flex":"none";
-    goEl.innerHTML=opts.length?`<span style="color:var(--faint);font-size:10px">${cond} for</span>`+opts.map(o=>`<button class="ovrgob" data-b="${o.b}" title="bid $${o.b}: nets $${o.d} if you list ${cond} at market ($${mkt.toFixed(2)})" style="background:${o.b===v?"rgba(51,168,118,.18)":"var(--panel2)"};border:1px solid ${o.b===v?"var(--green)":"var(--line)"};border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;padding:7px 10px"><span style="color:var(--green)">+$${o.d}</span> → $${o.b}</button>`).join(""):"";
-    goEl.querySelectorAll(".ovrgob").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ovrIn.value=b.dataset.b; mine(); });
+    goEl.querySelectorAll(".ovrgob").forEach(b=>{ const on=+b.dataset.b===v; b.style.borderColor=on?"var(--green)":(+b.dataset.b>Math.floor(rec)?"rgba(245,179,1,.55)":"var(--line)"); b.style.background=on?"rgba(51,168,118,.18)":"var(--panel2)"; });   // gold edge: above the recommended max
   };
   const step=(dir)=>{ const cur=parseInt(ovrIn.value,10)||0, st=stepOf(dir>0?cur:Math.max(1,cur-1)); ovrIn.value=String(Math.max(1, cur+dir*st)); mine(); };
   dnB.onclick=(e)=>{ e.stopPropagation(); step(-1); };
