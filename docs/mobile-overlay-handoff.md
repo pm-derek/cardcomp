@@ -233,15 +233,23 @@ works like the browser extension and everything merges into one log.
    ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
    "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
    14+), with the capture notification.
-8. Overlay layout, three states, remembered, placed from the layout above: bubble (read-now button, drag
-   anywhere; default home top right under the viewer count); strip (one row under the header, y about 9 to 19%,
-   over the "Earn more points" badge and nothing else: card name, the max bid chip, NM / LP / MP with net, fast /
-   slow pill, the lot strip text); full (the CardComp page over the top 50% of the screen, which covers the upper
-   part of the held card, so it is for searching and reading the grid, and a bid tap or 20 s without a touch drops
-   it back to the strip). Never over the chat box, leader line, lot card, Custom / Bid buttons or the Custom bid
-   sheet (lower 40%). Tap the strip for full, swipe up or the X for the strip, long press for the bubble. Android
-   12+ blocks touches to the app underneath only inside an opaque overlay's bounds, so the rest of Whatnot keeps
-   working.
+8. Overlay layout (Derek, 2026-10-23: "it can't cover up damage"; he reads the card's condition off the stream
+   before deciding the bid). Rule: the card band, y 22 to 72%, is never covered, except while the keyboard is up.
+   Two bands, both remembered:
+   - Top strip, y 9 to 22%, under the header, over the "Earn more points" badge and nothing else: card name, set
+     and number, the max bid chip (tap sends), NM / LP / MP with net, fast / slow pill, and the lot line (timer,
+     price, leader, over your max) from the reader, so the Whatnot lot card can be covered below. The search box
+     lives here too; while typing, the keyboard rises from the bottom and the strip grows down to about 40% for
+     the suggestion chips and the first results (typing means Derek is not inspecting), then shrinks back when a
+     result is picked or the keyboard closes.
+   - Bottom panel, y 72 to 100%, on demand (tap the strip's name or "more"): the open card's condition grid,
+     profit buttons, cart, stats. It covers the chat box, leader line, lot card and bid buttons, which the strip
+     mirrors. It closes on a bid tap, when Whatnot's Custom sheet opens (the reader sees "Submit Max Bid"; the
+     sheet must never be hidden), or on a tap outside it.
+   - Bubble: the read-now button, drag anywhere, default home top right under the viewer count; also hides both
+     bands with a long press when Derek wants the whole stream.
+   No full page over the card. Android 12+ blocks touches to the app underneath only inside an opaque overlay's
+   bounds, so with both bands closed Whatnot works untouched.
 9. One log: phone rows carry the same record v2 shape plus `src:"phone"`, written to `cardcomp-data` through the
    bridge; stats, haul, buyers and the dashboard need no change. `cardcomp-log-read` on load merges desktop and
    phone rows as it does for a second computer today.
@@ -266,8 +274,7 @@ works like the browser extension and everything merges into one log.
 ### Open questions for Derek
 
 - Android version from Settings > About phone (One UI 7 would be Android 15).
-- Full panel over the top 50% (it covers the upper half of the held card while open, drops back to the strip
-  after a bid tap or 20 s idle): right?
+- Top strip plus bottom panel, card band never covered except while typing: right?
 - OK to share a few Whatnot view-tree dumps from the phone (lot row, Custom bid modal, end screen) for phase 1?
 ### Open questions for Derek
 
