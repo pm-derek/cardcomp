@@ -12,7 +12,8 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.2.0";          // bridge version
+  const VER = "0.3.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const PHONE_API = 3;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
@@ -30,7 +31,7 @@
 
   // ---------------------------------------------------------------- state to the app
   function state() {
-    const c = cfg(), mode = ["off", "manual", "auto"].includes(c.mode) ? c.mode : "manual";
+    const c = cfg(), mode = c.mode === "off" ? "off" : "manual";   // no automatic watcher on the phone yet: auto reads as manual
     toApp({ type: "cardcomp-auto-state", on: mode !== "off", mode, model: c.model || "sonnet", hasKey: !!c.hasKey, ver: PROTO });
   }
   function status() {
@@ -39,7 +40,7 @@
   }
 
   // ---------------------------------------------------------------- read now: frame from the screen capture -> model -> cardcomp-auto
-  let REQ = 0; const PENDING = {};
+  let REQ = 0; const PENDING = {}, FRAMES = new Map();
   P.readNow = function (src) {
     const c = cfg();
     if (c.mode === "off") { toApp({ type: "cardcomp-auto-readack", ok: false, why: "auto is off" }); return; }
@@ -54,6 +55,8 @@
 
   async function runRead(img, w, h, p) {
     P.lastFrame = img;   // "frame" on the status line shows what was read
+    FRAMES.set(String(p.at), { img, box: null, at: Date.now() });   // the picture match ranks this frame (box once the reply names it)
+    for (const [k, f] of FRAMES) if (Date.now() - f.at > 5 * 60e3) FRAMES.delete(k);
     const c = cfg(), modelKey = c.model || "sonnet", key = p.at;   // keyed by press time, like the extension's read now
     const head = { type: "cardcomp-auto", key, n: 1, capAt: key, title: "", seller: "", pre: false, manual: true };
     if (!(await loadReader())) { toApp(Object.assign(head, { error: "reader not loaded (extension/recog/recog-read.js)" })); return; }
@@ -62,6 +65,7 @@
     const short = Math.min(w || 0, h || 0);
     const res = await recogRead(img, modelKey, apiKey, (read, ms) =>
       toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short })));
+    if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(key)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
     toApp(Object.assign({}, head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short }));
     log({ read: res.read || null, error: res.error || "", ms: res.ms, cost: res.cost, src: p.src });
     setMode("card", true);   // the compact card shows the best guess; the list is one tap away
@@ -96,6 +100,51 @@
     });
   }
 
+  // ---------------------------------------------------------------- picture match (extension/recog/imgmatch.js, same as desktop)
+  // The read frame is ranked against each candidate's TCGplayer photo; the photos come through the app (Android.img),
+  // since the image CDN allows no cross-origin reads from a page. Templates are kept for the session.
+  const IMGQ = {}; let IMGN = 0;
+  P.img = function (req, data) { const f = IMGQ[req]; delete IMGQ[req]; if (f) f(data || ""); };
+  const photo = (url) => new Promise((res) => { const r = "i" + (++IMGN); IMGQ[r] = res; try { A.img(url, r); } catch (_) { delete IMGQ[r]; res(""); } setTimeout(() => { if (IMGQ[r]) { delete IMGQ[r]; res(""); } }, 15000); });
+  const TEMPS = new Map();   // photo url -> normalized cells, or null when there is no usable photo
+  async function cells(url) {
+    if (TEMPS.has(url)) return TEMPS.get(url);
+    let t = null;
+    const data = await photo(url);
+    if (data) { try { t = IM.normalize(IM.cardCells(await IM.load(data, 300))); } catch (_) { t = null; } }
+    if (TEMPS.size > 3000) TEMPS.clear();
+    TEMPS.set(url, t); return t;
+  }
+  async function picRank(msg) {
+    if (typeof IM === "undefined") return { ok: false, why: "no picture matcher", cands: 0 };
+    const f = FRAMES.get(String(msg.key));
+    if (!f) return { ok: false, why: "frame gone", cands: 0 };
+    const t0 = Date.now();
+    if (!f.px) f.px = await IM.load(f.img);
+    const cands = (msg.cands || []).slice(0, 80).filter((c) => c && c.id && /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u || ""));
+    const got = [];
+    for (let i = 0; i < cands.length; i += 8) got.push(...await Promise.all(cands.slice(i, i + 8).map(async (c) => ({ id: c.id, t: await cells(c.u) }))));
+    const temps = got.filter((x) => x.t), dl = Date.now() - t0;
+    for (const x of temps) x.same = temps.filter((y) => y === x || IM.sim(x.t, y.t) > 0.995).length;   // one photo under 3+ ids = "image coming soon"
+    const usable = temps.filter((x) => x.same < 3);
+    if (!usable.length) return { ok: false, why: "no pictures", cands: cands.length };
+    const ranked = IM.match(f.px, f.box, usable), v = IM.verdict(ranked, usable);
+    log({ pic: v.top, s: v.s, sure: v.sure, pics: usable.length, ms: Date.now() - t0 });
+    return { ok: true, ranked: ranked.slice(0, 40), v, box: !!f.box, cands: cands.length, pics: usable.length, ms: Date.now() - t0, dl };
+  }
+
+  // ---------------------------------------------------------------- the page's own clipboard and shortcuts, phone versions
+  // Copy: the WebView's navigator.clipboard is refused in an unfocused overlay and the page then falls back to focusing a
+  // hidden textarea, which would flash the keyboard on every bid. The app copies instead.
+  try {
+    const cb = navigator.clipboard || {};
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: Object.assign(Object.create(Object.getPrototypeOf(cb) || null), { writeText: (t) => { try { A.copy(String(t)); return Promise.resolve(); } catch (e) { return Promise.reject(e); } }, readText: () => Promise.reject(new Error("no")) }) });
+  } catch (_) {}
+  // A long press fires "contextmenu", which the desktop maps to "read now" (right-click): on a phone that read cards by accident
+  window.addEventListener("contextmenu", (e) => { e.stopImmediatePropagation(); }, true);
+  // Taps on the card line count as touching the results (auto-ui then never reorders them under the finger)
+  const touched = () => { const r = $("#results"); if (r) r.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); };
+
   // ---------------------------------------------------------------- messages from the app (what the extension's background answers)
   const HANDLED = new Set(["cardcomp-status", "cardcomp-auto-hello", "cardcomp-auto-config", "cardcomp-auto-read", "cardcomp-bid", "cardcomp-open-bg",
     "cardcomp-auto-img", "cardcomp-auto-match", "cardcomp-auto-outcome", "cardcomp-log-save", "cardcomp-live-save", "cardcomp-log-read", "cardcomp-log-edit",
@@ -115,11 +164,15 @@
         let r = {}; try { r = JSON.parse(A.bid(String(d.amount), String(d.name || "")) || "{}"); } catch (e) { r = { ok: false, why: e.message }; }
         toApp(Object.assign({ type: "cardcomp-bid-ack" }, r));
         flashBid(r);
+        if (MODE === "list") setTimeout(() => { if (MODE === "list") setMode("card"); }, 900);
         break;
       }
       case "cardcomp-open-bg": A.open(String(d.url || "")); break;   // TCGplayer links open in the browser over Whatnot
-      case "cardcomp-auto-img": toApp({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n || 1, cands: [], ok: false, why: "not on the phone yet" }); break;
-      case "cardcomp-tcg-fast": toApp({ type: "cardcomp-tcg-fast-ack", req: d.req, ok: false, errs: ["not on the phone yet: open the link"] }); break;
+      case "cardcomp-auto-img": picRank(d).then((r) => toApp(Object.assign({ type: "cardcomp-auto-img-ack" }, r, { key: d.key, n: d.n || 1 })),
+        (e) => toApp({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n || 1, cands: 0, ok: false, why: e.message })); break;
+      case "cardcomp-tcg-fast":   // no TCGplayer reader on the phone: the link opened in the browser, the price is read there by eye
+        setTimeout(() => { try { if (typeof liveNote === "function") liveNote("opened on TCGplayer in your browser: check the price there, then come back"); } catch (_) {} }, 0);
+        break;
       case "cardcomp-snapshot": toApp({ type: "cardcomp-snapshot-ack", ok: false, why: "not on the phone yet" }); break;
       case "cardcomp-live-test": toApp({ type: "cardcomp-live-test-ack", ok: false, why: "not on the phone yet" }); break;
       default: log({ unhandled: d.type });   // log / live store: phase 1
@@ -149,7 +202,8 @@
   };
 
   // keyboard: the window is focusable only while a text field has focus (native drops it on any touch outside)
-  const isField = (t) => !!(t && t.closest && t.closest("input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]"));
+  const isField = (t) => !!(t && t.closest && t.closest("input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]")) &&
+    getComputedStyle(t).opacity !== "0";   // the page's copy fallback focuses an invisible textarea: no keyboard for that
   document.addEventListener("focusin", (e) => {
     if (!isField(e.target)) return;
     try { A.focus(true); } catch (_) {}
@@ -181,6 +235,7 @@
     "body.phone h1,body.phone #gear,body.phone #settings,body.phone #filterbar,body.phone #filterwrap,body.phone #stale,body.phone #wnstat,body.phone #cart,body.phone #readbig{display:none!important}" +
     "body.phone .searchrow{position:static!important;padding:4px 0;gap:4px}body.phone #q{padding:9px 10px;font-size:15px}body.phone #langbtn{padding:6px 8px;min-width:40px}" +
     "body.phone #lotstrip{padding:3px 7px;font-size:11.5px}" +
+    "body.phone #automodes,body.phone #automodel,body.phone #gamesel,body.phone select{display:none!important}" +
     "body.phone #autoline{padding:2px 6px;font-size:11px;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}body.phone #autoline.full{-webkit-line-clamp:unset}" +
     // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
     "body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
@@ -257,12 +312,12 @@
     const on = (t, f) => { const x = el.querySelector(`[data-t="${t}"]`); if (x) x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(); }; };
     const nm = el.querySelector(".pn");
     if (nm) nm.onclick = () => { if (card && !card.classList.contains("open")) { const row = card.querySelector(".row"); if (row) row.click(); } setMode("list"); };
-    on("bid", () => { if (chip) chip.click(); else setMode("list"); });
+    on("bid", () => { touched(); if (chip) chip.click(); else setMode("list"); });
     on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
     on("search", () => { setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
     const n = cands().length, i = cands().indexOf(card);
-    on("prev", () => { CUR = (i - 1 + n) % n; paintBar(); });
-    on("next", () => { CUR = (i + 1) % n; paintBar(); });
+    on("prev", () => { touched(); CUR = (i - 1 + n) % n; paintBar(); });
+    on("next", () => { touched(); CUR = (i + 1) % n; paintBar(); });
   }
   // status line under the card: what was read and how sure ("read Ralts · reverse holo → 3 of 27, no number"), and the frame
   function paintStat() {

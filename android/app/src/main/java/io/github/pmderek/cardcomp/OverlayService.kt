@@ -35,6 +35,8 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -73,6 +75,30 @@ class OverlayService : Service() {
         private const val TAG = "CardComp"
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
+        /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
+        const val NATIVE_API = 3
+        /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
+         *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
+         *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
+        val LOADER = """
+            (async function(){
+              if (window.__phone) return;
+              var A = window.Android, mine = A.bundledVer(), code = null;
+              var newer = function(a, b){ a = a.split('.').map(Number); b = b.split('.').map(Number);
+                for (var i = 0; i < 3; i++) { if ((a[i]||0) !== (b[i]||0)) return (a[i]||0) > (b[i]||0); } return false; };
+              try {
+                var get = function(u){ return fetch(u + '?t=' + Date.now(), {cache: 'no-store'}).then(function(r){ if (!r.ok) throw new Error(u); return r.text(); }); };
+                var br = await get('phone/bridge.js');
+                var v = (/const VER = "([0-9.]+)"/.exec(br) || [])[1], api = +((/const PHONE_API = ([0-9]+)/.exec(br) || [])[1] || 99);
+                if (v && newer(v, mine) && api <= $NATIVE_API) {
+                  var parts = await Promise.all([get('extension/recog/recog-read.js'), get('extension/recog/imgmatch.js')]);
+                  code = parts[0] + '\n;\n' + parts[1] + '\n;\n' + br;
+                }
+              } catch (e) {}
+              if (window.__phone) return;
+              (0, eval)(code || A.bundled());
+            })();
+        """.trimIndent()
     }
 
     private lateinit var prefs: Prefs
@@ -102,11 +128,11 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) return START_NOT_STICKY   // restarted by the system: the capture token is gone, wait for the app
+        if (intent == null) { stopSelf(); return START_NOT_STICKY }   // restarted by the system: the capture token is gone
         when (intent.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
-            ACTION_DUMP -> { dump(); return START_STICKY }
-            ACTION_READ -> { readNow("notification"); return START_STICKY }
+            ACTION_DUMP -> { dump(); return START_NOT_STICKY }
+            ACTION_READ -> { readNow("notification"); return START_NOT_STICKY }
             ACTION_START -> {
                 startForeground(NOTE_ID, note(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
                 measure()
@@ -125,13 +151,14 @@ class OverlayService : Service() {
                     if (capture == null) toast("screen capture did not start")
                 }
                 running = true
-                return START_STICKY
+                return START_NOT_STICKY
             }
         }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        try { pool.shutdownNow() } catch (_: Exception) {}
         running = false
         instance = null
         capture?.release(); capture = null
@@ -152,25 +179,27 @@ class OverlayService : Service() {
     private val GRIP get() = dp(26)
 
     /** The page asks for its height (CSS px): the panel is exactly as tall as what it shows, never dead space. */
+    private var typingNow = false
     private fun setContentHeight(cssPx: Int) {
         val lp = bandLp ?: return
-        val b = band ?: return
         val want = (cssPx * resources.displayMetrics.density).roundToInt() + GRIP
-        lp.height = want.coerceIn(GRIP + dp(40), (screenH * 0.62).toInt())
-        lp.y = lp.y.coerceIn(0, maxOf(0, screenH - lp.height))
-        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (e: Exception) { Log.w(TAG, "size: ${e.message}") }
+        val cap = (screenH * (if (typingNow) 0.50 else 0.62)).toInt()   // typing: the keyboard takes the lower ~40%
+        lp.height = want.coerceIn(GRIP + dp(40), cap)
+        place()
     }
 
-    /** Typing: the keyboard covers the lower half, so a low panel moves to the top until the keyboard closes. */
-    private var yBeforeTyping = -1
-    private fun typing(on: Boolean) {
+    /** Where Derek put the panel (homeY); a taller panel is lifted only as far as it must, and returns when it shrinks.
+     *  Typing: a panel in the lower 3/4 moves to the top until the keyboard closes. */
+    private var homeY = 0
+    private fun place() {
         val lp = bandLp ?: return
         val b = band ?: return
-        if (on && yBeforeTyping < 0 && lp.y > (screenH * 0.25).toInt()) { yBeforeTyping = lp.y; lp.y = (screenH * 0.06).toInt() }
-        else if (!on && yBeforeTyping >= 0) { lp.y = yBeforeTyping; yBeforeTyping = -1 }
-        else return
-        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
+        val top = (screenH * 0.06).toInt()
+        val y = if (typingNow && homeY > (screenH * 0.25).toInt()) top else homeY
+        lp.y = y.coerceIn(0, maxOf(0, screenH - lp.height))
+        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (e: Exception) { Log.w(TAG, "place: ${e.message}") }
     }
+    private fun typing(on: Boolean) { if (on != typingNow) { typingNow = on; place() } }
 
     private fun setFocusable(want: Boolean, ime: Boolean) {
         val lp = bandLp ?: return
@@ -183,10 +212,18 @@ class OverlayService : Service() {
         val imm = getSystemService(InputMethodManager::class.java)
         if (want) {
             web?.requestFocus()
-            if (ime) main.postDelayed({ web?.let { imm.showSoftInput(it, 0) } }, 120)
+            if (ime) { wantIme = true; if (b.hasWindowFocus()) showIme() }   // else onWindowFocusChanged shows it
         } else {
+            wantIme = false
             web?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
         }
+    }
+    private var wantIme = false
+    private fun showIme() {
+        val w = web ?: return
+        wantIme = false
+        w.requestFocus()
+        getSystemService(InputMethodManager::class.java).showSoftInput(w, 0)
     }
 
     /** collapsed = only the bubble; the panel comes back on the next read, a bubble long press, or its own button */
@@ -208,9 +245,13 @@ class OverlayService : Service() {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_OUTSIDE -> { setFocusable(false, false); js("window.__phone&&window.__phone.blur&&window.__phone.blur()") }
-                MotionEvent.ACTION_UP -> main.post { setFocusable(true, false) }   // a tap inside: the page may now want the keyboard
+                MotionEvent.ACTION_DOWN -> setFocusable(true, false)   // a touch inside: focusable before the page handles the tap, so a text field can raise the keyboard
             }
             return super.dispatchTouchEvent(ev)
+        }
+        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+            super.onWindowFocusChanged(hasWindowFocus)
+            if (hasWindowFocus && wantIme) main.postDelayed({ showIme() }, 50)
         }
         override fun dispatchKeyEvent(event: KeyEvent): Boolean {
             if (event.keyCode == KeyEvent.KEYCODE_BACK) {
@@ -271,13 +312,17 @@ class OverlayService : Service() {
             override fun onPageFinished(view: WebView, url: String) {
                 // the bridge and the shared reader ship inside the APK (copied from phone/ and extension/recog/ at
                 // build time), so the app works whatever branch the live site is on
-                if (url.startsWith(APP_URL)) view.evaluateJavascript("!!window.__phone") { has ->
-                    if (has != "true") view.evaluateJavascript(bundled(), null)   // top level: the reader's globals must stay global
-                }
+                if (url.startsWith(APP_URL)) view.evaluateJavascript(LOADER, null)
             }
         }
         wv.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean { Log.d(TAG, "js: ${m.message()} @${m.lineNumber()}"); return true }
+            // A WebView outside an Activity cannot show dialogs (BadTokenException): alerts become a toast, confirms and
+            // prompts answer "cancel" (only stats clean-up uses them, and that is desktop only)
+            override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean { toast(message); result.confirm(); return true }
+            override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean { toast("not on the phone: $message".take(120)); result.cancel(); return true }
+            override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String?, result: JsPromptResult): Boolean { result.cancel(); return true }
+            override fun onJsBeforeUnload(view: WebView, url: String, message: String, result: JsResult): Boolean { result.confirm(); return true }
         }
         root.addView(wv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
@@ -292,9 +337,10 @@ class OverlayService : Service() {
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = if (prefs.panelX >= 0) prefs.panelX.coerceIn(0, maxOf(0, screenW - w0)) else dp(8)
         lp.y = if (prefs.panelY >= 0) prefs.panelY.coerceIn(0, (screenH * 0.85).toInt()) else (screenH * 0.09).toInt()
+        homeY = lp.y
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
 
-        dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { prefs.panelX = lp.x; prefs.panelY = lp.y; yBeforeTyping = -1 }))
+        dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { prefs.panelX = lp.x; prefs.panelY = lp.y; homeY = lp.y; typingNow = false }))
         collapse.setOnClickListener { showPanel(false) }
         resize.setOnTouchListener(widthListener(lp, root))
 
@@ -428,8 +474,23 @@ class OverlayService : Service() {
 
     private var bundledJs: String? = null
     private fun bundled(): String = bundledJs ?: try {
-        (assets.open("recog-read.js").bufferedReader().readText() + "\n;\n" + assets.open("bridge.js").bufferedReader().readText()).also { bundledJs = it }
+        listOf("recog-read.js", "imgmatch.js", "bridge.js").joinToString("\n;\n") { assets.open(it).bufferedReader().readText() }.also { bundledJs = it }
     } catch (e: Exception) { Log.w(TAG, "bundled js: ${e.message}"); "" }
+
+    private val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+    private fun fetchDataUrl(url: String): String {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 8000
+        c.setRequestProperty("User-Agent", "CardComp/" + BuildConfig.VERSION_NAME)
+        try {
+            if (c.responseCode != 200) return ""
+            val type = (c.contentType ?: "image/jpeg").substringBefore(';').trim()
+            if (!type.startsWith("image/")) return ""
+            val bytes = c.inputStream.use { it.readBytes() }
+            if (bytes.size > 3_000_000) return ""
+            return "data:$type;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        } finally { c.disconnect() }
+    }
 
     private fun js(code: String) { main.post { web?.evaluateJavascript(code, null) } }
     private fun toast(t: String) { main.post { Toast.makeText(this, t, Toast.LENGTH_SHORT).show() } }
@@ -462,14 +523,18 @@ class OverlayService : Service() {
             val c = capture ?: return "screen capture is off: start the overlay from the CardComp app"
             val q = JSONObject.quote(req)
             main.post {
-                c.grab { bmp ->
+                // a whole-screen capture would include the panel and bubble: hide them for the frame (~0.2 s blink).
+                // Capturing "a single app" leaves them out anyway.
+                band?.alpha = 0f; bubble?.alpha = 0f
+                main.postDelayed({ c.grab { bmp ->
+                    band?.alpha = 1f; bubble?.alpha = 1f
                     if (bmp == null) js("window.__phone.frameFail($q,'no frame from the screen capture')")
                     else Thread {
                         val f = cardBand(bmp)
                         val url = Capture.jpegDataUrl(f, 88)
                         js("window.__phone.frame($q,${JSONObject.quote(url)},${f.width},${f.height})")
                     }.start()
-                }
+                } }, 150)
             }
             return "ok"
         }
@@ -480,6 +545,19 @@ class OverlayService : Service() {
             return JSONObject().put("ok", false).put("why", "copied").toString()
         }
 
+        /** a candidate's card photo for the picture match -> window.__phone.img(req, dataUrl or "") (the CDN allows no
+         *  cross-origin reads from the page, so the app fetches it) */
+        @JavascriptInterface fun img(url: String, req: String) {
+            val q = JSONObject.quote(req)
+            if (!(url.startsWith("https://tcgplayer-cdn.tcgplayer.com/") || url.startsWith("https://images.pokemontcg.io/"))) { js("window.__phone.img($q,'')"); return }
+            pool.execute {
+                val data = try { fetchDataUrl(url) } catch (_: Exception) { "" }
+                js("window.__phone.img($q,${JSONObject.quote(data)})")
+            }
+        }
+        @JavascriptInterface fun copy(text: String) { main.post { this@OverlayService.copy(text) } }
+        @JavascriptInterface fun bundled(): String = this@OverlayService.bundled()
+        @JavascriptInterface fun bundledVer(): String = Regex("const VER = \"([0-9.]+)\"").find(bundled())?.groupValues?.get(1) ?: "0"
         @JavascriptInterface fun open(url: String) { if (url.startsWith("https://")) main.post { openExternal(url) } }
         @JavascriptInterface fun focus(want: Boolean) { main.post { setFocusable(want, want) } }
         /** the page's mode changed (card, list, typing) or a read landed: the panel shows, collapsed or not */

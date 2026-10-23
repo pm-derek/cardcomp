@@ -11,6 +11,7 @@ on:
       - "android/**"
       - "phone/**"
       - "extension/recog/recog-read.js"
+      - "extension/recog/imgmatch.js"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
@@ -57,7 +58,7 @@ jobs:
           CC_BUILD: ${{ github.sha }}
         run: |
           mkdir -p android/app/src/main/assets
-          cp phone/bridge.js extension/recog/recog-read.js android/app/src/main/assets/
+          cp phone/bridge.js extension/recog/recog-read.js extension/recog/imgmatch.js android/app/src/main/assets/
           gradle -p android assembleRelease --no-daemon --console=plain
           cp android/app/build/outputs/apk/release/app-release.apk "cardcomp-phone-${GITHUB_SHA::7}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk cardcomp-phone.apk

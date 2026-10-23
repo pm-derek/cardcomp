@@ -11,21 +11,36 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
-/** Setup screen: permissions, keys, start / stop the overlay, share the last screen dump. */
+/** Setup screen: permissions, keys, model, start / stop the overlay, updates, screen dumps. */
 class MainActivity : Activity() {
-    companion object { @Volatile var resumed = false }
+    companion object {
+        @Volatile var resumed = false
+        const val RELEASE_API = "https://api.github.com/repos/pm-derek/cardcomp/releases/tags/phone-latest"
+        const val APK_URL = "https://github.com/pm-derek/cardcomp/releases/download/phone-latest/cardcomp-phone.apk"
+    }
     private lateinit var prefs: Prefs
     private lateinit var status: TextView
     private lateinit var keyIn: EditText
     private lateinit var tokIn: EditText
+    private lateinit var keyNote: TextView
+    private lateinit var updNote: TextView
+    private lateinit var updBtn: Button
+    private var updChecked = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,65 +50,126 @@ class MainActivity : Activity() {
         fun text(s: String, size: Float = 14f): TextView = TextView(this).apply {
             text = s; textSize = size; setPadding(0, dp(6), 0, dp(6))
         }.also { col.addView(it) }
+        fun head(s: String) = text(s, 17f).apply { setPadding(0, dp(18), 0, dp(4)) }
         fun button(label: String, on: () -> Unit): Button = Button(this).apply {
-            text = label; setOnClickListener { on() }
+            text = label; isAllCaps = false; setOnClickListener { on() }
         }.also { col.addView(it) }
 
         text("CardComp over Whatnot", 22f)
         status = text("")
-        text("Once: the three switches below. Then Start overlay, allow the screen capture, open Whatnot.", 13f)
+
+        head("Start")
+        button("Start overlay") { start() }
+        button("Stop overlay") {
+            startService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_STOP)); status.postDelayed({ refresh() }, 300)
+        }
+        text("In the capture dialog pick \"A single app\" and choose Whatnot. Tap the gold bubble to read the card; " +
+            "drag it anywhere; long press it to hide or show the panel. Move the panel by its top bar, change its width with ◢, " +
+            "fold it into the bubble with –. Tap the bid to copy it, then paste it in Whatnot's Custom box.", 12f)
+
+        head("Setup (once)")
         button("1. Allow display over other apps") {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
         button("2. Allow notifications") { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1) }
-        button("3. Turn on the screen reader (Accessibility)") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        text("Sideloaded app: if the Accessibility switch is greyed out, open this app's App info, menu, Allow restricted settings, then try again.", 12f)
+        button("3. Screen reader (for Dump screen, optional for now)") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        text("If its switch is greyed out: tap the button below, then ⋮ (top right) > Allow restricted settings, then try 3 again.", 12f)
+        button("Open App info") {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
 
-        text("Anthropic API key (reads the card on screen)")
+        head("Keys")
+        text("Anthropic API key (reads the card on screen)", 13f)
         keyIn = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "sk-ant-..."; setText(prefs.anthropicKey)
         }
         col.addView(keyIn)
-        text("GitHub token (lot log and verified prices, phase 1)")
+        text("GitHub token (lot log and verified prices: not used yet, phase 1)", 13f)
         tokIn = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "github_pat_..."; setText(prefs.ghToken)
+            hint = "github_pat_... (optional)"; setText(prefs.ghToken)
         }
         col.addView(tokIn)
-        button("Save keys") {
-            prefs.anthropicKey = keyIn.text.toString().trim()
-            prefs.ghToken = tokIn.text.toString().trim()
-            toast("saved"); refresh()
-        }
+        button("Save keys and test the API key") { saveKeys(); testKey() }
+        keyNote = text("", 12f)
 
-        button("Start overlay") { start() }
-        button("Stop overlay") {
-            startService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_STOP)); refresh()
+        head("Model that reads the card")
+        val models = listOf("haiku" to "Haiku (fastest, cheapest, weakest)", "sonnet" to "Sonnet (what desktop uses)", "opus" to "Opus (slowest, priciest)")
+        val group = RadioGroup(this)
+        models.forEachIndexed { i, (k, label) ->
+            group.addView(RadioButton(this).apply { id = View.generateViewId(); text = label; tag = k; isChecked = prefs.model == k })
         }
-        text("In the overlay: tap the gold bubble to read the card, drag it anywhere, long press it to hide or show the panel. " +
-            "Move the panel by its top bar, widen or narrow it with the corner at its top right, – folds it into the bubble. " +
-            "The notification has Read, Dump screen and Stop. A dump copies Whatnot's screen layout to the clipboard for the phase 1 reader.", 12f)
-        button("Copy last screen dump") { lastDump()?.let { copy(it.readText()); toast("copied ${it.name}") } ?: toast("no dump yet") }
+        group.setOnCheckedChangeListener { g, id -> (g.findViewById<RadioButton>(id)?.tag as? String)?.let { prefs.model = it } }
+        col.addView(group)
+
+        head("Update")
+        updNote = text("checking…", 12f)
+        updBtn = button("Install update") { update() }
+        updBtn.visibility = View.GONE
+
+        head("Screen dumps (for the phase 1 reader)")
+        text("Notification > Dump screen copies Whatnot's screen layout. Take one on a live lot, one with Custom bid open, one on a sold screen.", 12f)
         button("Share last screen dump") { lastDump()?.let { share(it) } ?: toast("no dump yet") }
-        text("Version ${BuildConfig.VERSION_NAME} build ${BuildConfig.BUILD_ID}", 12f)
-        setContentView(ScrollView(this).apply { addView(col) })
+        text("Version ${BuildConfig.VERSION_NAME} · build ${BuildConfig.BUILD_ID.take(7)}", 12f)
+
+        val sv = ScrollView(this).apply { addView(col); fitsSystemWindows = true }   // targetSdk 35 draws edge to edge: keep clear of the status bar
+        setContentView(sv)
     }
 
     // the overlay never covers this screen (it hid the Stop button)
-    override fun onResume() { super.onResume(); resumed = true; OverlayService.instance?.appVisible(true); refresh() }
+    override fun onResume() {
+        super.onResume(); resumed = true; OverlayService.instance?.appVisible(true); refresh()
+        if (System.currentTimeMillis() - updChecked > 5 * 60_000) checkUpdate()
+    }
     override fun onPause() { resumed = false; OverlayService.instance?.appVisible(false); super.onPause() }
 
     private fun refresh() {
         val overlay = Settings.canDrawOverlays(this)
         val notes = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        status.text = "overlay permission ${mark(overlay)} · notifications ${mark(notes)} · screen reader ${mark(WhatnotReader.connected())} · " +
-            "API key ${mark(prefs.anthropicKey.isNotEmpty())} · overlay ${if (OverlayService.running) "running" else "stopped"}"
+        status.text = "display over apps ${mark(overlay)} · notifications ${mark(notes)} · API key ${mark(prefs.anthropicKey.isNotEmpty())} · " +
+            "screen reader ${mark(WhatnotReader.connected())}\noverlay ${if (OverlayService.running) "running" else "stopped"}"
     }
     private fun mark(b: Boolean) = if (b) "✓" else "✗"
 
+    private fun saveKeys() {
+        prefs.anthropicKey = keyIn.text.toString().trim()
+        prefs.ghToken = tokIn.text.toString().trim()
+        refresh()
+    }
+
+    /** a tiny text-only call (Haiku, 16 tokens) so a bad key shows here, not mid-stream */
+    private fun testKey() {
+        val key = prefs.anthropicKey
+        if (key.isEmpty()) { keyNote.text = "no key saved"; return }
+        keyNote.text = "testing…"
+        Thread {
+            val msg = try {
+                val c = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+                c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10000; c.readTimeout = 20000
+                c.setRequestProperty("content-type", "application/json")
+                c.setRequestProperty("x-api-key", key)
+                c.setRequestProperty("anthropic-version", "2023-06-01")
+                val body = JSONObject().put("model", "claude-haiku-5-5").put("max_tokens", 16)
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with: ok")))
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+                val code = c.responseCode
+                val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                c.disconnect()
+                when {
+                    code in 200..299 -> "key works ✓"
+                    code == 401 -> "key rejected (401): check it was pasted whole"
+                    code == 403 -> "key not allowed to use this model (403)"
+                    code == 400 && Regex("credit|balance", RegexOption.IGNORE_CASE).containsMatchIn(txt) -> "out of API credit"
+                    else -> "API error $code: ${txt.take(120)}"
+                }
+            } catch (e: Exception) { "network: ${e.message}" }
+            runOnUiThread { keyNote.text = msg }
+        }.start()
+    }
+
     private fun start() {
-        if (!Settings.canDrawOverlays(this)) { toast("allow display over other apps first (button 1)"); return }
+        if (!Settings.canDrawOverlays(this)) { toast("allow display over other apps first (Setup 1)"); return }
         if (prefs.anthropicKey.isEmpty()) toast("no API key yet: reads will fail until you add one")
         val mgr = getSystemService(MediaProjectionManager::class.java)
         @Suppress("DEPRECATION")
@@ -116,6 +192,50 @@ class MainActivity : Activity() {
         refresh()
     }
 
+    // ---------------------------------------------------------------- in-app update (no browser download)
+    /** The phone-latest release says which commit it was built from; a different one than this build = update. */
+    private fun checkUpdate() {
+        updChecked = System.currentTimeMillis()
+        Thread {
+            val (latest, err) = try {
+                val c = URL(RELEASE_API).openConnection() as HttpURLConnection
+                c.setRequestProperty("Accept", "application/vnd.github+json"); c.connectTimeout = 8000; c.readTimeout = 8000
+                val body = c.inputStream.bufferedReader().use { it.readText() }; c.disconnect()
+                Pair(Regex("built from ([0-9a-f]{7})").find(JSONObject(body).optString("body"))?.groupValues?.get(1), null)
+            } catch (e: Exception) { Pair(null, e.message) }
+            runOnUiThread {
+                val mine = BuildConfig.BUILD_ID.take(7)
+                when {
+                    latest == null -> { updNote.text = "could not check for updates${if (err != null) " ($err)" else ""}"; updBtn.visibility = View.GONE }
+                    latest == mine -> { updNote.text = "up to date ($mine)"; updBtn.visibility = View.GONE }
+                    else -> { updNote.text = "update available: $latest (this is $mine)"; updBtn.visibility = View.VISIBLE }
+                }
+            }
+        }.start()
+    }
+
+    private fun update() {
+        if (!packageManager.canRequestPackageInstalls()) {
+            toast("allow CardComp to install updates, then tap Install update again")
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        updBtn.isEnabled = false; updNote.text = "downloading…"
+        Thread {
+            val err = try {
+                val f = File(cacheDir, "update.apk")
+                val c = URL(APK_URL).openConnection() as HttpURLConnection
+                c.instanceFollowRedirects = true; c.connectTimeout = 10000; c.readTimeout = 30000
+                c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }; c.disconnect()
+                Updater.install(this, f); null
+            } catch (e: Exception) { e.message ?: "failed" }
+            runOnUiThread {
+                updBtn.isEnabled = true
+                updNote.text = err?.let { "update failed: $it" } ?: "confirm the install in the dialog"
+            }
+        }.start()
+    }
+
     private fun lastDump(): File? = File(filesDir, "dumps").listFiles()?.maxByOrNull { it.lastModified() }
 
     private fun share(f: File) {
@@ -124,6 +244,7 @@ class MainActivity : Activity() {
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, f.name).putExtra(Intent.EXTRA_TEXT, txt), "Share screen dump"))
     }
 
+    @Suppress("unused")
     private fun copy(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("CardComp dump", text))
     }

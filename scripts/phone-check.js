@@ -59,17 +59,48 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
       collapse() { rec("collapse", []); },
       toast(t) { rec("toast", [t]); },
       log(s) { rec("log", [s]); },
-      dump() { rec("dump", []); }
+      dump() { rec("dump", []); },
+      copy(t) { rec("copy", [t]); },
+      img(url, req) {   // a different solid color per photo, so the matcher has distinct templates
+        rec("img", [url]);
+        let h = 0; for (const ch of url) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        const cv = document.createElement("canvas"); cv.width = 60; cv.height = 84; const g = cv.getContext("2d");
+        g.fillStyle = `hsl(${h % 360},70%,${30 + (h >> 9) % 40}%)`; g.fillRect(0, 0, 60, 84); g.fillStyle = `hsl(${(h >> 3) % 360},60%,60%)`; g.fillRect(8, 10, 44, 34);
+        const d = cv.toDataURL("image/jpeg", 0.8); setTimeout(() => window.__phone.img(req, d), 5);
+      },
+      bundled() { rec("bundled", []); return window.__BUNDLE; },
+      bundledVer() { return window.__BUNDLE_VER; }
     };
   });
   await page.goto(base + "/");
   await page.waitForFunction(() => typeof CARDS !== "undefined" && CARDS.length > 1000, null, { timeout: 60000 });
   // what OverlayService does after the page loads
-  const bundle = fs.readFileSync(path.join(ROOT, "extension/recog/recog-read.js"), "utf8") + "\n;\n" + fs.readFileSync(path.join(ROOT, "phone/bridge.js"), "utf8");
-  await page.addScriptTag({ content: bundle });   // what OverlayService injects (both files, top level)
+  // what OverlayService does after each page load: its LOADER text, taken from the Kotlin source, with the APK's bundle
+  const kt = fs.readFileSync(path.join(ROOT, "android/app/src/main/java/io/github/pmderek/cardcomp/OverlayService.kt"), "utf8");
+  const LOADER = /val LOADER = """([\s\S]*?)"""/.exec(kt)[1].replace("$NATIVE_API", /NATIVE_API = (\d+)/.exec(kt)[1]);
+  const bundle = ["extension/recog/recog-read.js", "extension/recog/imgmatch.js", "phone/bridge.js"].map((f) => fs.readFileSync(path.join(ROOT, f), "utf8")).join("\n;\n");
+  const VER = /const VER = "([0-9.]+)"/.exec(bundle)[1];
+  // the live site serves the same bridge version as the APK: the built-in copy must be used (no network needed)
+  await page.evaluate(([b, v]) => { window.__BUNDLE = b; window.__BUNDLE_VER = v; }, [bundle, VER]);
+  await page.evaluate(LOADER);
   await page.waitForFunction(() => !!window.__phone && typeof window.recogRead === "function", null, { timeout: 10000 });
   await page.waitForTimeout(400);
   const calls = () => page.evaluate(() => window.__calls);
+  console.log("0. loader");
+  ok((await calls()).some((x) => x.n === "bundled"), "same version on the live site: the APK's built-in bridge runs");
+  {   // an older APK (bundled 0.0.1): the live site's newer bridge runs instead, fetched with the reader and the matcher
+    const p2 = await ctx.newPage(); const e2 = []; p2.on("pageerror", (e) => e2.push(e.message));
+    await p2.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => r.abort());
+    await p2.addInitScript(() => { window.__c = []; window.Android = { bundled() { window.__c.push("bundled"); return ""; }, bundledVer() { return "0.0.1"; },
+      cfg() { return "{}"; }, key() { return ""; }, log() {}, layout() {}, size() {}, focus() {}, setCfg() {}, grab() { return "ok"; }, bid() { return "{}"; }, open() {}, toast() {}, copy() {}, img() {}, collapse() {} }; });
+    await p2.goto(base + "/");
+    await p2.evaluate(LOADER);
+    await p2.waitForFunction(() => !!window.__phone, null, { timeout: 10000 });
+    const r = await p2.evaluate(() => ({ used: window.__c.slice(), ver: window.__phone.ver, im: typeof IM, rr: typeof recogRead }));
+    ok(!r.used.includes("bundled") && r.ver === VER && r.im === "object" && r.rr === "function", `older APK: the live bridge ${r.ver} runs, with the reader and the matcher (${JSON.stringify(r)})`);
+    ok(e2.length === 0, "no page errors on the live-bridge path" + (e2.length ? ": " + e2.join(" | ") : ""));
+    await p2.close();
+  }
   const fit = async (cap) => { await page.waitForTimeout(250); const h = await page.evaluate(() => window.__h || 100); await page.setViewportSize({ width: 360, height: Math.min(h, cap || 9999) }); await page.waitForTimeout(150); return h; };
 
   console.log("1. handshake");
@@ -150,6 +181,24 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(/charizard/i.test(String(tapped)), "the tap labeled the lot through the card's own chip: " + tapped);
   await page.screenshot({ path: path.join(OUT, "phone-card-copied.png") });
   await page.waitForTimeout(2700);
+
+  console.log("3b. picture match, clipboard, long press");
+  await page.waitForFunction(() => window.__calls.filter((x) => x.n === "img").length > 1, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  const pic = await page.evaluate(() => ({ imgs: window.__calls.filter((x) => x.n === "img").length, msg: (document.querySelector("#automsg") || {}).textContent || "" }));
+  ok(pic.imgs > 1, `photos fetched through the app for the picture match: ${pic.imgs}`);
+  ok(/picture/.test(pic.msg) && !/no reply|not on the phone|needs extension/.test(pic.msg), "picture match answered: " + (/picture[^·]*/.exec(pic.msg) || [""])[0].trim());
+  const cp = await page.evaluate(() => window.__calls.filter((x) => x.n === "copy").map((x) => x.a[0]));
+  ok(cp.length > 0 && cp.every((t) => /^\d+$/.test(t)), "page copies go through the app (no hidden textarea): " + cp.join(", "));
+  ok(!(await calls()).some((x) => x.n === "focus" && x.a[0] === true), "no keyboard request from a bid tap");
+  const readsBefore = (await calls()).filter((x) => x.n === "grab").length;
+  await page.evaluate(() => document.querySelector("#phonebar .pn").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  await page.waitForTimeout(200);
+  ok((await calls()).filter((x) => x.n === "grab").length === readsBefore, "a long press (contextmenu) does not read");
+  const sel = await page.evaluate(() => Array.from(document.querySelectorAll("select")).filter((x) => getComputedStyle(x).display !== "none").length);
+  ok(sel === 0, "no visible <select> (an overlay WebView crashes on dropdowns)");
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="toggle"]').click());   // back to compact after looking
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="toggle"]').click());
 
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
