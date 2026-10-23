@@ -176,8 +176,8 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
   const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = Math.floor(bidForMargin(m, 0)); return x.be === "$" + be && be >= +x.bid.slice(1); }), rows);
   ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0), and never below the suggested bid");
-  const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.textContent.trim() : ""; });
-  ok(gridNM && rows[0].bid === "$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, ""))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
+  const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
+  ok(gridNM && rows[0].bid === "$" + gridNM, "NM pill sends what the full grid's NM sends: $" + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
   const scr = await page.evaluate(() => { const p = document.querySelector("#phonebar .prow"); const vis = Array.from(p.children).filter((b) => b.getBoundingClientRect().right <= p.getBoundingClientRect().right + 1).length; p.scrollLeft = 9999; return { vis, scrolls: p.scrollLeft > 0 }; });
   ok(scr.vis === 2 && scr.scrolls, `pills scroll sideways: ${scr.vis} fully visible, swipe for the rest`);

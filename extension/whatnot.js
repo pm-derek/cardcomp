@@ -159,7 +159,7 @@ function toast(msg, kind) {
 // goes to CardComp as a record, which adds the card you were bidding on and stores it.
 const LOT_RX = {
   bids: /(\d+)\s+bids?\b/i, money: /^\$\s?([\d,]+(?:\.\d{2})?)$/, timer: /^\d{1,2}:\d{2}$/,
-  ship: /shipping is \$([\d.]+)/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
+  ship: /shipping is (?:\$([\d.]+)|(free))/i, win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i,
   me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i, sold: /^sold to\s+(\S+)|^(\S+)\s+won\b/i, meWon: /^you won/i,
   joined: /^(\S+)\s+joined\b/i, giveaway: /giveaway with (\d+) entr/i, viewers: /^\d{1,6}$/,
   skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|^won!?$|won the auction|^you won|^\S+\s+is$|^sold$|^qty\.|^bid\b|^custom|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max/i
@@ -277,7 +277,7 @@ function readLot() {
     if ((m = LOT_RX.bids.exec(t))) st.bids = +m[1];
     else if (LOT_RX.money.test(t) && !el.closest("button")) { if (st.cur == null) st.cur = parseFloat(LOT_RX.money.exec(t)[1].replace(/,/g, "")); }
     else if (LOT_RX.timer.test(t)) st.timer = t;
-    else if ((m = LOT_RX.ship.exec(t))) st.ship = parseFloat(m[1]);
+    else if ((m = LOT_RX.ship.exec(t))) st.ship = m[2] ? 0 : parseFloat(m[1]);   // "Shipping is FREE" = $0 (blank stays unknown); the line is what this lot adds for you in this show
     else if (/^sold$/i.test(t)) st.ended = true;
     else if (t.length > 1 && t.length < 120 && /[A-Za-z0-9]/.test(t) && !LOT_RX.skip.test(t) && !inBtn(el)) texts.push(t);   // icon-only text ("💀") is not a title; a role=button lot row is fine
   }

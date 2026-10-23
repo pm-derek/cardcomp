@@ -179,6 +179,12 @@ and never bids. Plan and results: docs/auto-recognition-handoff.md.
 5. Results, frames and costs: Options > "the recognition test page". The card you tap or open in a lot is the
    truth; mark the other lots there.
 
+6. CardSight side by side (0.9): paste a CardSight key (cardsight.ai, API Keys) and your plan's monthly calls on the
+   Options page. Read-nows and lot-start reads then also go to CardSight, spread over the month (Free: 750 a month,
+   about 25 a day). Each read, a coin picks whose answer fills CardComp (the line says "CardSight 0.4s" or the Claude
+   model); the other is only recorded. If the shown one finds nothing, the other fills. Nothing to switch: the log
+   scores both (`node scripts/recog-score-log.js <cardcomp-data>`, "side by side").
+
 Read now from the Whatnot tab: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac).
 Not Alt+Shift+R: Chrome uses that for Reading Mode. Frames stay in this extension (30 days); calls go only to
 api.anthropic.com. Remove the whole experiment: `node scripts/strip-recog.js`.

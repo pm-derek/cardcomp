@@ -72,10 +72,8 @@ All in this repo unless noted.
 - Japanese is weaker: the name is printed in Japanese, the model names the Pokemon partly from the art. Number,
   total and set code come out right (Mega Golurk ex 109/076 M6 was read as "Mega Metagross ex 109/076 (M6)").
 - CardSight (cardsight.ai, a card recognition API, claims 99.5% in under 0.4 s, Free 750 calls a month, Pro $14.95
-  for 5,000) runs side by side with Claude on desktop in extension 0.9.0: a coin per read picks which answer
-  shows, both go on the log row (`recog.src`, `recog.alt`, `recog.cs`). 0.9.0 is on branch
-  `claude/screenshot-test-setup-4marhe`, not on main (main is 0.8.2); the log had no CardSight rows on 2026-10-23.
-  Score it before choosing the phone's reader.
+  for 5,000) runs side by side with Claude on desktop since extension 0.9.0: a coin per read picks which answer
+  shows, both go on the log row (`recog.src`, `recog.alt`, `recog.cs`). Score it before choosing the phone's reader.
 
 ## Platform constraints
 

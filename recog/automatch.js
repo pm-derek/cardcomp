@@ -13,7 +13,12 @@
 //   strength:  "strong" (exact name + exact number, set total fits if read), "weak" (best guess), or null
 //   cards:     the candidates, best first, like a normal search would list them (max 16)
 // Rules (from the 20-frame test, 2026-10-16):
-//   - never the "closest by name" fallback: a different Pokemon with the same number is never a candidate
+//   - never the "closest by name" fallback: a different Pokemon with the same number is never a candidate, except when
+//     the number AND the set (its printed size, or the set code read) point at that card and no printing of the name
+//     has that number (Derek, 2026-10-23: Mega Golurk ex 109/076 M6, a Japanese card, read as "Mega Metagross ex
+//     109/076 (M6)"; the number and code were right, the name was not). Japanese cards only. When the name fits no set
+//     of that size the hit is listed first and suggested (weak): kind "number"; a name that fits keeps its printings first
+//     with the hits after. The picture match settles it.
 //   - a number that matches nothing removes the suggestion (Kyurem ex 157 is under the floor; SIR #165 is not it)
 //   - rarity is a tie-break, never a filter, and a premium read (SIR / UR / full art) cannot pick a printing
 //     that costs 5x+ the cheapest other candidate (Garchomp UR $4 vs SIR $185; Jellicent UR vs SIR)
@@ -95,6 +100,11 @@
       cards = pool.filter(c => { const ct = norm(c.n).split(" "); return ct[0] === toks[0] && toks.every(t => ct.includes(t)); });
       if (cards.length) return { level: 3, cards };
     }
+    // the name read inside a longer name (Calyrex VMAX -> Ice Rider / Shadow Rider Calyrex VMAX, 2026-10-23)
+    if (toks.length > 1) {
+      cards = pool.filter(c => (" " + norm(c.n) + " ").includes(" " + q + " "));
+      if (cards.length) return { level: 3, cards };
+    }
     if (q.length >= 6) {
       const k = q.split(" ").length;
       cards = pool.filter(c => editDist(q, norm(c.n).split(" ").slice(0, k).join(" ")) <= 2);
@@ -137,12 +147,41 @@
     const why = [];
     const nm = byName(read.name, lang);
     if (nm.level > 1) why.push("name matched loosely (level " + nm.level + ")");
-    if (!nm.cards.length) return { kind: "none", strength: null, suggestion: null, cards: [], note: "no " + (read.name || "card") + " in the catalog (likely under $1.50)", why, lang };
-
     let num = depad(read.number);
     const total = parseInt(read.total, 10) || 0, lowRes = ctx.short > 0 && ctx.short < 1000;
     // total fits: the set's printed size, or a standalone product that carries it in its name ("Flareon ex 014 131 ...")
     const totalOK = c => total && ((SET_SIZE[c.s] || []).includes(total) || new RegExp("\\b0*\\d+ 0*" + total + "\\b").test(norm(c.n)));
+    // Set codes in the set read ("Mega Brave (M6)" -> m6, "SV11B"): tokens with letters and digits, matched to the card's code.
+    const codes = (norm(read.set).match(/\b[a-z0-9]{2,7}\b/g) || []).filter(t => /[a-z]/.test(t) && /\d/.test(t));
+    const codeOK = c => codes.length > 0 && codes.includes(norm(c.c));
+    // Cards anywhere in this language with the number read in a set that fits (size or code): what the number says.
+    const byNumber = () => {
+      if (!num || !(total || codes.length)) return [];
+      let hits = CARDS.filter(c => (c.game || "pkmn") === "pkmn" && (c.lang || "en") === lang && !c.sealed && depad(c.num) === num && (totalOK(c) || codeOK(c)));
+      if (hits.length > 1 && codes.length) { const h = hits.filter(codeOK); if (h.length) hits = h; }
+      if (hits.length > 1 && total) { const h = hits.filter(totalOK); if (h.length) hits = h; }
+      return hits.length <= 4 ? hits : [];
+    };
+    // Japanese only. English names are printed in English and read well, while an English card missing from the catalog
+    // (under the floor) shares its number and set size with other cards: Cetitan ex 210/182 would have picked Sinistcha,
+    // Kyurem ex 157/086 a White Flare card (sister sets of the same size).
+    const nameFits = (nameCards) => nameCards.some(c => (total && (SET_SIZE[c.s] || []).includes(total)) || codeOK(c));
+    const useHits = (hits) => hits.length > 0 && lang === "jp";
+    const numberSays = (hits, nameCards) => {
+      const fits = nameFits(nameCards);
+      const uniq = (a) => a.filter((c, i) => a.indexOf(c) === i);
+      const all = uniq(fits ? nameCards.concat(hits) : hits.concat(nameCards));
+      const sug = !fits && hits.length === 1 ? hits[0] : null;
+      why.push("#" + read.number + (total ? "/" + read.total : "") + " is " + hits.map(c => c.n + " (" + c.s + ")").join(", ") + (nameCards.length ? ", not a " + (read.name || "card") : "") +
+        (fits ? "; the name fits a set of that size, so its printings stay first" : "; the name was likely misread"));
+      return { kind: "number", strength: sug ? "weak" : null, suggestion: sug ? sug.id : null, cards: all.slice(0, 16), pool: all.slice(0, 80),
+        note: "#" + read.number + (total ? "/" + read.total : "") + " is " + hits[0].n.replace(/\s+\d.*$/, "") + (hits.length > 1 ? " (+" + (hits.length - 1) + ")" : "") + ", name read " + (read.name || "?"), why, lang };
+    };
+    if (!nm.cards.length) {
+      const hits = byNumber();
+      if (useHits(hits)) return numberSays(hits, []);
+      return { kind: "none", strength: null, suggestion: null, cards: [], note: "no " + (read.name || "card") + " in the catalog (likely under $1.50)", why, lang };
+    }
     // Off a small stream, a number whose total contradicts the catalog is a guess: ignore it. Either no set this
     // card is in has that many cards, or the card(s) with that number sit in a set of another size (Mew ex 232/191
     // read on a 720p stream: Paldean Fates #232 exists, but Paldean Fates has 91 cards).
@@ -150,6 +189,7 @@
       const sized = (c) => (SET_SIZE[c.s] || []).length > 0, withNum = nm.cards.filter(c => depad(c.num) === num);
       const noSet = nm.cards.some(sized) && !nm.cards.some(totalOK);
       const clashes = withNum.length && withNum.every(c => sized(c) && !totalOK(c));
+      if (noSet || clashes) { const hits = byNumber(); if (useHits(hits)) return numberSays(hits, nm.cards); }   // the number fits another card: the name may be the misread
       if (noSet || clashes) { why.push("number " + read.number + "/" + read.total + " ignored: the catalog has no such " + nm.cards[0].n.replace(/\s+\d.*$/, "")); num = ""; }
     }
     // Set guesses: Sonnet / Opus name the set well; Haiku's guesses were wrong often enough to pick a $1,300 Lugia.
@@ -205,6 +245,8 @@
       if (ex.length > 1) return out("ambiguous", null, null, ex.length + " printings with #" + read.number + ": pick one");
       const near = nm.cards.filter(isNear);
       if (near.length === 1 && !lowRes) { why.push("number off by one: read " + read.number + ", catalog " + near[0].num); return out("near", "weak", near[0]); }
+      const hits = byNumber();
+      if (useHits(hits)) return numberSays(hits, sorted);
       if (!lowRes) return out("number-miss", null, null, "no #" + read.number + " for " + nm.cards[0].n.replace(/\s+\d.*$/, "") + " in the catalog (likely under $1.50, or misread)");
       why.push("number " + read.number + " not in the catalog, read off a small stream: matched on the other clues");
     }
