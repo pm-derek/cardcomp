@@ -51,6 +51,9 @@
   .sug{display:none;gap:6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .sug::-webkit-scrollbar{display:none}
   .sug.on{display:flex}
+  /* phone (Derek, 2026-10-23: Chrome's autofill bar over the keyboard hid the chips): chips sit above the search box, so
+     nothing that pops up over the keyboard can cover them. Side panel / desktop keep them below. */
+  @media (max-width:600px){ #sug{order:1} #qrow{order:2} }
   .sug button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 13px;font-size:15px;font-family:inherit;cursor:pointer;line-height:1.1}
   .sug button.sel{border-color:var(--gold);background:rgba(245,179,1,.12)}   /* keyboard highlight: Tab/Enter picks it */
   .sug button i{font-style:normal;color:var(--faint);font-size:11px;margin-left:5px}
@@ -257,7 +260,7 @@
   </div>
   <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px;flex-direction:column;gap:8px">
     <div id="lotstrip" style="display:none;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.35;padding:6px 9px;border-radius:7px;background:var(--panel2);border-left:4px solid var(--gold)"></div>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div id="qrow" style="display:flex;gap:8px;align-items:center">
       <div style="position:relative;flex:1;min-width:0">
         <input id="q" placeholder="search a card…" autocomplete="off" enterkeyhint="search" style="padding-right:66px">
         <button id="qclear" title="clear" style="position:absolute;right:38px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--faint);font-size:18px;cursor:pointer;line-height:1;display:none">✕</button>
