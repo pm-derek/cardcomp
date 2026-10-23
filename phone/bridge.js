@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.10.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.11.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -479,10 +479,11 @@
     // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
     "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
     "#phonebar .prow::-webkit-scrollbar{display:none}" +
-    "#phonebar .pb{flex:0 0 44%;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:46px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
+    "#phonebar .pb{flex:0 0 44%;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:58px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
     "#phonebar .pb em{font-style:normal;font-size:10px;font-weight:700}" +
     "#phonebar .pb b{font-size:17px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
-    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15}" +
+    "#phonebar .pb small i{font-style:normal;color:var(--faint);margin-right:3px}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
     "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
@@ -570,6 +571,9 @@
     if (card && !card.classList.contains("open")) { const r = card.querySelector(".row"); if (r) { r.click(); OPENED = card; } }
   }
   const SHOW = ["NM", "LP", "MP", "HP", "DMG"];
+  // break-even: the most you can pay and not lose money (fees, shipping and your list markup, 0% margin): the app's own
+  // bidForMargin at 0, what the desktop tiles call "b/e". Whole dollars, rounded down like every bid.
+  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? Math.floor(bidForMargin(mkt, 0)) : 0; return v >= 1 ? "$" + v : "–"; } catch (_) { return "–"; } };
   // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
   // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
   // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card
@@ -636,7 +640,8 @@
           (miss ? `<div class="pmiss">${esc(miss)}</div>` : "") +
           `<div class="prow${miss ? " dim" : ""}">` + rows.map((x) =>
             `<span class="pb${x.b ? "" : " wait"}${flash(x.c) ? " fl" : ""}" data-t="bid" data-c="${x.c}"><em style="color:${col(x.c)}">${x.c}</em>` +
-            `<b>${esc(flash(x.c) || x.bid)}</b><small>${x.mkt > 0 ? money(x.mkt) : "–"}</small></span>`).join("") +
+            `<b>${esc(flash(x.c) || x.bid)}</b>` +
+            `<small><i>mkt</i>${x.mkt > 0 ? money(x.mkt) : "–"}</small><small><i>b/e</i>${esc(beOf(x.mkt))}</small></span>`).join("") +
           `</div>` +
         `</div>` +
       `</div>`;

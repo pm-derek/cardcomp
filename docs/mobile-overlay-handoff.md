@@ -513,3 +513,10 @@ check had shown the same crop once (0.8, "phone-card-alert.png") and it was wron
 - Pinch (Derek's idea): two fingers on the panel set the contents' size, 60% to 160% (CSS zoom on <html>, remembered
   in localStorage `cardcomp_phone_zoom`); the panel height follows (offsetHeight x zoom). Pinching together past
   the smallest size folds the panel into the bubble and keeps the size. `touch-action: pan-x pan-y` keeps scrolling.
+
+## 0.11 (2026-10-23): market and break-even on every pill
+
+Derek: each bid button should show market price, break-even and the suggested bid. Pill: condition, suggested max
+bid (big, what a tap sends), "mkt" (the price bids use: TCGplayer's market or the estimate, from the grid's
+data-mkt) and "b/e" (the app's `bidForMargin(price, 0)`: fees, shipping, list markup, 0% margin; the desktop tiles'
+"b/e"), whole dollars rounded down. Checked: b/e equals the app's math and is never below the suggested bid.

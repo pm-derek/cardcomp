@@ -157,9 +157,11 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
-  ok(h2 > 100 && h2 < 150, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
-  const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => ({ c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: r.querySelector("small").textContent.trim() })));
-  ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (${x.px})`).join(" | "));
+  ok(h2 > 100 && h2 < 165, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
+  const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
+  ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = Math.floor(bidForMargin(m, 0)); return x.be === "$" + be && be >= +x.bid.slice(1); }), rows);
+  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0), and never below the suggested bid");
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.textContent.trim() : ""; });
   ok(gridNM && rows[0].bid === "$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, ""))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
