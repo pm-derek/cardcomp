@@ -275,13 +275,14 @@ function csErr(status, txt) {
 // The best detection -> the same reading shape Claude returns, so autoMatch takes it as is.
 const CS_CONF = { High: 0.95, Medium: 0.82, Low: 0.62 }, CS_RANK = { High: 3, Medium: 2, Low: 1 };
 function csField(card, k) { const f = ((card && card.fields) || []).find((x) => x && String(x.key || "").toLowerCase() === k); return f && f.value != null ? String(f.value) : ""; }
+// Pokemon replies say setName "Checklist"; the set is the release ("Phantasmal Flames"), so that is used instead.
 function csToRead(j) {
   const d = ((j && j.detections) || []).filter((x) => x && x.card && x.card.name).sort((a, b) => (CS_RANK[b.confidence] || 0) - (CS_RANK[a.confidence] || 0))[0];
   if (!d) return { card_visible: !!(j && j.detectedCount > 0), name: "", number: "", total: "", language: "", rarity: "", stamp: "", finish: "", set: "", confidence: 0, box: [] };
   const c = d.card, m = String(c.number || "").match(/^\s*([^/\s]+)\s*(?:\/\s*(\S+))?/) || [];
   const lg = csField(c, "card_language").toLowerCase();
   return { card_visible: true, name: String(c.name), number: m[1] || "", total: m[2] || "", language: !lg || lg === "en" ? "en" : lg === "ja" ? "jp" : lg === "zh" ? "zh" : lg === "ko" ? "ko" : "other",
-    rarity: csField(c, "rarity"), stamp: "", finish: "", set: c.setName || c.releaseName || "", confidence: CS_CONF[d.confidence] || 0.6, box: [] };
+    rarity: csField(c, "rarity"), stamp: "", finish: "", set: (/^checklist$/i.test(c.setName || "") ? c.releaseName : c.setName) || c.releaseName || "", confidence: CS_CONF[d.confidence] || 0.6, box: [] };
 }
 // What CardSight said, small enough to ride on the log row (for checking the mapping above against real replies).
 function csBrief(j) {
