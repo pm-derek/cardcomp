@@ -423,3 +423,21 @@ dump the screen mid-stream is not a thing he will do.
   count and the upload status.
 - Restricted settings on One UI 7: the ⋮ "Allow restricted settings" item in App info only appears after a denied
   attempt to turn on the accessibility switch for this install (a reinstall resets it).
+
+## 0.5 (2026-10-23, third live try)
+
+- Typing lost focus on every keystroke (Derek searching Reshiram & Charizard GX SM247): the compact card opened the
+  top result to mirror its grid, and opening a card blurs `#q` (index.html row click). Cards are now opened only in
+  the compact view, never while the search box is in use. Checked: typing "reshiram charizard sm247" keeps focus and
+  the SM247 promo ($44.46) is the top result. The card was in the catalog all along.
+- Not in the catalog: when the typed (or read) number matches none of the shown card's, the compact card says "no
+  card #X in the catalog (likely under $1.50 or not on TCGplayer): closest by name" and dims the bid buttons.
+- Compact card at half height (~100 css px): 46 x 64 thumbnail, one header line (name; set · # · printing · best
+  guess; ‹ n/N ›; 🔍), and four condition buttons side by side (cond, max bid, price), each 44 px tall. The read line
+  shows only while reading or on an error; the full view (tap the name or picture) shows it with the frame link.
+- Custom bid fill (`WhatnotReader.fillBid`, needs the screen reader): a bid tap copies, then opens Whatnot's Custom
+  sheet and enters the amount; Derek presses Submit Max Bid. Sold / "Awaiting Next Item" enters nothing; a max under
+  "Bid $N" does not open the sheet ({why:"under", min}). Amount by ACTION_SET_TEXT if the sheet's amount is a text
+  field, else by its − / + buttons with the amount read back after each press (never above the max). Written from
+  the screenshots, not from a dump: the first live use (or the automatic layouts) will show which path runs. Setting
+  on the setup screen (on by default). NATIVE_API 4 (bid answers later through `__phone.bidAck`).

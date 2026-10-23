@@ -72,6 +72,87 @@ class WhatnotReader : AccessibilityService() {
         for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; collect(c, out, depth + 1) }
     }
 
+    // ---------------------------------------------------------------- the bid into Whatnot's Custom sheet (the phone twin of whatnot.js's fill)
+    // Opens Custom, enters the amount, and stops: Derek presses Submit Max Bid. Never presses Submit or Bid.
+    // Rules as on desktop: a lot already sold / "Awaiting Next Item" enters nothing; a max under the next bid ("Bid $5")
+    // does not open the sheet ({why:"under", min}). The amount goes in by ACTION_SET_TEXT when the sheet's amount is a
+    // text field; else by the sheet's − / + buttons, reading the amount back after every press (works whatever the step).
+    private class N(val node: AccessibilityNodeInfo, val text: String, val r: Rect)
+    private fun nodes(): List<N> {
+        val out = ArrayList<N>()
+        val wins = try { windows } catch (_: Exception) { null } ?: emptyList()
+        val roots = wins.mapNotNull { try { it.root } catch (_: Exception) { null } }.filter { it.packageName?.toString() != packageName }
+        fun walk(n: AccessibilityNodeInfo, d: Int) {
+            if (d > 60 || out.size > 4000) return
+            val r = Rect(); n.getBoundsInScreen(r)
+            out.add(N(n, (n.text ?: n.contentDescription ?: "").toString().replace('\n', ' ').trim(), r))
+            for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; walk(c, d + 1) }
+        }
+        for (r in (if (roots.isEmpty()) listOfNotNull(rootInActiveWindow) else roots)) walk(r, 0)
+        return out
+    }
+    private fun clickable(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var c: AccessibilityNodeInfo? = n; var i = 0
+        while (c != null && i < 6) { if (c.isClickable) return c; c = c.parent; i++ }
+        return null
+    }
+    private val MONEY = Regex("""^\$\s?([0-9][0-9,]*)$""")
+    private fun dollars(t: String): Int? = MONEY.find(t)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull()
+
+    fun fillBid(amount: Int, done: (org.json.JSONObject) -> Unit) {
+        bg.post {
+            val res = try { fill(amount) } catch (e: Exception) { org.json.JSONObject().put("ok", false).put("why", "error: ${e.message}") }
+            done(res)
+        }
+    }
+    private fun fill(amount: Int): org.json.JSONObject {
+        fun no(why: String) = org.json.JSONObject().put("ok", false).put("why", why)
+        var all = nodes()
+        if (all.none { it.text.startsWith("Say something") } && all.none { it.text == "Submit Max Bid" }) return no("Whatnot live screen not in front")
+        if (all.any { it.text.equals("Awaiting Next Item", true) || it.text == "Sold" }) return no("sold")
+        val next = all.mapNotNull { Regex("""^Bid \$([0-9,]+)""").find(it.text)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() }.firstOrNull()
+        if (next != null && amount < next) return no("under").put("min", next)
+        if (all.none { it.text == "Submit Max Bid" }) {
+            val custom = all.firstOrNull { it.text.equals("Custom", true) } ?: return no("no Custom button on screen")
+            val target = clickable(custom.node) ?: return no("Custom is not tappable")
+            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            var t = 0
+            while (t < 20) { Thread.sleep(100); all = nodes(); if (all.any { it.text == "Submit Max Bid" }) break; t++ }
+            if (all.none { it.text == "Submit Max Bid" }) return no("Custom sheet did not open")
+        }
+        val submit = all.first { it.text == "Submit Max Bid" }
+        // the sheet: everything between its title row and Submit; the amount is the biggest "$N" there
+        val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+        val edit = sheet.firstOrNull { it.node.isEditable }
+        if (edit != null) {
+            val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, amount.toString()) }
+            if (edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                Thread.sleep(150)
+                return org.json.JSONObject().put("ok", true).put("how", "typed")
+            }
+        }
+        fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
+        var am = amountNode(sheet) ?: return no("no amount in the Custom sheet")
+        val row = sheet.filter { it.node.isClickable && it.r.centerY() in am.r.top..am.r.bottom && it !== am }
+        val minus = row.filter { it.r.centerX() < am.r.left }.maxByOrNull { it.r.centerX() }
+        val plus = row.filter { it.r.centerX() > am.r.right }.minByOrNull { it.r.centerX() }
+        if (minus == null || plus == null) return no("no − / + in the Custom sheet")
+        var stuck = 0; var last = dollars(am.text) ?: return no("amount unreadable")
+        for (i in 0 until 60) {
+            if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped")
+            (if (last < amount) plus else minus).node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Thread.sleep(90)
+            val now = nodes().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+            am = amountNode(now) ?: return no("amount gone")
+            val v = dollars(am.text) ?: return no("amount unreadable")
+            if (v == last) { if (++stuck >= 3) return no("the amount does not move: set it by hand") } else stuck = 0
+            // overshoot on a coarse step: stop at the highest value not above the max (never bid over it)
+            if (last < amount && v > amount) { minus.node.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(90); return org.json.JSONObject().put("ok", true).put("how", "stepped, below max (step)") }
+            last = v
+        }
+        return no("too many steps: set it by hand")
+    }
+
     /** to the private log repo, so Derek never has to share anything (needs Contents write on cardcomp-data) */
     private fun upload(txt: String) {
         val tok = Prefs(this).ghToken

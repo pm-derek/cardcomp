@@ -38,6 +38,11 @@ class Prefs(ctx: Context) {
         get() = p.getInt("panelW", -1)
         set(v) = p.edit().putInt("panelW", v).apply()
 
+    /** a bid tap also opens Whatnot's Custom sheet and enters the amount (needs the screen reader) */
+    var fillBid: Boolean
+        get() = p.getBoolean("fillBid", true)
+        set(v) = p.edit().putBoolean("fillBid", v).apply()
+
     var bubbleX: Int
         get() = p.getInt("bubbleX", -1)
         set(v) = p.edit().putInt("bubbleX", v).apply()

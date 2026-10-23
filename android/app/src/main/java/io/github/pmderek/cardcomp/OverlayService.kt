@@ -76,7 +76,7 @@ class OverlayService : Service() {
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
         /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
-        const val NATIVE_API = 3
+        const val NATIVE_API = 4
         /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
          *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
          *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
@@ -586,9 +586,15 @@ class OverlayService : Service() {
         }
 
         /** phase 0: the bid goes to the clipboard; phase 1 fills Whatnot's Custom bid box through WhatnotReader */
+        /** Copies the bid; with the screen reader on (and the setting), also opens Whatnot's Custom sheet and enters it.
+         *  Then answers later through window.__phone.bidAck({ok} / {why:"under", min} / {why:"sold"} / {why}). */
         @JavascriptInterface fun bid(amount: String, name: String): String {
             main.post { copy(amount); flashBubble("\$$amount", 1500) }
-            return JSONObject().put("ok", false).put("why", "copied").toString()
+            val r = WhatnotReader.instance
+            val v = amount.toIntOrNull()
+            if (r == null || v == null || v < 1 || !prefs.fillBid) return JSONObject().put("ok", false).put("why", "copied").toString()
+            r.fillBid(v) { res -> js("window.__phone&&window.__phone.bidAck(" + res.toString() + ")") }
+            return JSONObject().put("pending", true).toString()
         }
 
         /** a candidate's card photo for the picture match -> window.__phone.img(req, dataUrl or "") (the CDN allows no

@@ -12,8 +12,8 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.4.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
-  const PHONE_API = 3;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
+  const VER = "0.5.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const PHONE_API = 4;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
@@ -160,10 +160,10 @@
       case "cardcomp-auto-hello": state(); break;
       case "cardcomp-auto-config": A.setCfg(JSON.stringify({ mode: d.mode, model: d.model })); state(); break;
       case "cardcomp-auto-read": P.readNow("app"); break;
-      case "cardcomp-bid": {   // phase 0: the whole-dollar bid goes to the clipboard; phase 1 fills Whatnot's Custom box
+      case "cardcomp-bid": {   // copied always; with the screen reader on, the app also opens Whatnot's Custom sheet and enters it
         let r = {}; try { r = JSON.parse(A.bid(String(d.amount), String(d.name || "")) || "{}"); } catch (e) { r = { ok: false, why: e.message }; }
-        toApp(Object.assign({ type: "cardcomp-bid-ack" }, r));
-        flashBid(r);
+        if (r.pending) { FLASH = { txt: "…", cond: (typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.cond) || "NM", until: Date.now() + 4000 }; paintBar(); }
+        else P.bidAck(r);
         if (MODE === "list") setTimeout(() => { if (MODE === "list") setMode("card"); }, 900);
         break;
       }
@@ -243,31 +243,26 @@
     // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
     "body.ph-card .searchrow{padding-bottom:0!important}body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
-    "body.ph-list #phonestat,body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
+    "body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
     "#phonecard{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}" +
-    "#phonebar .pc{display:flex;gap:10px;align-items:flex-start;padding:4px 0 2px}" +
-    "#phonebar .pleft{flex:none;width:86px}#phonebar .pleft .ptools{display:flex;gap:6px;margin-top:6px}#phonebar .pleft .pt{flex:1;min-width:0}" +
-    "#phonebar .pimg{width:86px;height:120px;border-radius:6px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
+    "#phonebar .pc{display:flex;gap:8px;align-items:flex-start;padding:3px 0 2px}" +
+    "#phonebar .pimg{flex:none;width:46px;height:64px;border-radius:4px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
     "#phonebar .pimg img{width:100%;height:100%;object-fit:contain;display:block}" +
     "#phonebar .pmain{flex:1;min-width:0}" +
-    "#phonebar .ph{display:flex;align-items:flex-start;gap:6px}" +
-    "#phonebar .pn{flex:1;min-width:0;cursor:pointer}" +
-    "#phonebar .pn b{display:block;font-size:16px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    "#phonebar .pn span{display:block;font-size:12px;color:var(--dim);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    "#phonebar .pn .pp{color:var(--faint);font-size:11px}#phonebar .pn .pp i{font-style:normal;color:var(--gold);margin-left:6px}" +
-    "#phonebar .pstep{flex:none;display:flex;align-items:center;gap:2px}" +
-    "#phonebar .st{border:1px solid var(--line);border-radius:7px;width:30px;height:30px;font-size:18px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
-    "#phonebar .sn{font-size:11px;color:var(--faint);min-width:28px;text-align:center;line-height:1.15}#phonebar .sn i{display:block;font-style:normal;color:var(--gold);font-size:10px;white-space:nowrap}" +
-    "#phonebar .ptab{margin-top:4px}#phonebar .pth{display:flex;font-size:10px;color:var(--faint);padding-bottom:2px;border-bottom:1px solid var(--line)}" +
-    "#phonebar .pth span:nth-child(1){width:34px}#phonebar .pth span:nth-child(2){flex:1;text-align:right;padding-right:10px}#phonebar .pth span:nth-child(3){min-width:58px;text-align:right}" +
-    "#phonebar .pr{display:flex;align-items:center;height:30px;border-bottom:1px solid var(--line)}" +
-    "#phonebar .pc1{width:34px;font-weight:700;font-size:13px}" +
-    "#phonebar .pm{flex:1;text-align:right;font-size:14px;font-variant-numeric:tabular-nums;padding-right:10px}" +
-    "#phonebar .pb{min-width:64px;text-align:center;font-weight:800;font-size:15px;color:var(--gold);border:1.5px solid var(--gold);border-radius:7px;padding:2px 8px;background:rgba(245,179,1,.12);font-variant-numeric:tabular-nums}" +
-    "#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{color:#000;background:var(--green);border-color:var(--green);font-size:12px}" +
-    "#phonebar .pfoot{display:flex;align-items:center;gap:6px;margin-top:4px}#phonebar .pfl{flex:1;font-size:10.5px;color:var(--faint)}" +
-    "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:7px;min-width:36px;height:30px;font-size:14px;display:flex;align-items:center;justify-content:center}" +
-    "body.ph-list #phonebar .pt.tg,body.ph-typing #phonebar .pt.tg{color:var(--gold);border-color:var(--gold)}" +
+    "#phonebar .ph{display:flex;align-items:center;gap:4px;height:30px}" +
+    "#phonebar .pn{flex:1;min-width:0;cursor:pointer;line-height:1.15}" +
+    "#phonebar .pn b{display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .pn span{display:block;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#phonebar .pn i{font-style:normal;color:var(--gold)}" +
+    "#phonebar .st{flex:none;border:1px solid var(--line);border-radius:7px;width:28px;height:28px;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
+    "#phonebar .st.on{color:var(--gold);border-color:var(--gold)}" +
+    "#phonebar .sn{flex:none;font-size:10.5px;color:var(--faint);min-width:24px;text-align:center}" +
+    "#phonebar .pmiss{font-size:11px;color:var(--red);line-height:1.25;margin:1px 0 2px}" +
+    "#phonebar .prow{display:flex;gap:5px;margin-top:4px}" +
+    "#phonebar .pb{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:44px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
+    "#phonebar .pb em{font-style:normal;font-size:10px;font-weight:700}" +
+    "#phonebar .pb b{font-size:16px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
     "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
     "#phonestat{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
@@ -294,7 +289,18 @@
     };
     return wrapEl;
   }
-  const money = (v) => "$" + (v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2));
+  const money = (v) => "$" + (v >= 1000 ? Math.round(v).toLocaleString("en-US") : v >= 100 ? v.toFixed(0) : v.toFixed(2));
+  // The number typed or read is not this card's: the card is likely not in the catalog (under $1.50, or not on
+  // TCGplayer), and what is shown is only the closest by name. Said plainly instead of pricing a wrong card silently.
+  const dePad = (x) => String(x || "").toLowerCase().replace(/^([a-z]*)0+(\d)/, "$1$2");
+  function notExact(r) {
+    const q = ($("#q") && $("#q").value || "").trim(); if (!q) return "";
+    const nums = q.split(/\s+/).map((t) => t.split("/")[0]).filter((t) => /\d/.test(t) && /^[a-z]{0,6}\d{1,4}[a-z]?$/i.test(t) && !/^(19|20)\d\d$/.test(t));
+    if (!nums.length) return "";
+    const mine = dePad(r.num);
+    if (nums.some((t) => dePad(t) === mine)) return "";
+    return `no card #${nums[0].toUpperCase()} in the catalog (likely under $1.50 or not on TCGplayer): closest by name`;
+  }
   const cands = () => Array.from(document.querySelectorAll("#results .card")).slice(0, 16);
   function focusCard() {
     const list = cands();
@@ -313,14 +319,14 @@
   function paintBar() {
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phonebar");
-    const tools = `<span class="pt" data-t="search" title="search">&#128269;</span><span class="pt tg" data-t="toggle" title="results and the full condition grid">${MODE === "card" ? "&#9662;" : "&#9652;"}</span>`;
+    const tools = `<span class="st" data-t="search" title="search">&#128269;</span>` + (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "");
     const card = focusCard(), id = card && card.dataset.id, r = id && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === id) : null;
     if (!r) {
       const html = `<div class="pe"><div><b>No card yet</b><span>Tap the gold <b>read</b> bubble when a card is on screen, or search.</span></div><div class="ptools">${tools}</div></div>`;
       if (el.innerHTML !== html) { el.innerHTML = html; wire(el, null); }
       paintStat(); sizeSoon(); return;
     }
-    if (MODE === "card" || !card.classList.contains("open")) ensureOpen(card);
+    if (MODE === "card") ensureOpen(card);   // only in the compact view: opening a card blurs the search box
     const list = cands(), i = list.indexOf(card), n = list.length;
     const grid = card.querySelector(".condgrid");
     const btns = grid ? Array.from(grid.querySelectorAll(".bd.cpy[data-cond]")) : [];
@@ -337,17 +343,20 @@
     const img = typeof imgOf === "function" ? imgOf(r) : "";
     const col = (c) => (typeof COND_COLORS !== "undefined" && COND_COLORS[c]) || "var(--ink)";
     const flash = (c) => FLASH && FLASH.until > Date.now() && FLASH.cond === c ? FLASH.txt : null;
+    const miss = notExact(r);
     const html =
       `<div class="pc">` +
-        `<div class="pleft"><div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="ptools">${tools}</div></div>` +
+        `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
-          `<div class="ph"><div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}</span></div>` +
-            (n > 1 && i >= 0 ? `<div class="pstep"><span class="st" data-t="prev">&#8249;</span><span class="sn">${tag ? `<i>${esc(tag)}</i>` : ""}${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span></div>`
-              : tag ? `<div class="pstep"><span class="sn"><i>${esc(tag)}</i></span></div>` : "") +
+          `<div class="ph"><div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}${tag ? ` · <i>${esc(tag)}</i>` : ""}</span></div>` +
+            (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
+            `<span class="st" data-t="search" title="search">&#128269;</span>` +
+            (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "") +
           `</div>` +
-          `<div class="ptab"><div class="pth"><span>cond</span><span>price</span><span>max bid · tap copies</span></div>` + rows.map((x) =>
-            `<div class="pr"><span class="pc1" style="color:${col(x.c)}">${x.c}</span><span class="pm">${x.mkt > 0 ? money(x.mkt) : "–"}</span>` +
-            `<span class="pb${x.b ? "" : " wait"}${flash(x.c) ? " fl" : ""}" data-t="bid" data-c="${x.c}">${esc(flash(x.c) || x.bid)}</span></div>`).join("") +
+          (miss ? `<div class="pmiss">${esc(miss)}</div>` : "") +
+          `<div class="prow${miss ? " dim" : ""}">` + rows.map((x) =>
+            `<span class="pb${x.b ? "" : " wait"}${flash(x.c) ? " fl" : ""}" data-t="bid" data-c="${x.c}"><em style="color:${col(x.c)}">${x.c}</em>` +
+            `<b>${esc(flash(x.c) || x.bid)}</b><small>${x.mkt > 0 ? money(x.mkt) : "–"}</small></span>`).join("") +
           `</div>` +
         `</div>` +
       `</div>`;
@@ -356,7 +365,7 @@
   }
   function wire(el, card) {
     const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(x); }; });
-    on("open", () => { OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
+    on("open", () => { if (MODE !== "card") { setMode("card"); return; } OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
     on("bid", (x) => {
       touched();
       const b = card && card.querySelector(`.condgrid .bd.cpy[data-cond="${x.dataset.c}"]`);
@@ -374,12 +383,18 @@
     const st = w.querySelector("#phonestat"), am = $("#automsg");
     let t = am ? am.textContent.replace(/\s+/g, " ").trim() : "";
     t = t.replace(/^read now: /, "").replace(/^press read.*$/, "").replace(/^waiting for the next lot$/, "");
+    const b00 = am && am.querySelector(".bad");
+    // the small card shows only what needs attention: a read in progress, no card seen, or an error; the full view shows all of it
+    if (MODE === "card" && !/^(reading|no card)/i.test(t) && !(b00 && b00.textContent.trim() === (am.textContent || "").trim())) t = "";
     const b0 = am && am.querySelector(".bad"), bad = b0 && b0.textContent.trim() === am.textContent.trim();   // red only when the whole line is an error
     const html = t ? (bad ? `<span class="bad">${esc(t)}</span>` : esc(t)) + (P.lastFrame ? ' · <a class="fr" href="#">frame</a>' : "") : "";
     if (st.innerHTML !== html) st.innerHTML = html;   // only on change: this runs from a body observer
   }
+  // the Custom sheet result from the app: {ok} entered (Derek presses Submit), {why:"under", min}, {why:"sold"}, or why it could not
+  P.bidAck = function (r) { r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r); };
   function flashBid(r) {
-    const txt = r && r.ok ? "Whatnot ✓" : r && r.why === "under" && r.min ? "under $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";
+    const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";
+    if (r && !r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) log("custom fill: " + r.why);
     FLASH = { txt, cond: (typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.cond) || "NM", until: Date.now() + 2500 }; paintBar(); setTimeout(paintBar, 2600);
   }
   let barTimer = 0;

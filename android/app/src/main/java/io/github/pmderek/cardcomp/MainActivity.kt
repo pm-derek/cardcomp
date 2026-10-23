@@ -96,6 +96,13 @@ class MainActivity : Activity() {
         button("Save keys and test the API key") { saveKeys(); testKey() }
         keyNote = text("", 12f)
 
+        head("Bidding")
+        col.addView(android.widget.CheckBox(this).apply {
+            text = "A bid tap opens Whatnot's Custom bid and enters the amount (needs the screen reader). You press Submit."
+            isChecked = prefs.fillBid; setOnCheckedChangeListener { _, v -> prefs.fillBid = v }
+        })
+        text("Off, or without the screen reader: the bid is copied, paste it in Custom yourself.", 12f)
+
         head("Model that reads the card")
         val models = listOf("haiku" to "Haiku (fastest, cheapest, weakest)", "sonnet" to "Sonnet (what desktop uses)", "opus" to "Opus (slowest, priciest)")
         val group = RadioGroup(this)

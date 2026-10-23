@@ -152,22 +152,24 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(/\$\d/.test(r2.bid), "strip line has the bid: " + r2.bid.trim() + " · " + r2.bar.replace(/\s+/g, " ").trim().slice(0, 80));
   c = await calls();
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card"), "after the read: compact card, panel shown");
-  ok(/charizard/i.test(r2.stat) && /frame/.test(r2.stat), "status line says what was read, with the frame link: " + r2.stat.trim().slice(0, 90));
+  ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
-  ok(h2 > 120 && h2 < 225, "compact card with a result: picture + 4 condition rows, " + h2 + " css px");
-  const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pr")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
-  ok(rows.length === 4 && rows.every((t) => /^(NM|LP|MP|HP) ?\$[\d,.]+ ?\$\d+$/.test(t)), "condition rows mirror the grid: " + rows.join(" | "));
+  ok(h2 > 60 && h2 < 120, "compact card with a result: thumbnail + 4 condition buttons, " + h2 + " css px");
+  const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => ({ c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: r.querySelector("small").textContent.trim() })));
+  ok(rows.length === 4 && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition buttons mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (${x.px})`).join(" | "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.textContent.trim() : ""; });
-  ok(gridNM && rows[0].endsWith("$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, "")))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
+  ok(gridNM && rows[0].bid === "$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, ""))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
   // step through the candidates
   const step = await page.evaluate(() => { const a = document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent; document.querySelector('#phonebar [data-t="next"]').click(); return new Promise((r) => setTimeout(() => r([a, document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent, (document.querySelector("#phonebar .sn") || {}).textContent]), 50)); });
   ok(step[0] !== step[1] && step[2] === "2/" + r2.n, `› steps to the next candidate: ${step[1]} (${step[2]})`);
   await page.evaluate(() => document.querySelector('#phonebar [data-t="prev"]').click());
-  // list mode
-  await page.evaluate(() => document.querySelector('#phonebar [data-t="toggle"]').click());
+  // list mode: tap the name
+  await page.evaluate(() => document.querySelector('#phonebar .pn').click());
   const lm = await page.evaluate(() => ({ list: document.body.classList.contains("ph-list"), res: getComputedStyle(document.querySelector("#results")).display !== "none", q: getComputedStyle(document.querySelector("#q")).display !== "none" }));
-  ok(lm.list && lm.res && lm.q, "▾ opens the list: search box and results shown");
+  ok(lm.list && lm.res && lm.q, "tapping the name opens the full view: search box and results shown");
+  const st2 = await page.evaluate(() => (document.querySelector("#phonestat") || {}).textContent || "");
+  ok(/charizard/i.test(st2) && /frame/.test(st2), "full view says what was read, with the frame link: " + st2.trim().slice(0, 80));
   const h3 = await fit(560);
   ok(h3 > h2 + 200, "list asks for a tall panel (native caps it): " + h3 + " css px");
   await page.screenshot({ path: path.join(OUT, "phone-list.png") });
@@ -195,7 +197,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(300);
   const lpBid = (await calls()).slice(b3).find((x) => x.n === "bid");
   const lpTap = await page.evaluate(() => LAST_TAP && LAST_TAP.cond);
-  ok(lpBid && lpTap === "LP" && rows[1].endsWith("$" + lpBid.a[0]), `LP bid button sends the grid's LP bid, labelled LP: $${lpBid && lpBid.a[0]} (${lpTap})`);
+  ok(lpBid && lpTap === "LP" && rows[1].bid === "$" + lpBid.a[0], `LP bid button sends the grid's LP bid, labelled LP: $${lpBid && lpBid.a[0]} (${lpTap})`);
   await page.waitForTimeout(2700);
 
   console.log("3b. picture match, clipboard, long press");
@@ -213,8 +215,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok((await calls()).filter((x) => x.n === "grab").length === readsBefore, "a long press (contextmenu) does not read");
   const sel = await page.evaluate(() => Array.from(document.querySelectorAll("select")).filter((x) => getComputedStyle(x).display !== "none").length);
   ok(sel === 0, "no visible <select> (an overlay WebView crashes on dropdowns)");
-  await page.evaluate(() => document.querySelector('#phonebar [data-t="toggle"]').click());   // back to compact after looking
-  await page.evaluate(() => document.querySelector('#phonebar [data-t="toggle"]').click());
+
 
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
@@ -235,6 +236,23 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const b4c = (await calls()).length;
   await page.evaluate(() => document.querySelector("#phonebar").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   ok(!(await calls()).slice(b4c).some((x) => x.n === "focus" && x.a[0] === true), "touch-down elsewhere does not");
+
+  // typing a whole query: focus stays in the box, the text arrives whole, nothing is opened under the finger
+  await page.evaluate(() => { const q = document.querySelector("#q"); q.value = ""; });
+  await page.click('#phonebar [data-t="search"]');
+  await page.keyboard.type("reshiram charizard sm247", { delay: 60 });
+  await page.waitForTimeout(500);
+  const ty = await page.evaluate(() => ({ v: document.querySelector("#q").value, f: document.activeElement && document.activeElement.id, top: (document.querySelector("#results .card .nm") || {}).textContent || "", open: document.querySelectorAll("#results .card.open").length }));
+  ok(ty.v === "reshiram charizard sm247" && ty.f === "q", `typing keeps focus and every letter: "${ty.v}" (focus ${ty.f})`);
+  ok(/SM247/.test(ty.top) && ty.open === 0, `top result ${ty.top.trim()}, no card opened while typing`);
+  // a number that is not in the catalog: said plainly
+  await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "charizard sm999"; q.dispatchEvent(new Event("input", { bubbles: true })); q.blur(); });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => window.__phone.setMode("card"));
+  await page.waitForTimeout(300);
+  const miss = await page.evaluate(() => (document.querySelector("#phonebar .pmiss") || {}).textContent || "");
+  ok(/no card #SM999/.test(miss), "no exact match is said plainly: " + miss);
+  await page.screenshot({ path: path.join(OUT, "phone-card-miss.png") });
 
   console.log("5. links");
   const b5 = (await calls()).length;
