@@ -8,7 +8,9 @@ const hasWn = () => { if (WIN != null) chrome.tabs.query({ windowId: WIN, url: W
 chrome.windows.getCurrent((w) => { WIN = w ? w.id : null; hasWn(); });
 chrome.tabs.onCreated.addListener(hasWn); chrome.tabs.onRemoved.addListener(hasWn); chrome.tabs.onAttached.addListener(hasWn); chrome.tabs.onDetached.addListener(hasWn);
 chrome.tabs.onUpdated.addListener((id, ch) => { if (ch.url || ch.status === "complete") hasWn(); });
-const mine = (msg) => msg.win == null || WIN == null || msg.win === WIN || (!HAS_WN && msg.primary);
+// A content script's runtime message reaches every extension page, this panel included, untagged (Derek, 2026-10-23:
+// the other window's lot showed here). Only the background's relay (toApps, tagged with win) counts: drop direct copies.
+const mine = (msg, sender) => !(sender && sender.tab) && (msg.win == null || WIN == null || msg.win === WIN || (!HAS_WN && msg.primary));
 const send = (d, cb) => chrome.runtime.sendMessage(Object.assign({}, d, WIN != null ? { win: WIN } : {}), cb || (() => chrome.runtime.lastError));
 window.addEventListener("message", (e) => {
   const d = e.data;
@@ -34,5 +36,5 @@ window.addEventListener("message", (e) => {
 });
 
 cc.addEventListener("load", () => cc.contentWindow.postMessage({ type: "cardcomp-ext-ready" }, "*"));
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type) && mine(msg)) cc.contentWindow.postMessage(msg, "*"); });
-chrome.runtime.onMessage.addListener((msg) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type) && mine(msg)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app
+chrome.runtime.onMessage.addListener((msg, sender) => { if (msg && /^cardcomp-(tcg-price|lot|lot-end)$/.test(msg.type) && mine(msg, sender)) cc.contentWindow.postMessage(msg, "*"); });
+chrome.runtime.onMessage.addListener((msg, sender) => { if (msg && /^cardcomp-auto(-state|-adopt|-watch|-readack)?$/.test(msg.type) && mine(msg, sender)) cc.contentWindow.postMessage(msg, "*"); });   // RECOG extension -> app

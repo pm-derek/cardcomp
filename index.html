@@ -109,6 +109,11 @@
   #pickbar b{color:var(--ink)} #pickbar button{background:none;border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:5px 10px;cursor:pointer;margin-left:6px}
   .pickrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:9px 10px;border:1px dashed var(--gold);border-radius:9px;font-size:12.5px;color:var(--dim)}
   .pickrow b{color:var(--ink)} .pickrow button{background:rgba(245,179,1,.14);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-weight:700;font-size:13px;min-width:48px;padding:9px 10px;cursor:pointer}
+  #lotstats tr.lsact td{padding:2px 4px 9px;white-space:normal}
+  #lotstats tr.lsact button{margin:3px 6px 0 0}
+  #lotstats .lscond{display:inline-flex;margin-right:6px}
+  #lotstats .lscb{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);font:inherit;font-size:12px;padding:5px 8px;cursor:pointer;margin:3px 3px 0 0 !important}
+  #lotstats .lscb.on{border-color:var(--gold);color:var(--gold)}
   #lotstats .lsdelb{background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:7px;color:var(--ink);font:inherit;font-size:12px;padding:5px 9px;cursor:pointer;white-space:nowrap}
   #lotstats .lsyou{color:var(--ink);background:rgba(51,168,118,.25);border-radius:5px;padding:1px 6px}
   #lotstats .lsclear{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -138,6 +143,8 @@
   .condgrid .bd.cpy:hover{background:rgba(255,255,255,.09)}
   .condgrid .bd.cpy:active{transform:scale(.97)}
   .condgrid .mg{font-weight:600;text-align:right}
+  .condgrid .cdet{grid-column:1/-1;margin:-6px 0 3px;font-size:10.5px;line-height:1.35;color:var(--faint)}
+  .condgrid .cdet.warn{color:#e8a33d}
   @media (max-width:440px){ .card img,.card.open > .row img,#results.grid .card.open img{width:44px;height:62px} }   /* phone: names keep their width; tap the picture for full size */
   @media (max-width:440px){   /* phone: drop the % column so the bid button keeps its width */
     .condgrid{grid-template-columns:auto auto minmax(80px,1fr) auto auto;gap:7px 7px}
@@ -1849,7 +1856,7 @@ window.addEventListener("message", e=>{
   }
   const parts=[];
   for(const c of CONDS){ const o=(d.conds||{})[c]; if(!o) continue;
-    if(o.market>0||o.low>0) applyLive(Object.assign({pid:q.pid, printing:q.printing, cond:c, fast:true}, o));
+    if(o.market>0||o.low>0) applyLive(Object.assign({pid:q.pid, printing:q.printing, cond:c, fast:true, salesSeen:d.salesSeen}, o));
     parts.push(`${c} ${o.market>0?"$"+o.market.toFixed(2):"no market"}`); }
   const t=(d.conds||{})[q.cond]||{}, ls=t.sales&&t.sales[0];
   const dt=ms=>new Date(ms).toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -2168,6 +2175,7 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .note li{padding:7px 0;border-bottom:1px solid var(--line);line-height:1.45}
   #dash .note li b{color:var(--ink)}
   #dash .pos{color:var(--green)} #dash .neg{color:var(--red)} #dash .mut{color:var(--faint)}
+  #dash .dcond{background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--dim);font:inherit;font-size:12px;padding:2px 4px;margin-left:2px;cursor:pointer}
   #dash .dclr{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:8px 10px;cursor:pointer}
   #dash .dadd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
   #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
@@ -2295,7 +2303,7 @@ function paintDash(){
     <h3>By day</h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
     ${S.wins.length?`<h3>Your wins<span>${S.unl?S.unl+" without a card · ":""}change or clear a card that is wrong</span></h3>${S.wins.slice().sort((a,b)=>b.at-a.at).slice(0, DASH.allWins?1e9:30).map(r=>{ const has=r.m>0||!!r.n;
-      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f} · ${has?escH(r.n||"?")+` <span class="mut">${escH(r.c||"")}${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
+      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f} · ${has?escH(r.n||"?")+` ${lotCondOK(r)?`<select class="dcond" data-k="${escH(r.k||"")}" title="change the condition">${(CONDS.includes(r.c)?[]:[""]).concat(CONDS).map(c=>`<option${c===r.c?" selected":""}>${c}</option>`).join("")}</select>`:`<span class="mut">${escH(r.c||"")}</span>`}<span class="mut">${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
     ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
     <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
   </div>`;
@@ -2382,6 +2390,7 @@ function dashWire(el){
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
   const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
+  el.querySelectorAll(".dcond").forEach(sl=>sl.onchange=()=>{ const r=loadLots().find(x=>x.k===sl.dataset.k); if(r && sl.value) setLotCond(r, sl.value); });
   el.querySelectorAll(".dclr").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r && confirm(`Remove ${r.n||"the card"} from your $${r.f} win?`)) clearLotCard(r); });
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
@@ -2455,13 +2464,15 @@ let LOT_PICK=null;   // stats table: the row tapped to show its ✕ (one-off rem
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null, pick=LOT_PICK!=null && LOT_PICK===r.at;
-    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td><td class="lsdel">${pick?`${r.me && !r.n?`<button class="lsaddb" title="search the card you won and tap its condition">+ card</button> `:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button>`:""}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${n==null?"var(--dim)":n>=0?"var(--green)":"var(--red)"}">${n==null?"–":(n>=0?"+":"−")+"$"+Math.abs(n).toFixed(2)}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button><button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
 }
 function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
   el.querySelectorAll(".lstab tbody tr").forEach(tr=>tr.onclick=(e)=>{
     e.stopPropagation(); const at=+tr.dataset.at;
     if(e.target.closest(".lsdelb")){ removeLot(at); return; }
     if(e.target.closest(".lsaddb")){ const r=loadLots().find(x=>x.at===at); if(r) pickFor(r, "stats"); return; }
+    const cb=e.target.closest(".lscb"); if(cb){ const r=loadLots().find(x=>x.at===at); if(r) setLotCond(r, cb.dataset.cond); return; }
+    if(tr.classList.contains("lsact")) return;
     LOT_PICK = LOT_PICK===at ? null : at; paintLotStats();
   });
 }
@@ -2471,7 +2482,7 @@ function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that on
 let PICK=null, PICK_MSG="", PICK_MSG_T=null;
 function pickFor(r, from){
   const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
-  PICK={ k:r.k, s:r.s, at:at||r.at, startedAt:st===""||st==null?null:+st, f:r.f, from, was:r.n||"" };
+  PICK={ k:r.k, s:r.s, at:at||r.at, startedAt:st===""||st==null?null:+st, f:r.f, from, was:r.n||"", what:r.me?"win":"lot", whose:r.me?"your":"the" };
   PICK_MSG=""; if(DASH.on) dashOpen(false); LOTSTATS_OPEN=false; paintLot(); paintLotStats();
   document.querySelectorAll("#results .card.open .detail").forEach(det=>{ const c=CARDS.find(x=>x.id===det.closest(".card").dataset.id); if(c && !det.querySelector(".pickrow")) addPickRow(det, c); });
   paintPick(); const q=$("#q"); if(q){ q.focus(); q.select(); }
@@ -2483,14 +2494,14 @@ function paintPick(){
   el.style.display="block";
   if(PICK){
     const when=new Date(PICK.at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
-    el.innerHTML=`<b>${PICK.was?`Changing the card on your $${PICK.f} win (now ${escH(PICK.was)})`:`Adding the card to your $${PICK.f} win`}</b> (${escH(PICK.s)}, ${when}). Search it, open it, tap its condition.<button class="pickx">cancel</button>`;
+    el.innerHTML=`<b>${PICK.was?`Changing the card on ${PICK.whose} $${PICK.f} ${PICK.what} (now ${escH(PICK.was)})`:`Adding the card to ${PICK.whose} $${PICK.f} ${PICK.what}`}</b> (${escH(PICK.s)}, ${when}). Search it, open it, tap its condition.<button class="pickx">cancel</button>`;
     el.querySelector(".pickx").onclick=()=>{ PICK=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove()); paintPick(); };
   } else el.innerHTML=PICK_MSG;
 }
 function addPickRow(host, card){
   if(!PICK || !card || host.querySelector(".pickrow")) return;
   const conds=card.sealed?["sealed"]:CONDS, row=document.createElement("div"); row.className="pickrow";
-  row.innerHTML=`<span>use for your <b>$${PICK.f}</b> win, at the printing picked below:</span>`+conds.map(c=>`<button data-pc="${c}">${c==="sealed"?"this one":c}</button>`).join("");
+  row.innerHTML=`<span>use for ${PICK.whose} <b>$${PICK.f}</b> ${PICK.what}, at the printing picked below:</span>`+conds.map(c=>`<button data-pc="${c}">${c==="sealed"?"this one":c}</button>`).join("");
   row.querySelectorAll("button").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const pk=host.querySelector(".pchip.on"); assignPick(card, b.dataset.pc, pk?pk.dataset.k:topPrint(card)); });
   host.prepend(row);
 }
@@ -2504,13 +2515,31 @@ function assignPick(card, cond, k){
   }catch(_){ }
   PICK=null; BUYERS=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
   const net=condM>0?netProceeds(listSale(condM))-P.f:null;
-  PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to your $${P.f} win${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
+  PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to ${P.whose} $${P.f} ${P.what}${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
   if(WN_EXT && P.startedAt!=null) extPost({type:"cardcomp-log-edit", key:{seller:P.s, startedAt:P.startedAt, at:P.at}, card:snap});
   clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
   paintPick();
   try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
   paintLot();
   if(P.from==="dash") dashOpen(true); else if(P.from==="stats"){ LOTSTATS_OPEN=true; paintLotStats(); }
+}
+// Change the condition of a logged lot (Derek, 2026-10-23). The condition market moves by the tier ratio from the
+// price it had when the lot sold (a verified LP read stays the base), else today's catalog price. The log row keeps
+// everything else on the card (max bid, tap time); only cond / condMarket change.
+function lotCondOK(r){ const c=r && r.id && BY_ID.get(r.id); return !!(c && !c.sealed); }
+function setLotCond(r, cond){
+  const card=BY_ID.get(r.id); if(!card || !CONDS.includes(cond) || cond===r.c) return;
+  const v=card.px && (card.px[r.pr] || card.px[topPrint(card)]), nm=v?((v.m!=null?v.m:v.l)||0):0;
+  const m=CONDS.includes(r.c) && r.m>0 ? r.m*condMult(cond, card.y, nm)/condMult(r.c, card.y, nm) : nm*condMult(cond, card.y, nm);
+  const was=r.c;
+  BUYERS=null;
+  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { c:cond, m:+m.toFixed(2), np:m>0?+netProceeds(listSale(m)).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+  const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
+  const net=m>0?netProceeds(listSale(m))-r.f:null;
+  PICK_MSG=`<b>${escH(r.n||"Card")} ${escH(was||"?")} → ${cond}</b> on ${r.me?"your $"+r.f+" win":"the $"+r.f+" lot"} · market $${m.toFixed(2)}${r.me&&net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
+  if(WN_EXT && st!=="" && st!=null) extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, patch:{cond, condMarket:+m.toFixed(2), condFixedAt:Date.now()}});
+  clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
+  paintPick(); try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ } paintLot(); if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats();
 }
 function clearLotCard(r){   // a card added to the wrong win: back to "no card", here and in the log
   BUYERS=null;
@@ -2523,6 +2552,7 @@ function clearLotCard(r){   // a card added to the wrong win: back to "no card",
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-edit-ack" || !lotFromExt(e)) return;
+  if(!d.ok && d.why==="bad request") d.why="reload the extension (0.8.1 or newer)";   // 0.8.0 and older cannot change only the condition
   const st=document.querySelector("#pickbar .pickst"); if(st) st.textContent=d.ok?"· saved to your log ✓":"· not saved to the log: "+(d.why||"error");
   if(PICK_MSG) PICK_MSG=PICK_MSG.replace(/<span class="pickst">.*?<\/span>/, `<span class="pickst">${d.ok?"· saved to your log ✓":"· not saved to the log: "+escH(d.why||"error")}</span>`);
 });
@@ -2649,9 +2679,10 @@ function liveFor(pid, cond, nm, k){   // -> {price, days, src, m, nm} or null; s
   const lk=liveKey(pid, k, cond), e=LIVE[lk]||LIVE_STORE[lk]; if(!e || !(e.at>0)) return null;
   const days=(Date.now()-e.at)/86400000; if(days>LIVE_MAX_DAYS) return null;
   const price=(nm>0 && e.r>0) ? nm*e.r : e.m; if(!(price>0)) return null;
-  return {price, days, src:e.src, m:e.m, nm:e.nm, ls:e.ls, lc:e.lc, lo:e.lo};
+  return {price, days, src:e.src, m:e.m, nm:e.nm, ls:e.ls, lc:e.lc, lo:e.lo, n:e.n, sv:e.sv};
 }
 function liveAge(days){ return days<1 ? "today" : Math.round(days)+"d"; }
+const liveAgo=(days)=>days<1 ? "today" : Math.round(days)+"d ago";
 function liveTag(r){   // collapsed row: this card has a verified condition price (freshest age); tag line, never the bid column
   if(!r || !r.px) return "";
   let best=null;
@@ -2687,11 +2718,50 @@ function applyLive(d){
   else if(FAST_AT[key] && Date.now()-FAST_AT[key]<120000) return;   // the page caught up after the fast read: keep the fast one
   if(!d.fast) liveNote(d.market>0 ? `${d.cond} verified on TCGplayer: $${price.toFixed(2)} market` : `${d.cond}: no market price on TCGplayer, lowest listing $${price.toFixed(2)}. The bid uses the lower of that and the estimate`);
   const rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
-  if(d.fast){ const s0=d.sales&&d.sales[0]; if(s0) rec.ls={p:s0.p, at:s0.at}; if(d.salesN) rec.n=d.salesN; if(d.listed!=null) rec.lc=d.listed; if(d.low>0) rec.lo=d.low; }   // last sale, sales seen, listed, cheapest listing
+  if(d.fast){ const s0=d.sales&&d.sales[0]; if(s0) rec.ls={p:s0.p, at:s0.at}; if(d.salesN) rec.n=d.salesN; if(d.listed!=null) rec.lc=d.listed; if(d.low>0) rec.lo=d.low; if(d.salesSeen>0) rec.sv=d.salesSeen; }   // last sale, its condition's sales seen, listed, cheapest listing, all sales seen
   LIVE[key]=rec;
   const msg={type:"cardcomp-live-save", key, rec};   // the extension writes it to the live branch (desktop only; silent without a token)
   extPost(msg);
   if(LIVE_REDRAW) LIVE_REDRAW();
+}
+// Stale condition market (Derek, 2026-10-23, Slugma Deoxys RH: "NM sold 100-200, LP market very low, lowest LP listed
+// very high; LP should relate to NM"). TCGplayer's market price for a thin condition can rest on one old sale. When the
+// fast read saw no sale of that condition among the printing's last sales (or the last is 90+ days old) and the market
+// is 35%+ away from the NM-based estimate, price it from NM, capped at the cheapest listing of that condition.
+// Page reads and older store entries carry no sales (sv), so they are trusted as before.
+function staleMarket(lv, est){
+  if(!lv || lv.src==="low" || !(lv.sv>0) || !(est>0)) return null;
+  const old=lv.ls && lv.ls.at>0 ? Date.now()-lv.ls.at>90*86400000 : true;
+  if(lv.n>0 && !old) return null;
+  if(Math.abs(lv.price/est-1)<=0.35) return null;
+  const capped=lv.lo>0 && lv.lo<est;
+  const why=lv.n>0 && lv.ls ? `since ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}` : `in the last ${lv.sv} sales`;
+  return { price:capped?lv.lo:est, est, capped, why };
+}
+// The line under each condition row (Derek, 2026-10-23: "show market, lowest listed, and our estimate, in case of wild
+// fluctuations or spreads"): what TCGplayer says (market, cheapest listing, last sale) and how the est. was reached.
+// Amber with ⚠ when the est. is 25%+ away from TCGplayer's market or listings sit 2x+ away from it.
+function condDetail(o){
+  const {cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low}=o, P=v=>"$"+v.toFixed(2), sh=base>0?Math.round(tierP/base*100)+"%":"";
+  const tm=lv&&lv.src!=="low" ? lv.m : (cond==="NM" && !lv ? base : 0);
+  const lo=lv ? (lv.src==="low" ? lv.m : lv.lo||0) : 0;
+  const parts=[];
+  if(tm>0) parts.push(`TCG ${P(tm)}${lv&&lv.days>=1?` (${liveAge(lv.days)})`:""}`); else if(lv) parts.push(`no TCG ${cond} market`);
+  if(lo>0) parts.push(`listed ${P(lo)}${lv&&lv.lc>1?` (${lv.lc})`:""}`); else if(lv && lv.lc===0) parts.push("none listed");
+  else if(!lv && cond==="NM" && low>0) parts.push(`listed ${P(low)} any cond.`);
+  if(lv && lv.ls && lv.ls.at>0) parts.push(`sold ${P(lv.ls.p)} ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`);
+  else if(lv && lv.sv>0) parts.push(`no ${cond} sale in last ${lv.sv}`);
+  let how;
+  if(stale) how=stale.capped ? "est. = cheapest listed" : `est. NM×${sh}`;
+  else if(cap) how=`est. capped at ${cap.cond}`;
+  else if(lv && lv.src==="low") how=atc>=lo-0.005 ? `est. = listing, under NM×${sh}` : `est. NM×${sh}${dv?` ×${dv.k.toFixed(2)} (${dv.cond})`:""}, under listing`;
+  else if(lv) how="est. = TCG";
+  else if(dv) how=`est. NM×${sh} ×${dv.k.toFixed(2)} (${dv.cond})`;
+  else how=cond==="NM" ? "est. = TCG" : `est. NM×${sh}`;
+  if(atc<pre-0.005 && !cap) how+=`, capped at ${aboveC}`;
+  parts.push(how);
+  const warn=(tm>0 && Math.abs(atc/tm-1)>0.25) || (tm>0 && lo>0 && (lo/tm>2 || lo/tm<0.5));
+  return `<span class="cdet${warn?" warn":""}">${warn?"⚠ ":""}${parts.join(" · ")}</span>`;
 }
 function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
@@ -2699,25 +2769,29 @@ function condGridHTML(prices, key, mf, year, pid, card){
   // Cascade (Derek, 2026-10-20: "if I update LP, MP and below should change intuitively"): a verified condition sets
   // a factor vs its usual share of NM, and the unverified conditions below it move by the same factor ("≈ from LP").
   // An unverified condition is never priced above the one above it; verified prices are shown as read.
-  let anchor=null, prevP=Infinity;
+  // A verified price above the condition above it is capped too (Charizard 30th CC: MP market $153.92 over LP $145.60,
+  // so MP bid more than LP): a thin or stale market for the worse condition never buys it for more ("≤LP" tag).
+  let anchor=null, prevP=Infinity, prevC="";
   const rows=CONDS.map(cond=>{
     const lv=liveFor(pid, cond, base, key), tierP=base*condMult(cond, year, base);
-    let atc, dv=null;
+    let atc, dv=null, cap=null, stale=null;
     // A lowest listing is an asking price, not a sale (Pikachu EX XY174: LP listed $29, LP market $18.53): it caps the
     // estimate and never raises it, and only market reads set the cascade for the conditions below.
     if(lv && lv.src==="low"){ const est=anchor&&tierP>0 ? tierP*anchor.k : tierP; atc=est>0 ? Math.min(est, lv.price) : lv.price; if(anchor && est<lv.price) dv=anchor; }
-    else if(lv){ atc=lv.price; if(tierP>0) anchor={cond, k:lv.price/tierP, pct:base>0?lv.price/base:0, usual:base>0?tierP/base:0}; }
+    else if(lv && (stale=staleMarket(lv, anchor&&tierP>0 ? tierP*anchor.k : tierP))){ atc=stale.price; }
+    else if(lv){ atc=lv.price; if(atc>prevP){ cap={cond:prevC, read:atc}; atc=prevP; } if(tierP>0) anchor={cond, k:atc/tierP, pct:base>0?atc/base:0, usual:base>0?tierP/base:0}; }
     else if(anchor && tierP>0){ atc=tierP*anchor.k; dv=anchor; }
     else atc=tierP;
-    if(!lv && atc>prevP) atc=prevP;
-    prevP=atc;
+    const pre=atc, aboveC=prevC;
+    if(atc>prevP) atc=prevP;
+    prevP=atc; prevC=cond;
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAge(lv.days)} ago, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAge(lv.days)} ago: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&lv.days<=7?'var(--gold)':'inherit'}">${dv?"≈":""}$${atc.toFixed(2)}${lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${stale?`${cond} market $${lv.m.toFixed(2)} has no ${cond} sale behind it ${stale.why}, so it is priced from NM: ${cond} usually sells at ${base>0?Math.round(stale.est/base*100):"?"}% of NM = $${stale.est.toFixed(2)}${stale.capped?`, capped at the cheapest ${cond} listed ($${lv.lo.toFixed(2)})`:""}${lv.lc!=null?`. ${lv.lc} listed`:""}`:cap?`${cond} market on TCGplayer is $${cap.read.toFixed(2)}, above ${cap.cond} at $${atc.toFixed(2)} (thin or stale ${cond} sales), so ${cond} is priced at ${cap.cond}. Verified ${liveAgo(lv.days)}`:lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAgo(lv.days)}, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAgo(lv.days)}: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&!cap&&!stale&&lv.days<=7?'var(--gold)':'inherit'}">${dv||stale?"≈":""}$${atc.toFixed(2)}${stale?`<sup style="color:var(--faint);font-size:8px"> ${stale.capped?"listed":"NM"}</sup>`:cap?`<sup style="color:var(--faint);font-size:8px"> ≤${cap.cond}</sup>`:lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>${condDetail({cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low:pr&&pr.low})}`;
   }).join("");
-  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
+  return `<span class="c h">cond</span><span class="mk h" title="the price bids use: TCGplayer's market when it holds up, else our estimate (the line under each row says which)">est.</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
 async function loadPrices(card, host){
   const e = card && card.px;

@@ -101,11 +101,13 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
 }
 // Put a card on a logged lot after the fact (Derek, 2026-10-20: wins where no card was registered). key = {seller,
 // startedAt, at}. A lot sits in the day file of the UTC day it was flushed, so look at its day and the next.
-async function editLog(key, card, clear) {
-  const k = lotKey(key); if (!k || (!card && !clear)) return { ok: false, why: "bad request" };   // clear: card removed (it was put on the wrong win)
+// patch: change only some fields of the card already there (condition change, 2026-10-23), keeping max bid, tap time.
+async function editLog(key, card, clear, patch) {
+  const k = lotKey(key); if (!k || (!card && !clear && !patch)) return { ok: false, why: "bad request" };   // clear: card removed (it was put on the wrong win)
   if (clear) card = null;
+  const next = (old) => patch ? (old ? Object.assign({}, old, patch) : old) : card;
   let hit = false;
-  pendingLog.forEach((r) => { if (lotKey(r) === k) { r.card = card; hit = true; } });
+  pendingLog.forEach((r) => { if (lotKey(r) === k) { r.card = next(r.card); hit = true; } });
   const tok = await token();
   if (!tok) return { ok: hit, why: hit ? "" : "no GitHub token" };
   const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
@@ -115,9 +117,10 @@ async function editLog(key, card, clear) {
     for (let attempt = 0; attempt < 2; attempt++) {
       let j; try { j = await logFile(api, hdr); } catch (e) { return { ok: hit, why: e.message }; }
       const row = j.rows.find((r) => lotKey(r) === k); if (!row) break;
-      row.card = card;
+      if (patch && !row.card) return { ok: false, why: "that lot has no card in the log" };
+      row.card = next(row.card);
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr),
-        body: JSON.stringify({ message: card ? `Card added to a lot: ${card.n || "?"}` : "Card removed from a lot", branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
+        body: JSON.stringify({ message: patch ? `Lot card changed: ${(row.card && row.card.n) || "?"} ${patch.cond || ""}`.trim() : card ? `Card added to a lot: ${card.n || "?"}` : "Card removed from a lot", branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
       if (r.status === 409 || r.status === 422) continue;
       return r.ok ? { ok: true, file: "log-" + day + ".json" } : { ok: false, why: "GitHub PUT " + r.status };
     }
