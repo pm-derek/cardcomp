@@ -1666,6 +1666,13 @@ function flatBidTag(sp, mkt, tiers){   // the bid at your flat settings margin, 
 // one short line under the margin bid: pill + flat bid. Kept off the margin row so the bid column never widens
 function speedRow(sp, mkt){ const h=speedPill(sp)+flatBidTag(sp, mkt); return h ? `<div class="brow bs">${h}</div>` : ""; }
 function speedPill(sp){ return sp.tier ? `<span class="spd ${sp.tier}" title="${escH(speedReason(sp))}">${sp.tier}</span>` : ""; }
+const PROFIT_NICE=[1,2,3,5,10,15,20,30,50,75,100,150,200,300,500];
+function profitSteps(mkt, atRec){   // round profits under what the recommended bid nets (atRec), down to ~3% of market, biggest first, up to 4
+  const nice=x=>x<=1?1:PROFIT_NICE.reduce((a,b)=>Math.abs(b-x)<=Math.abs(a-x)?b:a);
+  const lo=nice(mkt*0.03);
+  const out=PROFIT_NICE.filter(v=>v>=lo && v<=atRec).reverse().slice(0,4);
+  return out.length ? out : (atRec>=0.5 ? [1] : []);   // cheap card: the recommended bid already nets about $1
+}
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
 // would open showing Unlimited and look like the wrong card. Carry the printing in the URL.
@@ -2709,7 +2716,10 @@ function renderPrices(host, data, prices, src){
     netEl.title=`net if you list ${cond} at market ($${mkt.toFixed(2)}) and it sells, after TCGplayer fees and shipping`;
     // profit buttons (Derek, 2026-10-22: "bid by target profit, not by margin"): one tap sends the bid that nets $5 / $10 /
     // $15 / $20 if listed at market, straight to Whatnot's Custom box like a grid tap; shown whatever the margin bid says
-    const opts=[5,10,15,20].map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1);
+    // steps UP from the recommended max (Derek, 2026-10-23: "a $15 card won't give $5 profit"; "relative to the max bid from
+    // settings: I won't win by bidding lower, this is for bidding up"): round profits below what the recommended bid nets,
+    // down to ~3% of this condition's market (never under $1), so a $15 card offers +$1 and a $285 one +$30 / 20 / 15 / 10
+    const opts=profitSteps(mkt, np-rec).map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1 && o.b>=Math.floor(rec));
     const sig=cond+"|"+mkt.toFixed(2)+"|"+opts.map(o=>o.b).join(",");
     if(goEl.dataset.sig!==sig){   // rebuild only when the prices change, so a tapped button keeps its "Whatnot $X" flash
       goEl.dataset.sig=sig;
