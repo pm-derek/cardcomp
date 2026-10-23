@@ -259,17 +259,23 @@ works like the browser extension and everything merges into one log.
 
 ### Phases
 
-0. Shell: permission flow (overlay, capture consent, notifications, accessibility), foreground service, overlay
-   WebView with CardComp in the three states, the keyboard focus rule, a read-now bubble: frame to bridge, Claude
-   read, `autoMatch`, results in the panel, tap copies the bid. GitHub Action builds the APK. Already beats
-   PalletTrade for Derek: max bid, JP, printings, Whatnot's keyboard still works.
-1. Accessibility reader: lot state from Whatnot's views into `cardcomp-lot` / `cardcomp-lot-end`, the lot strip,
-   labels from taps and opened cards, rows to `cardcomp-data`. Then the bid fill into the Custom box with the
-   bid-ack flow (Whatnot $X, under next $N, lot sold). Needs one evening of Derek's dumps of Whatnot's view tree
-   (the service can save them, like copy debug) to pick selectors.
+Derek's flow (2026-10-23, confirmed): one stream, Whatnot full screen; a card is shown; read by tap or
+automatically; the result list shows the best guess and alternatives (search will miss, so the list stays); he
+picks the card, confirms the condition, pulls the TCGplayer LP price with one tap (else opens TCGplayer himself);
+taps the bid and it lands in the Custom box; he submits; every lot is logged as on desktop.
+
+0. Shell: permission flow (overlay, capture consent, notifications, accessibility), foreground service, the two
+   bands plus bubble, the keyboard focus rule, read now: frame to bridge, Claude read, `autoMatch`, result list
+   in the bottom panel, grid on pick, tap copies the bid. A "dump screen" button saves Whatnot's view tree for
+   phase 1 (and proves the app exposes its text). GitHub Action builds the APK.
+1. Whatnot reader and bid fill (accessibility): lot state into `cardcomp-lot` / `cardcomp-lot-end`, the lot line
+   in the strip, labels from taps and opened cards, rows to `cardcomp-data`; the bid fill into the Custom sheet
+   with the bid-ack flow (Whatnot $X, under next $N, lot sold). TCGplayer fast read through a native fetch
+   (`tcgfast.js` logic, all conditions in one tap) and `live.json` writes, so verified conditions come from the
+   phone too.
 2. Automatic trigger: port the watcher (thumbnail diff, 2 reads per gap, no re-read of the sold card), the
    watcher line, start read about 1 s after the timer begins, picture match.
-3. TCGplayer fast reads from the phone, stats and haul in the strip, CardSight A/B.
+3. Stats and haul in the strip, CardSight A/B.
 
 ### Open questions for Derek
 
