@@ -193,7 +193,7 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 - Not building: auto-pressing Place bid. Whatnot's terms bar automated bidding and synthetic clicks are detectable (`isTrusted`); the human tap is also the last check against a wrong fill. Derek agreed to hold off.
 - Header: no subtitle. Search row (Derek, 2026-10-21: "search bar too narrow"): the box, its ✕ / ⟳, and one EN/JP button (`#langbtn`, flips, gold on JP, as tall as the box). The game `<select id="gamesel">` moved to the Filters row (gold text and border when off Pokémon), since nearly all bids are Pokémon. Box width went 431 -> 580 px at 660 wide and 151 -> 300 px at 380 (6 -> 24 characters of "umbreon prismatic evolutions sir"). A query wider than the box drops to 14.5 px (`#q.long`, `fitQ`, also run from `run()` so chip / auto fills refit).
 - Headroom (checked 2026-10, Derek asked to be reminded when it matters): Pages 100 GB/mo soft (12 MB a load, ~300 loads/mo used), Pages 10 builds/hr soft (live branch never builds), API 5k/hr per token (~40 per stream), Actions unlimited on a public repo, live.json grows a few KB/mo. Tell Derek before any change that writes to `main` per click, loads the catalog far more often, or moves the app off GitHub, since those are the only ways to reach a limit.
-- Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it.
+- Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it. Phone app over the Whatnot app (2026-10-23, competitor PalletTrade does this on Android): plan, constraints and what to reuse in `docs/mobile-overlay-handoff.md`.
 
 <!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
 ## Auto-recognition (experiment, removable)
@@ -262,6 +262,30 @@ the other language's catalog, `autoMatch` uses that language (`m.swapped`, never
 now before the timer is keyed by press time and was only tied to the lot by `recog-adopt` (picture unchanged at timer
 start), so most never reached the log (5 of 39 lots); `recogLotDone` now falls back to the latest reading taken since
 the previous real lot end (`PREV_END`) and before this lot sold.
+Japanese names, numbers first (Derek, 2026-10-23: Mega Golurk ex 109/076 M6 read 3-4 times as "Mega Metagross ex 109/076
+(M6)", suggested a Metagross promo #102): the name on a Japanese card is in Japanese script and the model names the Pokemon
+partly from the art, while the number, total and set code are plain characters and come out right. `autoMatch` now looks
+up the number in a set that fits (printed size from `sz`, or a set code read like "M6" matched to the card's code) when no
+printing of the name has that number, Japanese cards only: if the name fits no set of that size, the hit is suggested
+(weak, kind "number", "by the number: the name read differs") and the name's printings follow; a name that fits keeps its
+printings first with the hits after. Never for English: English names read well, and an English card under the floor
+shares number and set size with other cards (fixture Cetitan ex 210/182 would have picked Sinistcha; Kyurem ex 157/086 a
+White Flare card).
+The low-res "number ignored" rule now checks for a hit first. Name inside a longer name: "Calyrex VMAX" lists Ice Rider /
+Shadow Rider Calyrex VMAX. Replay of 108 logged reads: right 47 -> 48, not listed 7 -> 4 (Calyrex, Dragapult V, Crustle
+now listed for the picture); one totally wrong read (Budew for a Braviary) now gets a weak wrong guess instead of none.
+CardSight side by side (Derek, 2026-10-23: "I don't want to switch; show me CardSight or ours at random and compare in the
+background"): with a CardSight key on the Options page (cardsight.ai; plan calls a month, default 750), read-nows and
+lot-start reads also send the same frame to CardSight (`csIdentify`: POST api.cardsight.ai/v1/identify/card/pokemon,
+multipart "image", X-API-Key; reply mapped by `csToRead`: name, number "109/076" split, CARD_LANGUAGE ja -> jp, Rarity
+field, setName, High/Medium/Low -> 0.95/0.82/0.62). `csBudget` spreads the month over the days left (Free ~25 a day).
+A coin per read decides which answer fills CardComp; the other arrives as `shadow:true`, which `onShadow` only records
+(`AUTO[lot].alt`, never painted). Claude's early fill is held back while CardSight is the shown one; if the shown answer
+is empty or fails, the other fills (`fallback`). The log row carries `recog.src`, `recog.cs` (CardSight's raw top 3) and
+`recog.alt` (the other reading's kind / suggestion / ids); `recog-score-log.js` "side by side" scores both on the same
+lots (before the picture match, which only runs on the shown one). Undocumented for us until a live call: the exact
+Pokemon `setName` / `number` format; `recog.cs` keeps the raw reply so the mapping can be checked from the log.
+Extension 0.9.0 (host api.cardsight.ai). The key stays in chrome.storage.local, never in the repo or chat.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

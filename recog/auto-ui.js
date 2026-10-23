@@ -11,7 +11,7 @@
   const post = (m) => { try { if (window.parent !== window) window.parent.postMessage(m, "*"); else window.postMessage(m, location.origin); } catch (_) {} };
   const fromExt = (e) => (e.source === window && e.origin === location.origin) || (window.parent !== window && e.source === window.parent);
   const MODELS = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
-  const RANK = { exact: 5, near: 4, unique: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
+  const RANK = { exact: 5, near: 4, unique: 3, number: 3, foreign: 2, ambiguous: 2, "number-miss": 1, none: 0 };
   let EXT = false, STATE = { on: false, mode: "off", model: "sonnet", hasKey: false }, TOUCH = 0, LATEST = 0, MSG = "", SHOW = null, WATCH = null, HOVER = 0;
   // Engaged with this lot: typed, tapped or opened a result, or asked for "read now". Until the lot ends (not a
   // new title: it often appears with the timer, when the start read lands), automatic readings never replace the results, they only offer "show" (Derek: an auto read
@@ -69,14 +69,14 @@
     if (m.kind === "foreign") what = `<span class="bad">&#9888; ${esc(m.note)}</span>`;
     else if (!sug) what = esc(m.note || "no match");
     else if (m.kind === "exact" && m.strength === "strong") what = `<span class="gold">&#10003; ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}</span>`;
-    else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : "");
+    else if (sug) what = `best guess ${esc(sug.n)} &middot; ${esc(sug.s)} #${esc(sug.num)}` + (m.kind === "near" ? " (number read one off)" : m.kind === "unique" ? " (no number read)" : m.kind === "number" ? " (by the number: the name read differs)" : "");
     if (sug && m.printing) {   // the finish read names a printing; warn when the collapsed bid is priced from another one
       const c = typeof CARDS !== "undefined" && CARDS.find((x) => x.id === sug.id), top = c && typeof topPrint === "function" ? topPrint(c) : "";
       const pm = (k) => { const v = c && c.px && c.px[k]; return v ? (v.m != null ? v.m : v.l) || 0 : 0; };
       what += ` &middot; <b>${esc(m.printing)}</b>`;
       if (top && top !== m.printing) what += ` <span class="bad">&middot; tile bid is ${esc(top)} $${pm(top).toFixed(2)}, read ${esc(m.printing)} $${pm(m.printing).toFixed(2)}: open the card</span>`;
     }
-    const t = `${MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
+    const t = `${d.src === "cardsight" ? "CardSight" : MODELS[Object.keys(MODELS).find((k) => (d.model || "").includes(k))] || d.model || ""} ${((d.ms || 0) / 1000).toFixed(1)}s`;
     return `${d.pre ? "before start: " : d.manual ? "read now: " : ""}${d.zoom ? "zoomed " + d.zoom + "x: " : ""}read <span title="${esc(JSON.stringify(Object.assign({}, r, { why: m.why })))}">${read}</span> &rarr; ${what} <span style="color:var(--faint)">&middot; ${esc(t)}</span>`;
   }
   // The read button (Derek, 2026-10: "read now" was too small a target, and he presses it every lot because he is
@@ -183,8 +183,23 @@
     paint();
   }
 
+  // CardSight side by side (extension/recog/recog-bg.js): the reading that lost the coin arrives as a shadow. It never
+  // touches the screen; its match is kept on the lot so the log row carries both answers (rec.recog.alt).
+  const ctxOf = (d) => ({ short: d.src === "cardsight" ? 0 : d.short || 0, model: d.model || "" });   // CardSight's number comes from its catalog, not a low-res read
+  function onShadow(d) {
+    const ak = ADOPT[d.key] || d.key, a = AUTO[ak] = AUTO[ak] || {}, r = d.read;
+    const sum = { src: d.src || "claude", model: (d.model || "").replace("claude-", ""), ms: d.ms || 0, zoom: d.zoom || 0, err: d.error || "", cs: d.cs || null };
+    if (r && r.name && r.card_visible !== false && typeof window.autoMatch === "function") {
+      const m = window.autoMatch(r, ctxOf(d)), sg = m.suggestion && m.cards.find((x) => x.id === m.suggestion);
+      Object.assign(sum, { read: { name: r.name || "", number: r.number || "", total: r.total || "", rarity: r.rarity || "", set: r.set || "", lang: r.language || "", conf: r.confidence },
+        kind: m.kind, strength: m.strength || null, sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: m.cards.slice(0, 8).map((x) => x.id) });
+      if (!a.alt || !a.alt.kind || (RANK[m.kind] || 0) >= (RANK[a.alt.kind] || 0)) a.alt = sum;
+    } else if (!a.alt) a.alt = Object.assign(sum, { kind: r ? "no-card" : "error" });
+    post({ type: "cardcomp-auto-match", key: d.key, n: d.n, shadow: true, src: sum.src, kind: sum.kind || "", strength: sum.strength || null, suggestion: sum.sug ? sum.sug.id : null, filled: false });
+  }
   function onAuto(d) {
     if (d.partial) { onPartial(d); return; }
+    if (d.shadow) { onShadow(d); return; }
     if (d.manual) { READING = 0; paintRead(d.error ? "bad" : ""); }   // a read you asked for came back (any outcome)
     const at = d.capAt || d.key || 0;   // capture time: a lot's key can be older than a pre-start reading
     LATEST = Math.max(LATEST, at);
@@ -198,7 +213,7 @@
       return;
     }
     if (typeof window.autoMatch !== "function") return;
-    const m = window.autoMatch(r, { short: d.short || 0, model: d.model || "" });
+    const m = window.autoMatch(r, ctxOf(d));
     const cards = m.cards.slice(0, 8).map((c) => ({ id: c.id, n: c.n, s: c.s, num: c.num, r: c.r, m: typeof bestMarket === "function" ? bestMarket(c) : 0 }));
     // keep the better of a lot's readings (a read you asked for always shows; its zoomed re-read only when it ranks higher
     // or picks where the first could not)
@@ -298,11 +313,11 @@
     // export to upload (it had reached 109 MB with frames) and no hand review for lots with a tapped / opened card.
     if (b) try {
       const sg = b.m.suggestion && b.m.cards.find((x) => x.id === b.m.suggestion), rd = b.r || {};
-      rec.recog = { model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, zoom: b.d.zoom || 0, short: b.d.short || 0,
+      rec.recog = { src: b.d.src || "claude", model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, zoom: b.d.zoom || 0, short: b.d.short || 0,
         read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
         kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
         sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id),
-        pic: AUTO[key].pic || null };
+        pic: AUTO[key].pic || null, cs: b.d.cs || null, alt: AUTO[key].alt || null };   // alt: the side-by-side reading that was not shown
     } catch (_) {}
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });

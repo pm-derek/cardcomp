@@ -20,6 +20,12 @@ code{color:#f5b301}.dim{color:#8b97a5;font-size:13px}#st{margin-top:10px;min-hei
 <label>Anthropic API key<br><input id="rkey" type="password" placeholder="sk-ant-..."></label>
 <button id="rsave">Save</button> <button id="rtest">Test</button> <button id="rclear">Remove</button>
 <div id="rst" style="margin-top:10px;min-height:1.5em"></div>
+<h3 style="margin-top:22px">CardSight, side by side</h3>
+<p class="dim">With a CardSight key (cardsight.ai, API Keys page), read-nows and lot-start reads also go to CardSight. Each read, a coin picks whose answer fills CardComp; the other is only recorded, so the log shows which is right more often. Calls are spread over the month so you never run out early. The key stays in this browser and is sent only to api.cardsight.ai.</p>
+<label>CardSight API key<br><input id="cskey" type="password" placeholder="paste the key from cardsight.ai"></label>
+<label style="display:block;margin-top:8px">Calls a month on your plan<br><input id="csmonth" type="number" min="1" placeholder="750 (Free)"></label>
+<button id="cssave">Save</button> <button id="cstest">Test</button> <button id="csclear">Remove</button>
+<div id="csst" style="margin-top:10px;min-height:1.5em"></div>
 <p class="dim">Results, frames and costs: <a href="recog/debug.html" target="_blank" style="color:#f5b301">the recognition test page</a>. Read now from the Whatnot tab: Ctrl+Shift+Y (Cmd+Shift+Y on a Mac) on a stream.</p>
 <script src="recog/options-recog.js"></script>
 <!-- RECOG-END -->

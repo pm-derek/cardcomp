@@ -142,6 +142,19 @@ async function appPage(browser, base, blockRecog) {
   ok(by2[37].sug === "tc:654703" && by2[53].sug === "tc:623594" && by2[56].sug === "tc:618107", "stamp names the stamped product (Bulbasaur Mega Evolution, N's Reshiram Journey Together, Leafeon Prismatic Evolutions)");
   ok(by2[34].sug === "me55c-106", "anniversary stamp read as 25th still finds the 30th Celebration Classic Collection Shining Celebi, not Neo Destiny");
 
+  // ---------- 1d. Japanese name misread, number right (Derek, 2026-10-23: Mega Golurk ex 109/076 M6 read as Mega Metagross ex)
+  {
+    const r = await app.evaluate(() => {
+      const g = autoMatch({ name: "Mega Metagross ex", number: "109", total: "076", rarity: "Special Illustration Rare", set: "Mega Brave (M6)", language: "jp", confidence: 0.93 }, { short: 720, model: "claude-sonnet-5-5" });
+      const c = autoMatch({ name: "Calyrex VMAX", number: "", total: "", rarity: "Secret Rare gold full art", language: "en", confidence: 0.8 }, { model: "claude-sonnet-5-5" });
+      const k = autoMatch({ name: "Kyurem ex", number: "157", total: "086", rarity: "full art", language: "en", confidence: 0.9 }, { model: "claude-opus-5-5" });
+      return { g: [g.kind, g.suggestion, g.strength, (g.pool || []).length], c: c.cards.map((x) => x.n), k: [k.kind, k.suggestion] };
+    });
+    ok(r.g[0] === "number" && r.g[1] === "jp:709262" && r.g[2] === "weak" && r.g[3] >= 2, "Japanese name misread: #109/076 (M6) is Mega Golurk ex, suggested weak, Metagross still in the picture pool (" + r.g.join(", ") + ")");
+    ok(r.c.some((n) => /^Ice Rider Calyrex VMAX/.test(n)), "name inside a longer name: Calyrex VMAX lists Ice Rider Calyrex VMAX (" + r.c.slice(0, 3).join(", ") + ")");
+    ok(r.k[0] === "number-miss" && !r.k[1], "English name that fits the set size: a sister set's #157 is not offered (Kyurem ex 157/086 stays number-miss)");
+  }
+
   // ---------- 2. regression ----------
   console.log("2. regression: manual search unchanged");
   const without = await appPage(browser, base, true);
@@ -191,7 +204,7 @@ async function appPage(browser, base, blockRecog) {
     if (om.commands) { delete om.commands["recog-grab"]; if (!Object.keys(om.commands).length) delete om.commands; }
     om.content_scripts = (om.content_scripts || []).filter((c) => !(c.js || []).every((j) => j.startsWith("recog/")));
     om.permissions = (om.permissions || []).filter((p) => p !== "activeTab");
-    om.host_permissions = (om.host_permissions || []).filter((h) => !/anthropic\.com|tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io/.test(h));
+    om.host_permissions = (om.host_permissions || []).filter((h) => !/anthropic\.com|cardsight\.ai|tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io/.test(h));
     const baseScripts = JSON.stringify((base.content_scripts || []).map((c) => c.js.join(",")));
     ok(JSON.stringify(om) === JSON.stringify(sm) && !/recog|anthropic/i.test(JSON.stringify(sm)) && JSON.stringify(sm.content_scripts.map((c) => c.js.join(","))) === baseScripts,
       "manifest after strip: the experiment's shortcut, content script and permissions gone, everything else kept");
@@ -432,6 +445,49 @@ async function appPage(browser, base, blockRecog) {
   await sold();
   const watch = await mp.evaluate(() => window.__runtime.filter((m) => m.type === "cardcomp-auto-watch").map((m) => m.why));
   ok(watch.length > 0 && watch.some((w) => /same picture|same card|waiting|changing|just read/.test(w)), "watcher reports what it is doing (" + [...new Set(watch)].slice(0, 3).join(" / ") + ")");
+  // CardSight side by side (2026-10-23): read now also goes to CardSight (mocked); a coin picks which answer is shown, the
+  // other is a shadow; an empty shown answer hands over to the other; the monthly allowance is spread over the days left
+  {
+    const csCalls = []; let csMode = "ok";
+    await ctx.route("https://api.cardsight.ai/v1/identify/card/pokemon", async (route) => {
+      const req = route.request(), cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "POST, OPTIONS" };
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+      csCalls.push({ key: req.headers()["x-api-key"], ct: req.headers()["content-type"] || "", size: (req.postDataBuffer() || Buffer.alloc(0)).length });
+      if (csMode === "500") return route.fulfill({ status: 500, headers: cors, contentType: "application/json", body: '{"error":"boom"}' });
+      if (csMode === "none") return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ success: true, requestId: "r0", detections: [], detectedCount: 1, identifiedCount: 0, processingTime: 280 }) });
+      return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ success: true, requestId: "r1", detectedCount: 1, identifiedCount: 1, processingTime: 310,
+        detections: [{ confidence: "High", card: { id: "u1", name: "Mega Golurk ex", number: "109/076", setName: "Storm Emeralda", releaseName: "Mega Evolution", year: "2026", fields: [{ key: "CARD_LANGUAGE", value: "ja" }, { key: "Rarity", value: "Special Art Rare" }] } }] }) });
+    });
+    const csRead = async (force, mode) => {
+      csMode = mode || "ok"; await mp.evaluate((f) => new Promise((r) => chrome.storage.local.set({ csKey: "cs_test_key_0123456789", csForce: f }, r)), force);
+      const n0 = await mp.evaluate(() => window.__runtime.length), c0 = csCalls.length, a0 = apiCalls.length;
+      await mp.evaluate(() => window.__listeners.forEach((f) => f({ type: "recog-read-now" }, {}, () => {}))); await mp.waitForTimeout(2600);
+      const m = await mp.evaluate((n0) => window.__runtime.slice(n0).filter((x) => x.type === "cardcomp-auto"), n0);
+      return { m, cs: csCalls.length - c0, claude: apiCalls.length - a0, shown: m.filter((x) => !x.shadow && !x.partial), shadow: m.filter((x) => x.shadow) };
+    };
+    await sold();
+    let x = await csRead("cs");
+    const sh = x.shown[0] || {}, csKey0 = sh.key;
+    ok(x.cs === 1 && x.claude === 1 && x.shown.length === 1 && sh.src === "cardsight" && sh.read.name === "Mega Golurk ex" && sh.read.number === "109" && sh.read.total === "076" && sh.read.language === "jp" && sh.short === 0 &&
+      x.shadow.length === 1 && x.shadow[0].src === "claude" && !x.m.some((y) => y.partial) && csCalls[csCalls.length - 1].key === "cs_test_key_0123456789" && /multipart\/form-data/.test(csCalls[csCalls.length - 1].ct) && csCalls[csCalls.length - 1].size > 5000,
+      "CardSight drew the coin: its answer fills (Golurk 109/076, Japanese), Claude only recorded, no early Claude fill; multipart image + X-API-Key (" + x.shown.map((y) => y.src).join(",") + " / shadow " + x.shadow.map((y) => y.src).join(",") + ")");
+    await sold(); x = await csRead("claude");
+    ok(x.shown.length === 1 && x.shown[0].src === "claude" && x.shadow.length === 1 && x.shadow[0].src === "cardsight" && x.shadow[0].read.name === "Mega Golurk ex", "Claude drew the coin: Claude fills, CardSight recorded as the shadow");
+    await sold(); x = await csRead("cs", "500");
+    ok(x.shown.length === 1 && x.shown[0].src === "claude" && x.shadow.some((y) => y.src === "cardsight" && /CardSight error 500/.test(y.error)), "CardSight failed: Claude fills instead, the failure is recorded");
+    await sold(); x = await csRead("cs", "none");
+    ok(x.shown.length === 1 && x.shown[0].src === "claude", "CardSight found no card: Claude fills");
+    // the free plan's 750 a month spread over the days left: once today's share is used, no CardSight call
+    await sold();
+    const share = await mp.evaluate(() => { const now = new Date(), dl = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate() - now.getUTCDate() + 1; return Math.floor(750 / dl); });
+    await mp.evaluate((share) => new Promise((r) => { const now = new Date(); chrome.storage.local.set({ csMonthly: 750, csUse: { month: now.toISOString().slice(0, 7), day: now.toISOString().slice(0, 10), n: share, dn: share, n0: 0 } }, r); }), share);
+    x = await csRead("cs");
+    ok(x.cs === 0 && x.claude === 1 && x.shown.length === 1 && x.shown[0].src === "claude", "today's share of the month used (" + share + " calls): Claude only, no CardSight call");
+    await sold();
+    const rec = await lotRec(csKey0), csr = rec && rec.reads.find((y) => y.src === "cardsight");
+    await mp.evaluate(() => new Promise((r) => chrome.storage.local.remove(["csKey", "csForce", "csUse", "csMonthly"], r)));
+    ok(csr && csr.shown === true && csr.read && csr.read.name === "Mega Golurk ex" && csr.cs && csr.cs.top[0].lang === "ja" && rec.reads.some((y) => !y.src && y.read), "lot record keeps both readings, CardSight's raw answer included (results page)");
+  }
   // CardComp reports its match and the lot outcome back
   await mp.evaluate((k) => { const send = (m) => window.__listeners.forEach((f) => f(m, {}, () => {}));
     send({ type: "cardcomp-auto-match", key: k, n: 1, kind: "number-miss", strength: null, suggestion: null, cards: [{ id: "sv10pt5-165", n: "Kyurem ex", s: "Black Bolt", num: "165", m: 68.9 }], note: "no #157", filled: true });
@@ -552,6 +608,23 @@ async function appPage(browser, base, blockRecog) {
   const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
   ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true && oc.outcome.card.r === "Illustration Rare", "lot end: tapped card reported as the outcome, with its rarity");
   ok(lrec.recog && lrec.recog.read.name === "Kyurem ex" && lrec.recog.read.number === "157" && lrec.recog.kind === "number-miss" && lrec.recog.sug === null && lrec.recog.ids.length > 0 && /opus/.test(lrec.recog.model), "the auction log row carries the lot's auto reading (Kyurem ex 157, no pick, listed ids)");
+  // CardSight side by side, app: the shown answer fills (labelled CardSight), the shadow never touches the screen, the log
+  // row carries both (rec.recog.src / rec.recog.alt)
+  {
+    await lotEnd(); await ap.waitForTimeout(1600); const ck = Date.now() + 20;
+    await send({ type: "cardcomp-auto", key: ck, capAt: ck, n: 1, manual: true, src: "cardsight", model: "cardsight", ms: 420, short: 0, cs: { req: "r9", top: [{ conf: "High", name: "Fomantis" }] },
+      read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.95, box: [] } });
+    await ap.waitForTimeout(250);
+    await send({ type: "cardcomp-auto", key: ck, capAt: ck, n: 1, manual: true, shadow: true, src: "claude", model: "claude-sonnet-5-5", ms: 2100, short: 1080,
+      read: { card_visible: true, name: "Honchkrow V", number: "161", total: "172", language: "en", rarity: "full art", confidence: 0.8 } });
+    await ap.waitForTimeout(250);
+    const cst = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset.id, line: document.querySelector("#autoline").textContent }));
+    const crec = await ap.evaluate((k) => { const rec = { startedAt: k, at: k + 20000, card: { id: "me5-85", n: "Fomantis", label: "tap" }, final: 3, me: false }; window.recogLotDone(rec); return rec.recog; }, ck);
+    const shm = (await posted()).filter((m) => m.type === "cardcomp-auto-match" && m.shadow).pop();
+    ok(cst.q === "Fomantis 085/084" && cst.first === "me5-85" && /CardSight 0\.4s/.test(cst.line) && !/Honchkrow/.test(cst.line), "side by side: CardSight's answer fills and is labelled, Claude's shadow (Honchkrow) never shows (" + cst.line.replace(/\s+/g, " ").slice(0, 80) + ")");
+    ok(crec && crec.src === "cardsight" && crec.sug && crec.sug.id === "me5-85" && crec.cs && crec.cs.req === "r9" && crec.alt && crec.alt.src === "claude" && crec.alt.read.name === "Honchkrow V" && crec.alt.sug && crec.alt.sug.id === "swsh9-162" && shm && shm.src === "claude",
+      "side by side: the log row carries both answers (shown CardSight Fomantis, other Claude Honchkrow #162), the shadow match reported to the extension");
+  }
   // read before the timer: shown as "before start"; the lot (created earlier, older key) reuses it; outcome maps to the lot
   await lotEnd(); await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();
   await send({ type: "cardcomp-auto", key: preKey, capAt: preKey, n: 1, pre: true, read: { card_visible: true, name: "Numel", number: "", total: "", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1100 });
