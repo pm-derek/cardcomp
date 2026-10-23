@@ -16,7 +16,7 @@ import android.util.Base64
 import java.io.ByteArrayOutputStream
 
 /**
- * Screen capture (MediaProjection) into an ImageReader at about 720 px wide. Frames flow all the time while the
+ * Screen capture (MediaProjection) into an ImageReader at the screen's own resolution. Frames flow all the time while the
  * stream plays; nothing is kept or converted until [grab] asks for one, so the cost between reads is near zero.
  * Android 14+: consent is per session (the dialog in MainActivity), the foreground service must already be
  * running with type mediaProjection, and "A single app" in that dialog gives frames of Whatnot alone.
@@ -36,9 +36,8 @@ class Capture(private val ctx: Context, private val onStopped: () -> Unit) {
     fun start(resultCode: Int, data: Intent, screenW: Int, screenH: Int, dpi: Int): Boolean {
         val mgr = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val mp = try { mgr.getMediaProjection(resultCode, data) } catch (_: Exception) { null } ?: return false
-        val k = if (screenW > 720) 720f / screenW else 1f
-        width = ((screenW * k).toInt() / 2) * 2
-        height = ((screenH * k).toInt() / 2) * 2
+        width = (screenW / 2) * 2   // full resolution: the card's number needs every pixel
+        height = (screenH / 2) * 2
         mp.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { release(); onStopped() }
         }, main)

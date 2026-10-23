@@ -330,3 +330,25 @@ Phase 1 next: a few screen dumps from a stream (lot row, Custom bid sheet with t
 reader in `WhatnotReader.kt` (same `cardcomp-lot` / `cardcomp-lot-end` records as `whatnot.js`), the bid fill,
 the log through the bridge (`store.js` logic with the token from `Android.key("github")`), TCGplayer fast reads
 through a native fetch.
+
+## First live try (Derek, 2026-10-23, gldshark / maniacocollectibles) and v0.2
+
+What went wrong in 0.1:
+- The band was a fixed full-width window pinned under the header or at the bottom, sized as a share of the screen
+  whatever it showed: dead black space under the card line, the page scrolled inside it (search row scrolled off),
+  it could not be moved, it blocked Whatnot's controls and it covered the app's own Stop button.
+- Reads came back "no number read" (Espeon ex read as Mew, Ralts and Yanma "pick 1 of 27"): the capture was
+  downscaled to 720 px wide, so a collector number was a few pixels tall, and the zoom re-read only enlarged those
+  pixels.
+
+0.2:
+- One floating panel: a grip bar on top (drag to move, ◢ at its right drags the width, – folds it into the bubble);
+  place and width are remembered. The page reports its own height (`Android.size`), so the panel is exactly as tall
+  as what it shows; the native side caps it at 62% of the screen and the list scrolls inside.
+- Page modes: card (compact: name with ‹ n/N › through the candidates, the max bid button, NM / LP / MP, 🔍, ▾, and
+  a status line with what was read and a "frame" link that shows the frame), list (search, auto line, results,
+  the open card's grid), typing (list while the box has focus; a panel in the lower 3/4 moves to the top until the
+  keyboard closes). A read lands in card mode with the best guess; Back steps typing -> list -> card -> bubble.
+- Every overlay window hides while the CardComp app screen is in front; Start sends the app to the background.
+- Capture at the screen's own resolution; a read sends the card band (7% to 84% of the height) at up to 1600 px.
+- Checked: `node scripts/phone-check.js` (card ~62 css px empty, ~119 with a result).

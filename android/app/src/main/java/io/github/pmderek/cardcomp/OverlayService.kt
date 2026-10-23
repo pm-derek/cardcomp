@@ -41,6 +41,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -71,6 +72,7 @@ class OverlayService : Service() {
         private const val NOTE_ID = 1
         private const val TAG = "CardComp"
         @Volatile var running = false
+        @Volatile var instance: OverlayService? = null
     }
 
     private lateinit var prefs: Prefs
@@ -81,11 +83,8 @@ class OverlayService : Service() {
     private var web: WebView? = null
     private var band: BandLayout? = null
     private var bandLp: WindowManager.LayoutParams? = null
-    private var handle: View? = null
     private var bubble: TextView? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
-    private var lay = "strip"
-    private var bandHidden = false
     private var screenW = 0
     private var screenH = 0
     private var dpi = 0
@@ -95,6 +94,7 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        instance = this
         val disp = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
         val base = createDisplayContext(disp).createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
         uiCtx = ContextThemeWrapper(base, android.R.style.Theme_DeviceDefault_NoActionBar)
@@ -110,7 +110,7 @@ class OverlayService : Service() {
             ACTION_START -> {
                 startForeground(NOTE_ID, note(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
                 measure()
-                if (web == null) { makeBand(); makeBubble() }
+                if (web == null) { makeBand(); makeBubble(); appOpen = MainActivity.resumed; applyVisibility() }
                 val code = intent.getIntExtra(EXTRA_CODE, 0)
                 val data: Intent? = intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
                 if (data != null && capture?.running != true) {
@@ -133,6 +133,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         running = false
+        instance = null
         capture?.release(); capture = null
         try { band?.let { wm.removeView(it) } } catch (_: Exception) {}
         try { bubble?.let { wm.removeView(it) } } catch (_: Exception) {}
@@ -148,23 +149,27 @@ class OverlayService : Service() {
         dpi = resources.displayMetrics.densityDpi
     }
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
-    private fun stripTop(): Int = (screenH * 0.09).toInt()
-    private fun stripH(): Int = (screenH * prefs.stripPct / 100f).toInt()
-    private fun typingH(): Int = (screenH * 0.42).toInt()
-    private fun panelH(): Int = (screenH * prefs.panelPct / 100f).toInt()
+    private val GRIP get() = dp(26)
 
-    private fun applyLayout(s: String) {
+    /** The page asks for its height (CSS px): the panel is exactly as tall as what it shows, never dead space. */
+    private fun setContentHeight(cssPx: Int) {
         val lp = bandLp ?: return
         val b = band ?: return
-        lay = s
-        when (s) {
-            "panel" -> { lp.gravity = Gravity.BOTTOM or Gravity.START; lp.y = 0; lp.height = panelH() }
-            "typing" -> { lp.gravity = Gravity.TOP or Gravity.START; lp.y = stripTop(); lp.height = typingH() }
-            else -> { lp.gravity = Gravity.TOP or Gravity.START; lp.y = stripTop(); lp.height = stripH() }
-        }
-        handle?.visibility = if (s == "panel") View.VISIBLE else View.GONE
-        (web?.layoutParams as? FrameLayout.LayoutParams)?.let { it.topMargin = if (s == "panel") dp(14) else 0; web?.layoutParams = it }
-        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (e: Exception) { Log.w(TAG, "layout: ${e.message}") }
+        val want = (cssPx * resources.displayMetrics.density).roundToInt() + GRIP
+        lp.height = want.coerceIn(GRIP + dp(40), (screenH * 0.62).toInt())
+        lp.y = lp.y.coerceIn(0, maxOf(0, screenH - lp.height))
+        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (e: Exception) { Log.w(TAG, "size: ${e.message}") }
+    }
+
+    /** Typing: the keyboard covers the lower half, so a low panel moves to the top until the keyboard closes. */
+    private var yBeforeTyping = -1
+    private fun typing(on: Boolean) {
+        val lp = bandLp ?: return
+        val b = band ?: return
+        if (on && yBeforeTyping < 0 && lp.y > (screenH * 0.25).toInt()) { yBeforeTyping = lp.y; lp.y = (screenH * 0.06).toInt() }
+        else if (!on && yBeforeTyping >= 0) { lp.y = yBeforeTyping; yBeforeTyping = -1 }
+        else return
+        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
     }
 
     private fun setFocusable(want: Boolean, ime: Boolean) {
@@ -184,14 +189,22 @@ class OverlayService : Service() {
         }
     }
 
-    private fun toggleBand() {
-        bandHidden = !bandHidden
-        band?.visibility = if (bandHidden) View.GONE else View.VISIBLE
-        toast(if (bandHidden) "CardComp hidden (long press the bubble to show)" else "CardComp shown")
+    /** collapsed = only the bubble; the panel comes back on the next read, a bubble long press, or its own button */
+    private var collapsed = false
+    private var appOpen = false
+    private fun showPanel(show: Boolean) {
+        collapsed = !show
+        applyVisibility()
     }
+    private fun applyVisibility() {
+        band?.visibility = if (collapsed || appOpen) View.GONE else View.VISIBLE
+        bubble?.visibility = if (appOpen) View.GONE else View.VISIBLE
+    }
+    /** MainActivity in front: hide every overlay window so nothing covers its buttons */
+    fun appVisible(v: Boolean) { main.post { appOpen = v; applyVisibility() } }
 
-    // ---------------------------------------------------------------- the band: CardComp in a WebView
-    inner class BandLayout(ctx: Context) : FrameLayout(ctx) {
+    // ---------------------------------------------------------------- the panel: grip (drag, resize, collapse) + CardComp in a WebView
+    inner class BandLayout(ctx: Context) : LinearLayout(ctx) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_OUTSIDE -> { setFocusable(false, false); js("window.__phone&&window.__phone.blur&&window.__phone.blur()") }
@@ -201,17 +214,39 @@ class OverlayService : Service() {
         }
         override fun dispatchKeyEvent(event: KeyEvent): Boolean {
             if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-                if (event.action == KeyEvent.ACTION_UP) { js("window.__phone&&window.__phone.blur&&window.__phone.blur()"); setFocusable(false, false) }
+                if (event.action == KeyEvent.ACTION_UP) { js("window.__phone&&window.__phone.back&&window.__phone.back()"); setFocusable(false, false) }
                 return true
             }
             return super.dispatchKeyEvent(event)
         }
     }
 
+    private fun gripText(t: String, sizeSp: Float, color: String): TextView = TextView(uiCtx).apply {
+        text = t; textSize = sizeSp; setTextColor(Color.parseColor(color)); gravity = Gravity.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
+
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     private fun makeBand() {
         val root = BandLayout(uiCtx)
-        root.setBackgroundColor(Color.parseColor("#0b0d10"))
+        root.orientation = LinearLayout.VERTICAL
+        val bg = GradientDrawable(); bg.setColor(Color.parseColor("#0b0d10")); bg.cornerRadius = dp(12).toFloat()
+        bg.setStroke(dp(1), Color.parseColor("#3a4350"))
+        root.background = bg
+        root.clipToOutline = true
+
+        // grip: drag anywhere on it to move; ◢ at the right drags the width; – collapses to the bubble
+        val grip = LinearLayout(uiCtx)
+        grip.orientation = LinearLayout.HORIZONTAL
+        grip.setBackgroundColor(Color.parseColor("#1b2026"))
+        val collapse = gripText("–", 18f, "#8b97a5")
+        val dots = gripText("⠿ drag", 11f, "#5b6573")
+        val resize = gripText("◢", 14f, "#8b97a5")
+        grip.addView(collapse, LinearLayout.LayoutParams(dp(44), GRIP))
+        grip.addView(dots, LinearLayout.LayoutParams(0, GRIP, 1f))
+        grip.addView(resize, LinearLayout.LayoutParams(dp(44), GRIP))
+        root.addView(grip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, GRIP))
+
         val wv = WebView(uiCtx)
         wv.settings.apply {
             javaScriptEnabled = true
@@ -244,46 +279,41 @@ class OverlayService : Service() {
         wv.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean { Log.d(TAG, "js: ${m.message()} @${m.lineNumber()}"); return true }
         }
-        root.addView(wv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        // top edge of the bottom panel: drag to change its height
-        val h = View(uiCtx)
-        val hb = GradientDrawable(); hb.setColor(Color.parseColor("#1b2026")); h.background = hb
-        root.addView(h, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(14), Gravity.TOP))
-        h.visibility = View.GONE
-        h.setOnTouchListener(resizeListener())
-        handle = h
+        root.addView(wv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
+        val w0 = if (prefs.panelW > 0) prefs.panelW.coerceIn(dp(240), screenW) else screenW - dp(16)
         val lp = WindowManager.LayoutParams(
-            screenW, stripH(),
+            w0, GRIP + dp(70),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.START
-        lp.x = 0; lp.y = stripTop()
+        lp.x = if (prefs.panelX >= 0) prefs.panelX.coerceIn(0, maxOf(0, screenW - w0)) else dp(8)
+        lp.y = if (prefs.panelY >= 0) prefs.panelY.coerceIn(0, (screenH * 0.85).toInt()) else (screenH * 0.09).toInt()
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+
+        dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { prefs.panelX = lp.x; prefs.panelY = lp.y; yBeforeTyping = -1 }))
+        collapse.setOnClickListener { showPanel(false) }
+        resize.setOnTouchListener(widthListener(lp, root))
+
         wm.addView(root, lp)
         band = root; bandLp = lp; web = wv
         wv.loadUrl(APP_URL)
     }
 
-    private fun resizeListener(): View.OnTouchListener = object : View.OnTouchListener {
-        var y0 = 0f; var h0 = 0
+    private fun widthListener(lp: WindowManager.LayoutParams, win: View): View.OnTouchListener = object : View.OnTouchListener {
+        var x0 = 0f; var w0 = 0
         override fun onTouch(v: View, e: MotionEvent): Boolean {
-            val lp = bandLp ?: return false
-            val b = band ?: return false
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { y0 = e.rawY; h0 = lp.height; return true }
+                MotionEvent.ACTION_DOWN -> { x0 = e.rawX; w0 = lp.width; return true }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.height = (h0 + (y0 - e.rawY)).toInt().coerceIn((screenH * 0.18).toInt(), (screenH * 0.65).toInt())
-                    try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
+                    lp.width = (w0 + (e.rawX - x0)).toInt().coerceIn(dp(240), screenW - lp.x)
+                    try { wm.updateViewLayout(win, lp) } catch (_: Exception) {}
                     return true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    prefs.panelPct = (lp.height * 100f / screenH).roundToInt()
-                    return true
-                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { prefs.panelW = lp.width; return true }
             }
             return false
         }
@@ -313,12 +343,12 @@ class OverlayService : Service() {
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = if (prefs.bubbleX >= 0) prefs.bubbleX else screenW - size - dp(8)
         lp.y = if (prefs.bubbleY >= 0) prefs.bubbleY else (screenH * 0.26).toInt()
-        tv.setOnTouchListener(dragListener(lp, onTap = { readNow("bubble") }, onLong = { toggleBand() }))
+        tv.setOnTouchListener(dragListener(lp, tv, onTap = { readNow("bubble") }, onLong = { showPanel(collapsed) }, save = { prefs.bubbleX = lp.x; prefs.bubbleY = lp.y }))
         wm.addView(tv, lp)
         bubble = tv; bubbleLp = lp
     }
 
-    private fun dragListener(lp: WindowManager.LayoutParams, onTap: () -> Unit, onLong: () -> Unit): View.OnTouchListener = object : View.OnTouchListener {
+    private fun dragListener(lp: WindowManager.LayoutParams, win: View, onTap: () -> Unit, onLong: () -> Unit, save: () -> Unit): View.OnTouchListener = object : View.OnTouchListener {
         val slop = ViewConfiguration.get(this@OverlayService).scaledTouchSlop
         var sx = 0f; var sy = 0f; var ox = 0; var oy = 0; var moved = false; var longFired = false
         val longRun = Runnable { longFired = true; onLong() }
@@ -333,15 +363,15 @@ class OverlayService : Service() {
                     val dx = e.rawX - sx; val dy = e.rawY - sy
                     if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(longRun) }
                     if (moved) {
-                        lp.x = (ox + dx).toInt().coerceIn(0, maxOf(0, screenW - v.width))
-                        lp.y = (oy + dy).toInt().coerceIn(0, maxOf(0, screenH - v.height))
-                        try { wm.updateViewLayout(v, lp) } catch (_: Exception) {}
+                        lp.x = (ox + dx).toInt().coerceIn(0, maxOf(0, screenW - win.width))
+                        lp.y = (oy + dy).toInt().coerceIn(0, maxOf(0, screenH - win.height))
+                        try { wm.updateViewLayout(win, lp) } catch (_: Exception) {}
                     }
                     return true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(longRun)
-                    if (moved) { prefs.bubbleX = lp.x; prefs.bubbleY = lp.y }
+                    if (moved) save()
                     else if (!longFired && e.actionMasked == MotionEvent.ACTION_UP) { v.performClick(); onTap() }
                     return true
                 }
@@ -385,6 +415,17 @@ class OverlayService : Service() {
         catch (e: Exception) { toast("cannot open: ${e.message}") }
     }
 
+    /** The part of the screen a held card is in (below the seller header, above the lot row), at full resolution:
+     *  the collector number is a few pixels tall in a downscaled frame, which is why 720 px reads came back without one. */
+    private fun cardBand(b: android.graphics.Bitmap): android.graphics.Bitmap {
+        val y0 = (b.height * 0.07).toInt()
+        val h = (b.height * 0.84).toInt() - y0
+        var out = android.graphics.Bitmap.createBitmap(b, 0, y0, b.width, h)
+        val k = 1600f / maxOf(out.width, out.height)
+        if (k < 1f) out = android.graphics.Bitmap.createScaledBitmap(out, (out.width * k).toInt(), (out.height * k).toInt(), true)
+        return out
+    }
+
     private var bundledJs: String? = null
     private fun bundled(): String = bundledJs ?: try {
         (assets.open("recog-read.js").bufferedReader().readText() + "\n;\n" + assets.open("bridge.js").bufferedReader().readText()).also { bundledJs = it }
@@ -424,8 +465,9 @@ class OverlayService : Service() {
                 c.grab { bmp ->
                     if (bmp == null) js("window.__phone.frameFail($q,'no frame from the screen capture')")
                     else Thread {
-                        val url = Capture.jpegDataUrl(bmp)
-                        js("window.__phone.frame($q,${JSONObject.quote(url)},${bmp.width},${bmp.height})")
+                        val f = cardBand(bmp)
+                        val url = Capture.jpegDataUrl(f, 88)
+                        js("window.__phone.frame($q,${JSONObject.quote(url)},${f.width},${f.height})")
                     }.start()
                 }
             }
@@ -440,7 +482,10 @@ class OverlayService : Service() {
 
         @JavascriptInterface fun open(url: String) { if (url.startsWith("https://")) main.post { openExternal(url) } }
         @JavascriptInterface fun focus(want: Boolean) { main.post { setFocusable(want, want) } }
-        @JavascriptInterface fun layout(s: String) { main.post { applyLayout(s) } }
+        /** the page's mode changed (card, list, typing) or a read landed: the panel shows, collapsed or not */
+        @JavascriptInterface fun layout(s: String) { main.post { typing(s == "typing"); showPanel(true) } }
+        @JavascriptInterface fun size(cssPx: Int) { main.post { setContentHeight(cssPx) } }
+        @JavascriptInterface fun collapse() { main.post { showPanel(false) } }
         @JavascriptInterface fun toast(t: String) { this@OverlayService.toast(t) }
         @JavascriptInterface fun log(s: String) { Log.d(TAG, "page: $s") }
         @JavascriptInterface fun dump() { main.post { this@OverlayService.dump() } }

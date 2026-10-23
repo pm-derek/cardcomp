@@ -25,15 +25,18 @@ class Prefs(ctx: Context) {
         get() = p.getString("mode", "manual") ?: "manual"
         set(v) = p.edit().putString("mode", v).apply()
 
-    /** top strip height, % of the screen */
-    var stripPct: Int
-        get() = p.getInt("stripPct", 15)
-        set(v) = p.edit().putInt("stripPct", v).apply()
+    /** the floating panel's place and width (px); -1 = default (top, full width) */
+    var panelX: Int
+        get() = p.getInt("panelX", -1)
+        set(v) = p.edit().putInt("panelX", v).apply()
 
-    /** bottom panel height, % of the screen (dragged by its top edge) */
-    var panelPct: Int
-        get() = p.getInt("panelPct", 32)
-        set(v) = p.edit().putInt("panelPct", v).apply()
+    var panelY: Int
+        get() = p.getInt("panelY", -1)
+        set(v) = p.edit().putInt("panelY", v).apply()
+
+    var panelW: Int
+        get() = p.getInt("panelW", -1)
+        set(v) = p.edit().putInt("panelW", v).apply()
 
     var bubbleX: Int
         get() = p.getInt("bubbleX", -1)

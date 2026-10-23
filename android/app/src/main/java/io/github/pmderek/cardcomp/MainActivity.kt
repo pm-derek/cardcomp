@@ -21,6 +21,7 @@ import java.io.File
 
 /** Setup screen: permissions, keys, start / stop the overlay, share the last screen dump. */
 class MainActivity : Activity() {
+    companion object { @Volatile var resumed = false }
     private lateinit var prefs: Prefs
     private lateinit var status: TextView
     private lateinit var keyIn: EditText
@@ -70,7 +71,8 @@ class MainActivity : Activity() {
         button("Stop overlay") {
             startService(Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_STOP)); refresh()
         }
-        text("In the overlay: tap the gold bubble to read the card, drag it anywhere, long press to hide or show CardComp. " +
+        text("In the overlay: tap the gold bubble to read the card, drag it anywhere, long press it to hide or show the panel. " +
+            "Move the panel by its top bar, widen or narrow it with the corner at its top right, – folds it into the bubble. " +
             "The notification has Read, Dump screen and Stop. A dump copies Whatnot's screen layout to the clipboard for the phase 1 reader.", 12f)
         button("Copy last screen dump") { lastDump()?.let { copy(it.readText()); toast("copied ${it.name}") } ?: toast("no dump yet") }
         button("Share last screen dump") { lastDump()?.let { share(it) } ?: toast("no dump yet") }
@@ -78,7 +80,9 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(col) })
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    // the overlay never covers this screen (it hid the Stop button)
+    override fun onResume() { super.onResume(); resumed = true; OverlayService.instance?.appVisible(true); refresh() }
+    override fun onPause() { resumed = false; OverlayService.instance?.appVisible(false); super.onPause() }
 
     private fun refresh() {
         val overlay = Settings.canDrawOverlays(this)
@@ -105,6 +109,7 @@ class MainActivity : Activity() {
                 .putExtra(OverlayService.EXTRA_CODE, resultCode).putExtra(OverlayService.EXTRA_DATA, data)
             startForegroundService(i)
             toast("overlay started: open Whatnot")
+            moveTaskToBack(true)   // out of the way: the overlay shows once this screen is gone
         } else {
             toast("screen capture not allowed: the read button cannot work")
         }

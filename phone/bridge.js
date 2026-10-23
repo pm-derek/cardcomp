@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.1.0";          // bridge version
+  const VER = "0.2.0";          // bridge version
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
@@ -53,6 +53,7 @@
   P.frameFail = function (req, why) { delete PENDING[req]; toApp({ type: "cardcomp-auto-readack", ok: false, why: why || "no frame" }); };
 
   async function runRead(img, w, h, p) {
+    P.lastFrame = img;   // "frame" on the status line shows what was read
     const c = cfg(), modelKey = c.model || "sonnet", key = p.at;   // keyed by press time, like the extension's read now
     const head = { type: "cardcomp-auto", key, n: 1, capAt: key, title: "", seller: "", pre: false, manual: true };
     if (!(await loadReader())) { toApp(Object.assign(head, { error: "reader not loaded (extension/recog/recog-read.js)" })); return; }
@@ -63,7 +64,7 @@
       toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short })));
     toApp(Object.assign({}, head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short }));
     log({ read: res.read || null, error: res.error || "", ms: res.ms, cost: res.cost, src: p.src });
-    if (res.read && res.read.name) layout("panel");
+    setMode("card", true);   // the compact card shows the best guess; the list is one tap away
     // no number read, or unsure: read the enlarged card from the same frame (CardComp keeps it only if it ranks higher)
     const r = res.read;
     if (r && r.card_visible !== false && r.name && (!r.number || (r.confidence || 0) < 0.7) && Array.isArray(r.box) && r.box.length === 4) {
@@ -114,7 +115,6 @@
         let r = {}; try { r = JSON.parse(A.bid(String(d.amount), String(d.name || "")) || "{}"); } catch (e) { r = { ok: false, why: e.message }; }
         toApp(Object.assign({ type: "cardcomp-bid-ack" }, r));
         flashBid(r);
-        layout("strip");
         break;
       }
       case "cardcomp-open-bg": A.open(String(d.url || "")); break;   // TCGplayer links open in the browser over Whatnot
@@ -126,102 +126,175 @@
     }
   }
 
-  // ---------------------------------------------------------------- keyboard: the window is focusable only while a text field has focus
+  // ---------------------------------------------------------------- modes
+  // card   = the compact floating card: name, bid, NM / LP / MP, what was read (default, and after every read)
+  // list   = search box, results and the open card's condition grid (tap the name, ▾ or the status line)
+  // typing = list while the search box has focus (the panel moves to the top so the keyboard does not cover it)
+  // The panel is as tall as what it shows (Android.size): no dead space, and it is dragged wherever the stream allows.
+  let MODE = "card", MODE_BEFORE_TYPING = "card";
+  function setMode(m, show) {
+    if (m !== "card" && m !== "list" && m !== "typing") return;
+    const changed = m !== MODE; MODE = m;
+    document.body.classList.remove("ph-card", "ph-list", "ph-typing"); document.body.classList.add("ph-" + m);
+    if (changed || show) { try { A.layout(m); } catch (_) {} }
+    if (m === "card") window.scrollTo(0, 0);
+    if (m === "list") setTimeout(() => { const o = $("#results .card.open"); if (o) o.scrollIntoView({ block: "start" }); }, 60);
+    paintBar(); sizeSoon();
+  }
+  P.setMode = setMode; P.mode = () => MODE;
+  P.back = function () {   // Android Back inside the panel
+    if (MODE === "typing") P.blur();
+    else if (MODE === "list") setMode("card");
+    else { try { A.collapse(); } catch (_) {} }
+  };
+
+  // keyboard: the window is focusable only while a text field has focus (native drops it on any touch outside)
   const isField = (t) => !!(t && t.closest && t.closest("input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]"));
-  let LAY = "strip", BEFORE_TYPING = "strip";
-  document.addEventListener("focusin", (e) => { if (!isField(e.target)) return; try { A.focus(true); } catch (_) {} if (e.target.id === "q" && LAY !== "typing") { BEFORE_TYPING = LAY; layout("typing"); } }, true);
+  document.addEventListener("focusin", (e) => {
+    if (!isField(e.target)) return;
+    try { A.focus(true); } catch (_) {}
+    if (e.target.id === "q" && MODE !== "typing") { MODE_BEFORE_TYPING = MODE; setMode("typing"); }
+  }, true);
   document.addEventListener("focusout", (e) => {
     if (!isField(e.target)) return;
-    setTimeout(() => { if (isField(document.activeElement)) return; try { A.focus(false); } catch (_) {} if (LAY === "typing") layout(BEFORE_TYPING === "typing" ? "strip" : BEFORE_TYPING); }, 150);
+    setTimeout(() => {
+      if (isField(document.activeElement)) return;
+      try { A.focus(false); } catch (_) {}
+      if (MODE === "typing") setMode(($("#q") && $("#q").value.trim()) ? "list" : MODE_BEFORE_TYPING === "typing" ? "card" : MODE_BEFORE_TYPING);
+    }, 150);
   }, true);
   P.blur = function () { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) {} };
 
-  // ---------------------------------------------------------------- layout: strip (top band), typing (top band, taller), panel (bottom band)
-  function layout(s) {
-    if (s !== "strip" && s !== "typing" && s !== "panel") return;
-    LAY = s;
-    document.body.classList.remove("ph-strip", "ph-typing", "ph-panel"); document.body.classList.add("ph-" + s);
-    try { A.layout(s); } catch (_) {}
-    if (s === "strip") window.scrollTo(0, 0);
-    if (s === "panel") setTimeout(() => { const o = $("#results .card.open") || $("#results .card.autosug"); if (o) o.scrollIntoView({ block: "start" }); }, 50);
-    paintBar();
+  // height: what the page shows, reported to the native panel (it caps it at 62% of the screen; the list scrolls inside)
+  let sizeT = 0, lastH = 0;
+  function sizeSoon() { clearTimeout(sizeT); sizeT = setTimeout(sizeNow, 60); }
+  function sizeNow() {
+    const w = $(".wrap"), h = Math.ceil((w || document.body).getBoundingClientRect().height);
+    if (Math.abs(h - lastH) < 2) return;
+    lastH = h; try { A.size(h); } catch (_) {}
   }
-  P.layout = layout;
-  P.state = () => LAY;
+  P.sizeNow = () => { lastH = 0; sizeNow(); };
 
   const css = document.createElement("style");
   css.textContent =
-    "body.phone{padding:0 6px 4px}body.phone h1,body.phone #gear,body.phone #settings,body.phone #filterbar,body.phone #filterwrap,body.phone #stale,body.phone #wnstat{display:none!important}" +
-    "body.phone .searchrow{padding:4px 0;gap:4px}body.phone #q{padding:9px 10px;font-size:15px}body.phone #langbtn{padding:6px 8px;min-width:40px}body.phone #readbig{width:54px;max-height:40px}" +
-    "body.phone #lotstrip{padding:3px 7px;font-size:11.5px}body.phone #readbig .k{display:none}" +
+    "html,body{min-height:0!important;height:auto!important}body.phone{padding:0}body.phone .wrap{padding:2px 8px 4px}body.ph-list .wrap,body.ph-typing .wrap{padding-bottom:12px}" +
+    "body.phone h1,body.phone #gear,body.phone #settings,body.phone #filterbar,body.phone #filterwrap,body.phone #stale,body.phone #wnstat,body.phone #cart,body.phone #readbig{display:none!important}" +
+    "body.phone .searchrow{position:static!important;padding:4px 0;gap:4px}body.phone #q{padding:9px 10px;font-size:15px}body.phone #langbtn{padding:6px 8px;min-width:40px}" +
+    "body.phone #lotstrip{padding:3px 7px;font-size:11.5px}" +
     "body.phone #autoline{padding:2px 6px;font-size:11px;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}body.phone #autoline.full{-webkit-line-clamp:unset}" +
-    "body.ph-strip #sug,body.ph-strip #read,body.ph-strip #status,body.ph-strip #results,body.ph-strip #cart,body.ph-strip #pickbar,body.ph-strip #autoline{display:none!important}" +
-    "body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
-    "#phonebar{display:flex;align-items:center;gap:6px;min-height:34px;padding:2px 0;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.25}" +
-    "#phonebar .pn{flex:1;min-width:0;overflow:hidden;cursor:pointer}#phonebar .pn b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}" +
+    // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
+    "body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
+    "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
+    "body.ph-list #phonestat,body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
+    "#phonecard{font-family:'JetBrains Mono',monospace}" +
+    "#phonebar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:2px 0;font-size:12px;line-height:1.25}" +
+    "#phonebar .pnw{flex:1 1 150px;min-width:0;display:flex;align-items:center;gap:4px}" +
+    "#phonebar .pn{flex:1;min-width:0;overflow:hidden;cursor:pointer}#phonebar .pn b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:13px}" +
     "#phonebar .pn span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim);font-size:10.5px}" +
-    "#phonebar .pb{flex:none;border:2px solid var(--gold);background:rgba(245,179,1,.14);color:var(--gold);border-radius:8px;padding:6px 10px;font-weight:700;font-size:16px;min-width:64px;text-align:center}" +
-    "#phonebar .pb.none{border-color:var(--line);color:var(--faint);background:none}#phonebar .px{flex:none;color:var(--dim);font-size:10.5px;line-height:1.2;text-align:right;white-space:nowrap}" +
-    "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:5px 7px;font-size:12px}body.ph-panel #phonebar .pt{color:var(--gold);border-color:var(--gold)}";
+    "#phonebar .st{flex:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;min-width:30px;height:30px;font-size:15px;display:flex;align-items:center;justify-content:center}" +
+    "#phonebar .sn{flex:none;color:var(--faint);font-size:10.5px;min-width:30px;text-align:center}" +
+    "#phonebar .pr{flex:1 0 auto;display:flex;align-items:center;gap:6px;justify-content:flex-end}" +
+    "#phonebar .pb{flex:none;border:2px solid var(--gold);background:rgba(245,179,1,.14);color:var(--gold);border-radius:8px;padding:6px 10px;font-weight:700;font-size:17px;min-width:62px;text-align:center}" +
+    "#phonebar .pb.none{border-color:var(--line);color:var(--faint);background:none;font-size:13px}#phonebar .px{flex:none;color:var(--dim);font-size:10.5px;line-height:1.25;text-align:right;white-space:nowrap}" +
+    "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;min-width:34px;height:32px;font-size:14px;display:flex;align-items:center;justify-content:center}" +
+    "body.ph-list #phonebar .pt.tg,body.ph-typing #phonebar .pt.tg{color:var(--gold);border-color:var(--gold)}" +
+    "#phonestat{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
-  document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) a.classList.toggle("full"); });
+  document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) { a.classList.toggle("full"); sizeSoon(); } });
 
-  // ---------------------------------------------------------------- the strip's card line: name, the max bid, NM / LP / MP
-  // The card shown: the open card, else the best guess of the last reading, else the first result. The bid button taps
-  // the card's own bid chip (copyAmt), so the lot label, the taps and the log see the same tap as a tap on the tile.
-  let barEl = null, FLASH = null;
-  function bar() {
-    if (barEl && barEl.isConnected) return barEl;
-    const row = $("#q") && $("#q").parentElement && $("#q").parentElement.parentElement; if (!row) return null;
-    barEl = document.createElement("div"); barEl.id = "phonebar";
-    row.insertAdjacentElement("afterend", barEl);
-    return barEl;
+  // ---------------------------------------------------------------- the card line: name (‹ › through the candidates), the max bid, NM / LP / MP
+  // The card shown: the open card, else the one stepped to, else the best guess of the last reading, else the top result
+  // of a typed search (never the default list). The bid button taps that card's own bid chip, so copyAmt, the lot label
+  // and the log see the same tap as a tap on the tile.
+  let wrapEl = null, FLASH = null, CUR = -1;
+  function wrap() {
+    if (wrapEl && wrapEl.isConnected) return wrapEl;
+    const sr = $(".searchrow"); if (!sr) return null;
+    wrapEl = document.createElement("div"); wrapEl.id = "phonecard";
+    wrapEl.innerHTML = '<div id="phonebar"></div><div id="phonestat"></div>';
+    sr.insertBefore(wrapEl, sr.firstChild);
+    wrapEl.querySelector("#phonestat").onclick = (e) => {
+      if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
+      setMode("list");
+    };
+    return wrapEl;
   }
   const money = (v) => "$" + (v >= 100 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2));
-  function focusCard() {   // the default list on load is not a card Derek asked about: only a search or a read puts one on the strip
+  const cands = () => Array.from(document.querySelectorAll("#results .card")).slice(0, 16);
+  function focusCard() {
+    const open = $("#results .card.open"); if (open) return open;
+    const list = cands();
+    if (CUR >= 0 && list[CUR]) return list[CUR];
     const q = $("#q"), typed = q && q.value.trim();
-    return $("#results .card.open") || $("#results .card.autosug") || (typed ? $("#results .card") : null);
+    return $("#results .card.autosug") || (typed ? list[0] : null);
   }
   function paintBar() {
-    const el = bar(); if (!el) return;
+    const w = wrap(); if (!w) return;
+    const el = w.querySelector("#phonebar");
     const card = focusCard(), id = card && card.dataset.id, r = id && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === id) : null;
+    const tg = `<span class="pt tg" data-t="toggle" title="results and the condition grid">${MODE === "card" ? "&#9662;" : "&#9652;"}</span>`;
+    const srch = '<span class="pt" data-t="search" title="search">&#128269;</span>';
     if (!r) {
-      el.innerHTML = `<div class="pn"><b style="color:var(--faint)">no card yet</b><span>tap read, or search</span></div><span class="pb none">bid</span><span class="pt" data-t="toggle">${LAY === "panel" ? "&#9650; strip" : "&#9660; more"}</span>`;
-      wire(el, null, null); return;
+      el.innerHTML = `<div class="pnw"><div class="pn"><b style="color:var(--faint)">no card yet</b><span>tap the gold read bubble, or search</span></div></div><div class="pr">${srch}${tg}</div>`;
+      wire(el, null, null); paintStat(); sizeSoon(); return;
     }
+    const list = cands(), i = list.indexOf(card), n = list.length, step = !card.classList.contains("open") && n > 1 && i >= 0;
     const chip = card.querySelector(".bids .bm b.rounded") || card.querySelector(".bids .bm b");
     const bid = chip ? chip.textContent.trim() : "";
     const m = typeof bestMarket === "function" ? bestMarket(r) : 0;
     const mult = (c) => (typeof condMult === "function" ? condMult(c, r.y, m) : 1);
     const px = m > 0 ? `NM ${money(m)}<br>LP ${money(m * mult("LP"))} · MP ${money(m * mult("MP"))}` : "no market";
-    const tag = card.classList.contains("open") ? "open" : card.classList.contains("autosug") ? "best guess" : "top result";
-    el.innerHTML = `<div class="pn" title="open this card"><b>${esc(r.n)}</b><span>${esc(r.s)} #${esc(r.num)}${r.lang === "jp" ? " · JP" : ""} · ${tag}</span></div>` +
-      `<span class="pb${bid ? "" : " none"}" data-t="bid" title="tap: bid to the clipboard">${bid ? esc(FLASH && FLASH.until > Date.now() ? FLASH.txt : bid) : "bid"}</span>` +
-      `<span class="px">${px}</span><span class="pt" data-t="toggle">${LAY === "panel" ? "&#9650;" : "&#9660;"}</span>`;
-    wire(el, card, chip);
+    const tag = card.classList.contains("open") ? "open" : card.classList.contains("autosug") ? "best guess" : i === 0 ? "top result" : "";
+    el.innerHTML = `<div class="pnw">${step ? '<span class="st" data-t="prev">&#8249;</span>' : ""}` +
+      `<div class="pn" title="open: condition grid"><b>${esc(r.n)}</b><span>${esc(r.s)} #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${tag ? " · " + tag : ""}</span></div>` +
+      (step ? `<span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") + `</div>` +
+      `<div class="pr"><span class="pb${bid ? "" : " none"}" data-t="bid" title="tap: bid to the clipboard">${bid ? esc(FLASH && FLASH.until > Date.now() ? FLASH.txt : bid) : "bid"}</span>` +
+      `<span class="px">${px}</span>${srch}${tg}</div>`;
+    wire(el, card, chip); paintStat(); sizeSoon();
   }
   function wire(el, card, chip) {
-    const nm = el.querySelector(".pn"), pb = el.querySelector(".pb"), pt = el.querySelector(".pt");
-    if (nm) nm.onclick = () => { if (card && !card.classList.contains("open")) { const row = card.querySelector(".row"); if (row) row.click(); } layout("panel"); };
-    if (pb) pb.onclick = (e) => { e.preventDefault(); if (chip) chip.click(); else layout("panel"); };
-    if (pt) pt.onclick = () => layout(LAY === "panel" ? "strip" : "panel");
+    const on = (t, f) => { const x = el.querySelector(`[data-t="${t}"]`); if (x) x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(); }; };
+    const nm = el.querySelector(".pn");
+    if (nm) nm.onclick = () => { if (card && !card.classList.contains("open")) { const row = card.querySelector(".row"); if (row) row.click(); } setMode("list"); };
+    on("bid", () => { if (chip) chip.click(); else setMode("list"); });
+    on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
+    on("search", () => { setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
+    const n = cands().length, i = cands().indexOf(card);
+    on("prev", () => { CUR = (i - 1 + n) % n; paintBar(); });
+    on("next", () => { CUR = (i + 1) % n; paintBar(); });
+  }
+  // status line under the card: what was read and how sure ("read Ralts · reverse holo → 3 of 27, no number"), and the frame
+  function paintStat() {
+    const w = wrap(); if (!w) return;
+    const st = w.querySelector("#phonestat"), am = $("#automsg");
+    let t = am ? am.textContent.replace(/\s+/g, " ").trim() : "";
+    t = t.replace(/^read now: /, "").replace(/^press read.*$/, "").replace(/^waiting for the next lot$/, "");
+    const b0 = am && am.querySelector(".bad"), bad = b0 && b0.textContent.trim() === am.textContent.trim();   // red only when the whole line is an error
+    const html = t ? (bad ? `<span class="bad">${esc(t)}</span>` : esc(t)) + (P.lastFrame ? ' · <a class="fr" href="#">frame</a>' : "") : "";
+    if (st.innerHTML !== html) st.innerHTML = html;   // only on change: this runs from a body observer
   }
   function flashBid(r) {
     const txt = r && r.ok ? "Whatnot ✓" : r && r.why === "under" && r.min ? "under $" + r.min : r && r.why === "sold" ? "sold" : "copied";
     FLASH = { txt, until: Date.now() + 2500 }; paintBar(); setTimeout(paintBar, 2600);
   }
   let barTimer = 0;
-  const mo = new MutationObserver(() => { clearTimeout(barTimer); barTimer = setTimeout(paintBar, 120); });
-  const results = $("#results"); if (results) mo.observe(results, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
-  // the bid chips flash "copied $3" on the tile; the strip's own button shows the same
-  P.dumpNote = function (txt) { const el = bar(); if (el) { const n = el.querySelector(".pn span"); if (n) n.textContent = txt; } };
+  const results = $("#results");
+  const mo = new MutationObserver((recs) => {
+    if (recs.some((x) => x.type === "childList" && x.target === results)) CUR = -1;   // new results: back to the best guess
+    clearTimeout(barTimer); barTimer = setTimeout(paintBar, 120);
+  });
+  if (results) mo.observe(results, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  let statT = 0;
+  new MutationObserver(() => { clearTimeout(statT); statT = setTimeout(() => { paintStat(); sizeSoon(); }, 80); })
+    .observe(document.body, { childList: true, subtree: true, characterData: true });
+  P.dumpNote = function (txt) { const w = wrap(); if (w) { const st = w.querySelector("#phonestat"); st.textContent = txt; sizeSoon(); } };
 
   // ---------------------------------------------------------------- hello
   function hello() {
     toApp({ type: "cardcomp-ext-ready" });   // the app shows the auto line, asks for state and status, sends bids our way
     state(); status();
-    layout("strip");
+    setMode("card", true);
   }
   // CardComp needs its catalog before results can render; the handshake itself can go at once
   if (document.readyState === "complete") hello(); else window.addEventListener("load", hello);
