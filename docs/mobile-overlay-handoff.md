@@ -158,6 +158,33 @@ Proposed, not decided:
   (89%); strong suggestion wrong 0 of 4. Good enough to ship as "best guess marked, alternatives listed", which is
   how the phone overlay will show it too. CardSight numbers: none yet (see above).
 
+### Whatnot Android app layout (Derek's screenshots 2026-10-23, domvault_card, S25+ full screen)
+
+Same vocabulary as the web page, so the lot reader's rules carry over; differences noted.
+- Header, top 9%: avatar, seller name, "★ 5.0 • 🚚 <1d", viewer count with the red live icon, a chevron (leave
+  the stream). Under it, left, a junk "Earn more points / Check here" badge (y 14 to 20%).
+- Video fills the screen; the held card sits in the middle, roughly y 22 to 75%, x 15 to 85%. Right rail, x 85%+,
+  y 35 to 80%: More, Boost, Clip, Share (count), Wallet, Shop (count, thumbnail).
+- Chat, left, y 50 to 72%: avatar + username line + message line; "joined 👋" for joins. "Say something..." box
+  at y 72 to 78% with the "RUN IT" button.
+- Leader / winner line above the lot card, y 80%: "onestop_collectables is winning!", "caydenarterbury won!".
+  End screen mid-video: big avatar, the username in yellow, "Won the auction!" (web says "won the auction!").
+- Lot card, y 82 to 90%: thumbnail, title "Card on screen #141", condition line "Mint" (one word; the web shows
+  "Near Mint · Card"), "$0.38 Shipping + Taxes"; right column price "$4" with "💀 00:01" (timer) or red "Sold".
+- Buttons, y 91 to 96%: "Custom" and "Bid $5 >>" (next bid); after a sale the row reads "Awaiting Next Item".
+- Custom bid is a bottom sheet over the lower 40%: title, "$2 +Ship/Tax", "00:02 💀", a stepper "−  $3  +" with
+  the amount big in the middle, "Max Bid (i) When on, we'll automatically place bids for you, up to this price."
+  with a toggle (on), "Submit Max Bid" (web: "Set Max Bid $N"). The keyboard only matters if the amount is
+  tapped to type it; the stepper is the default. The fill should set the amount node directly (`ACTION_SET_TEXT`
+  if it is editable, else tap the amount then set) and never step "+" dozens of times; a view-tree dump of this
+  sheet decides which.
+- Split screen (Derek's current flow): Whatnot's half keeps the header, chat box, leader line, lot card and
+  buttons and shows almost no video; with the Custom sheet open the video is gone. This is the case for the
+  overlay: Whatnot stays full screen, and the card stays visible.
+- domvault_card sells Simplified Chinese cards (铁斑叶ex, 洛奇亚V). The reader returns kind `foreign` for them
+  and CardComp has no Chinese catalog (TCGplayer carries none), so they stay unmatched; JP prices are not a
+  substitute. Out of scope.
+
 ### Decisions
 
 Derek, 2026-10-23: Galaxy S25+ (One UI 7 per Derek; check Settings > About phone, One UI 7 ships Android 15 and
@@ -206,12 +233,15 @@ works like the browser extension and everything merges into one log.
    ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
    "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
    14+), with the capture notification.
-8. Overlay layout, three states, remembered: bubble (read-now button, drag anywhere); strip (one row over the
-   seller header: card name, the max bid chip, NM / LP / MP with net, fast / slow pill, the lot strip text); full
-   (the CardComp page over the top 55 to 60% of the screen, the video still visible below it, Whatnot's lot row,
-   chat box and bid buttons never covered). Tap the strip for full, swipe up or the X for the strip, long press
-   for the bubble. Android 12+ blocks touches to the app underneath only inside an opaque overlay's bounds, so the
-   panel never covers the bid buttons and the rest of Whatnot keeps working.
+8. Overlay layout, three states, remembered, placed from the layout above: bubble (read-now button, drag
+   anywhere; default home top right under the viewer count); strip (one row under the header, y about 9 to 19%,
+   over the "Earn more points" badge and nothing else: card name, the max bid chip, NM / LP / MP with net, fast /
+   slow pill, the lot strip text); full (the CardComp page over the top 50% of the screen, which covers the upper
+   part of the held card, so it is for searching and reading the grid, and a bid tap or 20 s without a touch drops
+   it back to the strip). Never over the chat box, leader line, lot card, Custom / Bid buttons or the Custom bid
+   sheet (lower 40%). Tap the strip for full, swipe up or the X for the strip, long press for the bubble. Android
+   12+ blocks touches to the app underneath only inside an opaque overlay's bounds, so the rest of Whatnot keeps
+   working.
 9. One log: phone rows carry the same record v2 shape plus `src:"phone"`, written to `cardcomp-data` through the
    bridge; stats, haul, buyers and the dashboard need no change. `cardcomp-log-read` on load merges desktop and
    phone rows as it does for a second computer today.
@@ -236,7 +266,8 @@ works like the browser extension and everything merges into one log.
 ### Open questions for Derek
 
 - Android version from Settings > About phone (One UI 7 would be Android 15).
-- Full panel over the top 55 to 60% of the screen with the video still showing underneath: right, or taller?
+- Full panel over the top 50% (it covers the upper half of the held card while open, drops back to the strip
+  after a bid tap or 20 s idle): right?
 - OK to share a few Whatnot view-tree dumps from the phone (lot row, Custom bid modal, end screen) for phase 1?
 ### Open questions for Derek
 
