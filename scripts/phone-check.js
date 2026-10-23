@@ -360,6 +360,27 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const c6 = (await calls()).slice(b6);
   ok(c6.some((x) => x.n === "http" && /tcgplayer/.test(x.a[1])) && c6.some((x) => x.n === "open"), "condition link: fast read through the app, browser only after it failed (" + c6.filter((x) => x.n === "http").length + " requests)");
 
+  console.log("9. printing chips (Holo / Reverse / Poké Ball / Master Ball)");
+  await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "sylveon 040/131"; run("sylveon 040/131"); window.__phone.setMode("card"); });
+  await page.waitForTimeout(900);
+  const pc0 = await page.evaluate(() => ({ chips: Array.from(document.querySelectorAll("#phonebar .pq")).map((x) => x.textContent), on: (document.querySelector("#phonebar .pq.on") || {}).textContent || "", name: (document.querySelector("#phonebar .pn b") || {}).textContent }));
+  ok(pc0.name === "Sylveon" && pc0.chips.length === 4 && pc0.chips.some((t) => /^Reverse/.test(t)) && pc0.chips.some((t) => /^Master Ball/.test(t)), "small card shows every printing as a chip: " + pc0.chips.join(" | ") + " (on: " + pc0.on + ")");
+  // a reading that saw a reverse holo starts the card on Reverse
+  await page.evaluate(() => { document.querySelector("#q").value = ""; run(""); });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { window.autoMatch({ name: "Sylveon", number: "040", total: "131", language: "en", rarity: "Common", finish: "reverse holo", set: "Prismatic Evolutions", card_visible: true, confidence: 0.9 }, {}); });
+  await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "sylveon 040/131"; run("sylveon 040/131"); window.__phone.setMode("card"); });
+  await page.waitForTimeout(900);
+  const pc2 = await page.evaluate(() => ({ on: (document.querySelector("#phonebar .pq.on") || {}).textContent || "", rd: (document.querySelector("#phonebar .pq.rd") || {}).textContent || "" }));
+  ok(/^Reverse/.test(pc2.on), "a reverse-holo read starts the card on Reverse: " + JSON.stringify(pc2));
+  ok(/^Reverse/.test(pc2.rd), "the printing the read saw is marked (dashed): " + pc2.rd);
+
+  await page.evaluate(() => [...document.querySelectorAll("#phonebar .pq")].find((x) => /^Poké Ball/.test(x.textContent)).click());
+  await page.waitForTimeout(400);
+  const pc1 = await page.evaluate(() => ({ on: (document.querySelector("#phonebar .pq.on") || {}).textContent || "", open: (document.querySelector("#results .card.open .pchip.on") || {}).textContent || "",
+    pill: (document.querySelector('#phonebar .pb[data-c="NM"] b') || {}).textContent, grid: (document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']") || {}).dataset.bid }));
+  await page.screenshot({ path: path.join(OUT, "phone-printing-chips.png") });
+  ok(/^Poké Ball/.test(pc1.on) && /Pok/.test(pc1.open) && pc1.pill === "$" + pc1.grid, `tap Poké Ball: the open card switches and the NM pill reprices ($${pc1.grid}, ${pc1.open})`);
   console.log("8. zoom (Derek's screenshots: the page stayed magnified after the panel's width changed)");
   await page.evaluate(() => window.__phone.setMode("list")); await fit(560);
   await page.evaluate(() => window.__phone.setMode("card")); await fit();
