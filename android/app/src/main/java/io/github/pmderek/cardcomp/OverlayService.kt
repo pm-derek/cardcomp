@@ -315,6 +315,13 @@ class OverlayService : Service() {
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = userAgentString + " CardCompPhone/" + BuildConfig.VERSION_NAME
             setSupportZoom(false)
+            // Page scale locked at 1 (Derek's screenshots, 2026-10-23: after the panel's width changed, the page stayed
+            // magnified ~2.5x). No wide viewport, no overview zoom, no built-in zoom, no system font boost.
+            useWideViewPort = false
+            loadWithOverviewMode = false
+            builtInZoomControls = false
+            displayZoomControls = false
+            textZoom = 100
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)   // chrome://inspect would expose the keys: debug builds only
         wv.setBackgroundColor(Color.parseColor("#0b0d10"))

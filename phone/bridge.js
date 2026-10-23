@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.9.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.10.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -438,7 +438,9 @@
   let sizeT = 0, lastH = 0;
   function sizeSoon() { clearTimeout(sizeT); sizeT = setTimeout(sizeNow, 60); }
   function sizeNow() {
-    const w = $(".wrap"), h = Math.ceil((w || document.body).getBoundingClientRect().height);
+    const w = $(".wrap"), el = w || document.body, z = ZOOM || 1;
+    // CSS zoom on <html>: offsetHeight is in unzoomed CSS px, the window needs zoomed ones
+    const h = Math.ceil(el.offsetHeight * z);
     if (Math.abs(h - lastH) < 2) return;
     lastH = h; try { A.size(h); } catch (_) {}
   }
@@ -487,6 +489,39 @@
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
+  // The browser's own zoom is off: a width change of the panel left the page magnified ~2.5x on the phone (Derek,
+  // 2026-10-23). Scale 1, always; the size of the contents is ours to set (pinch, below).
+  { let vp = document.querySelector('meta[name="viewport"]'); if (!vp) { vp = document.createElement("meta"); vp.name = "viewport"; document.head.appendChild(vp); }
+    vp.content = "width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"; }
+  css.textContent += "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body.phone{touch-action:pan-x pan-y}";
+
+  // ---------------------------------------------------------------- pinch: the size of the panel's contents (Derek, 2026-10-23)
+  // Two fingers apart = bigger, together = smaller (60% to 160%, remembered). Pinching together past the smallest size
+  // folds the panel into the bubble (and keeps the size it had).
+  const ZMIN = 0.6, ZMAX = 1.6;
+  let ZOOM = 1; try { ZOOM = Math.min(ZMAX, Math.max(ZMIN, +localStorage.getItem("cardcomp_phone_zoom") || 1)); } catch (_) {}
+  const applyZoom = () => { document.documentElement.style.zoom = String(ZOOM); lastH = 0; sizeSoon(); };
+  P.zoom = () => ZOOM;
+  if (ZOOM !== 1) document.documentElement.style.zoom = String(ZOOM);
+  let PINCH = null;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  document.addEventListener("touchstart", (e) => { if (e.touches.length === 2) PINCH = { d0: dist(e.touches), z0: ZOOM, fold: false }; }, { passive: true, capture: true });
+  document.addEventListener("touchmove", (e) => {
+    if (!PINCH || e.touches.length !== 2) return;
+    e.preventDefault();
+    const z = PINCH.z0 * dist(e.touches) / PINCH.d0;
+    PINCH.fold = z < ZMIN * 0.85;
+    const nz = Math.round(Math.min(ZMAX, Math.max(ZMIN, z)) * 100) / 100;
+    if (nz !== ZOOM) { ZOOM = nz; applyZoom(); }
+  }, { passive: false, capture: true });
+  const pinchEnd = (e) => {
+    if (!PINCH || e.touches.length >= 2) return;
+    const p = PINCH; PINCH = null;
+    if (p.fold) { ZOOM = p.z0; applyZoom(); try { A.collapse(); } catch (_) {} }   // pinched shut: into the bubble, size as it was
+    try { localStorage.setItem("cardcomp_phone_zoom", String(ZOOM)); } catch (_) {}
+  };
+  document.addEventListener("touchend", pinchEnd, { capture: true });
+  document.addEventListener("touchcancel", pinchEnd, { capture: true });
   document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) { a.classList.toggle("full"); sizeSoon(); } });
 
   // ---------------------------------------------------------------- the compact card (Derek, 2026-10-23: "show me the card picture", PalletTrade's layout)
@@ -586,7 +621,7 @@
     const flash = (c) => FLASH && FLASH.until > Date.now() && FLASH.cond === c ? FLASH.txt : null;
     const miss = notExact(r);
     const fk = card.querySelector('.condgrid a.clink[href*="tcgplayer.com/product/"]'), fpid = fk ? (/\/product\/(\d+)/.exec(fk.href) || [])[1] : "";
-    const fo = fpid && FAST_OK[fpid], live = fo ? (fo.ok ? '<i class="ok" title="every condition read from TCGplayer">TCG</i>' : '<i class="no" title="TCGplayer read failed: usual condition shares">TCG ✗</i>') : fpid && FAST_AUTO[Object.keys(FAST_AUTO).find((k) => k.startsWith(fpid + "|")) || ""] ? '<i class="wt" title="reading every condition on TCGplayer">TCG</i>' : "";
+    const fo = fpid && FAST_OK[fpid], live = fo ? (fo.ok ? '<i class="ok" title="every condition read from TCGplayer">TCG</i>' : '<i class="no" title="TCGplayer read failed: usual condition shares">TCG</i>') : fpid && FAST_AUTO[Object.keys(FAST_AUTO).find((k) => k.startsWith(fpid + "|")) || ""] ? '<i class="wt" title="reading every condition on TCGplayer">TCG</i>' : "";
     const html =
       `<div class="pc">` +
         `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +

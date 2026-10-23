@@ -500,3 +500,16 @@ state was on the device. Three paths fixed:
   so the box could sit focused with no keyboard and no typing mode). setMode always reports the height afterwards and
   survives a paint error.
 - NATIVE_API / PHONE_API 6.
+
+## 0.10 (2026-10-23): the page was magnified, not stuck
+
+Derek's screenshots on 0.9: the panel's contents were magnified ~2.5x (giant "now $18", the card picture cropped, a
+huge MP pill), in the full view and the small card alike. "Zoom out doesn't work" meant that, not the panel size:
+after the panel's width changed (🔍 widens it, ✕ narrows it), the WebView kept a page scale above 1. The headless
+check had shown the same crop once (0.8, "phone-card-alert.png") and it was wrongly put down to the test browser.
+- Page scale locked at 1: WebView `useWideViewPort=false`, `loadWithOverviewMode=false`, no built-in zoom,
+  `textZoom=100`; the bridge rewrites the viewport meta to `minimum-scale=1,maximum-scale=1,user-scalable=no` and
+  sets `text-size-adjust:100%`. Check: `visualViewport.scale` is 1 after full view -> small card.
+- Pinch (Derek's idea): two fingers on the panel set the contents' size, 60% to 160% (CSS zoom on <html>, remembered
+  in localStorage `cardcomp_phone_zoom`); the panel height follows (offsetHeight x zoom). Pinching together past
+  the smallest size folds the panel into the bubble and keeps the size. `touch-action: pan-x pan-y` keeps scrolling.

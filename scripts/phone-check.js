@@ -337,6 +337,26 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const c6 = (await calls()).slice(b6);
   ok(c6.some((x) => x.n === "http" && /tcgplayer/.test(x.a[1])) && c6.some((x) => x.n === "open"), "condition link: fast read through the app, browser only after it failed (" + c6.filter((x) => x.n === "http").length + " requests)");
 
+  console.log("8. zoom (Derek's screenshots: the page stayed magnified after the panel's width changed)");
+  await page.evaluate(() => window.__phone.setMode("list")); await fit(560);
+  await page.evaluate(() => window.__phone.setMode("card")); await fit();
+  const vs = await page.evaluate(() => ({ scale: visualViewport.scale, vp: document.querySelector('meta[name="viewport"]').content }));
+  ok(vs.scale === 1 && /maximum-scale=1/.test(vs.vp), `page scale stays 1 across full view -> small card (${vs.scale}; ${vs.vp})`);
+  await page.screenshot({ path: path.join(OUT, "phone-card-after-resize.png") });
+  // pinch with two fingers (DevTools touch events)
+  const cdp = await ctx.newCDPSession(page);
+  const touch = async (type, pts) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
+  const pinch = async (d0, d1) => { await touch("touchStart", [[125 - d0 / 2, 60], [125 + d0 / 2, 60]]); for (let k = 1; k <= 6; k++) { const d = d0 + (d1 - d0) * k / 6; await touch("touchMove", [[125 - d / 2, 60], [125 + d / 2, 60]]); } await touch("touchEnd", []); await page.waitForTimeout(250); };
+  const hz0 = await page.evaluate(() => window.__h);
+  await pinch(60, 90);
+  const z1 = await page.evaluate(() => ({ z: window.__phone.zoom(), h: window.__h, saved: localStorage.getItem("cardcomp_phone_zoom") }));
+  ok(z1.z > 1.3 && z1.h > hz0 * 1.3 && z1.saved == String(z1.z), `pinch apart: contents ${z1.z}x, panel ${hz0} -> ${z1.h} px, remembered`);
+  const bc = (await calls()).filter((x) => x.n === "collapse").length;
+  await pinch(120, 20);
+  const z2 = await page.evaluate(() => window.__phone.zoom());
+  ok((await calls()).filter((x) => x.n === "collapse").length === bc + 1 && z2 === z1.z, `pinch shut past the smallest size: folds into the bubble, size kept (${z2}x)`);
+  await page.evaluate(() => { localStorage.setItem("cardcomp_phone_zoom", "1"); }); await pinch(90, 60); await page.evaluate(() => { while (window.__phone.zoom() > 1.02) break; });
+
   console.log("7. getting back to the small card");
   await page.evaluate(() => { window.__phone.setMode("list"); });
   await page.evaluate(() => { const r = document.querySelectorAll("#results .card .row")[1]; r.querySelector(".nm").click(); });
