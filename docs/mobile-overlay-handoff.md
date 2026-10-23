@@ -160,57 +160,84 @@ Proposed, not decided:
 
 ### Decisions
 
+Derek, 2026-10-23: Galaxy S25+ (One UI 7 per Derek; check Settings > About phone, One UI 7 ships Android 15 and
+One UI 8 Android 16/17; every rule below holds from Android 14 up). Panel: functional, not blocking much, enough
+information, ideally everything the web page shows. Bidding: help place the bid if possible. Tracking: the phone
+works like the browser extension and everything merges into one log.
+
 1. Native Android app (Kotlin), sideloaded APK built by a GitHub Action, one signing key kept as a repo secret so
-   updates install over the old build. No Play Store.
+   updates install over the old build. No Play Store. Sideloaded apps need "Allow restricted settings" (App info
+   menu) once before the accessibility toggle unlocks (Android 13+); the install guide covers it.
 2. The overlay is a `TYPE_APPLICATION_OVERLAY` window holding a WebView that loads
    `https://pm-derek.github.io/cardcomp/`. Search, bid math, grid, profit buttons, cart, `autoMatch` and
    `auto-ui.js` run unchanged, and app logic keeps shipping through Pages PRs as today. The APK changes only when
-   capture, overlay or OCR change.
-3. Bridge = the extension's message protocol, nothing new. The app already talks to the extension with
+   capture, overlay or the accessibility reader change.
+3. Keyboard rule (the PalletTrade bug: Derek could not open Whatnot's Custom bid keyboard while their overlay was
+   up). Only one window holds input focus, and the keyboard follows the focused window. An overlay created
+   focusable keeps the focus, so Whatnot's own text box never raises the keyboard. Ours is `FLAG_NOT_FOCUSABLE`
+   by default; tapping CardComp's search box flips the window to focusable (`updateViewLayout`), the keyboard
+   opens over the overlay, and done / Esc / tapping outside flips it back. Whatnot's Custom box then works as if
+   the overlay were not there.
+4. Bridge = the extension's message protocol, nothing new. The app already talks to the extension with
    `window.postMessage` and accepts a message when `e.source === window && e.origin === location.origin`
    (`extPost`, the `cardcomp-*` handlers in `index.html`, `fromExt` in `auto-ui.js`). Native delivers messages with
    `evaluateJavascript("window.postMessage(<json>, location.origin)")`, which passes that check, and a small page
    script forwards the app's outbound messages to a `@JavascriptInterface`. `cardcomp-ext-ready` makes the app show
-   the auto line and send bids through `sendToWhatnot`; the phone answers `cardcomp-bid-ack` after the clipboard
-   write.
-4. The extension's background role moves into a page script, `phone/bridge.js`, loaded only when `window.Android`
+   the auto line and send bids through `sendToWhatnot`; the phone answers `cardcomp-bid-ack` like `bg.js` does.
+5. Whatnot reader and bid fill = an AccessibilityService, the phone twin of `whatnot.js`. It reads the Whatnot
+   app's view tree (text, bounds, view ids) on every change, exactly as the content script reads the web page:
+   title, price, timer, bids, leader, Sold / "X won!", "Awaiting Next Item", seller, chat joins; same
+   `cardcomp-lot` / `cardcomp-lot-end` records. It also fills the bid: tap a bid in CardComp, the service presses
+   Whatnot's "Custom" button, writes the amount into the max bid box (`ACTION_SET_TEXT`), and stops there; Derek
+   presses Set Max Bid. Same rules as the extension: under the next bid means Pass, a lot already sold means
+   nothing is entered, never Place bid. Clipboard copy stays as the fallback when the service is off. Sideloaded
+   only (Play restricts the API), which is fine for one phone. OCR of the frame is not needed for lot state; keep
+   it as the fallback if Whatnot's views carry no text (then ML Kit on the bottom strip).
+6. The extension's background role moves into a page script, `phone/bridge.js`, loaded only when `window.Android`
    exists: `recogRead` (fetch + SSE, works in a WebView), picture match (`imgmatch.js`, pure functions), the log
-   writer (`store.js` logic; GitHub's contents API allows CORS), and the pre-start watcher port if it is not done in
-   Kotlin. Keys (Anthropic, CardSight, GitHub token) live in EncryptedSharedPreferences and reach the page through
-   the interface, exposed only to the pm-derek.github.io origin. Native keeps only what JS cannot do: capture,
-   overlay window, ML Kit OCR, clipboard, the foreground service.
-5. Capture: MediaProjection into an ImageReader at reduced size (about 720 px wide). Every 0.7 s a 32x40
-   thumbnail of the card region (same constants as `recog-whatnot.js`) decides "new card held still"; a full frame
-   goes to the bridge for a read. The capture includes our own overlay, so the card crop and the OCR strip exclude
-   the panel's rectangle, and the panel sits where cards are not (top strip).
-6. Overlay layout: a bubble that expands to a panel docked under the seller header, about 60% wide, draggable,
-   collapse to the bubble with one tap. Panel shows: name, set, number, the max bid big (tap copies, whole dollars
-   floored), NM / LP / MP row with net, "more" for the full grid and search. Keep it small: Android 12+ blocks
-   touches to the app underneath only inside an opaque overlay's bounds, so a small window never gets in the way
-   of Whatnot's bid buttons. Never over the lot row or the Bid / Custom buttons.
-7. Lot state from the frame: ML Kit on-device text recognition on the bottom third of each capture (title "#82",
-   "$1", timer, "Sold", "X won!", "Awaiting Next Item", "Bid $1", shipping line, "Near Mint · Card"). The OCR
-   lines (text plus y position) feed the lot logic of `whatnot.js` once its text-to-state part is separated from
-   the DOM walk, so the phone and desktop share one lot reader and the record v2 shape. Logged to the same private
-   log, so stats and the dashboard include phone streams. No AccessibilityService for reading.
-8. Bid entry: clipboard (today's phone flow; a foreground service may write the clipboard on Android 10+). The
-   Custom box fill by AccessibilityService is phase 3 and only if Derek asks after using phase 0. Never press
-   Place bid.
-9. Recognizer: Claude Sonnet first (proven on desktop, streaming early fill). CardSight as an A/B once the 0.9.0
-   desktop scores exist, through the same bridge; the overlay never shows a strong suggestion that is wrong
-   (same rules as desktop).
+   writer (`store.js` logic; GitHub's contents API allows CORS). TCGplayer fast reads (`tcgfast.js`) go through a
+   native fetch, since those APIs block cross-origin pages, and land as `cardcomp-tcg-price` like today, so
+   verified conditions and `live.json` come from the phone too. Keys (Anthropic, CardSight, GitHub token) live in
+   EncryptedSharedPreferences and reach the page through the interface, exposed only to the pm-derek.github.io
+   origin. Native keeps only what JS cannot do: capture, overlay window, accessibility, clipboard, the foreground
+   service.
+7. Capture: MediaProjection, and on Android 14+ pick "A single app" (Whatnot) in the consent dialog: the frame
+   then holds Whatnot alone, without our overlay, so no crop tricks. Reduced size (about 720 px wide) into an
+   ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
+   "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
+   14+), with the capture notification.
+8. Overlay layout, three states, remembered: bubble (read-now button, drag anywhere); strip (one row over the
+   seller header: card name, the max bid chip, NM / LP / MP with net, fast / slow pill, the lot strip text); full
+   (the CardComp page over the top 55 to 60% of the screen, the video still visible below it, Whatnot's lot row,
+   chat box and bid buttons never covered). Tap the strip for full, swipe up or the X for the strip, long press
+   for the bubble. Android 12+ blocks touches to the app underneath only inside an opaque overlay's bounds, so the
+   panel never covers the bid buttons and the rest of Whatnot keeps working.
+9. One log: phone rows carry the same record v2 shape plus `src:"phone"`, written to `cardcomp-data` through the
+   bridge; stats, haul, buyers and the dashboard need no change. `cardcomp-log-read` on load merges desktop and
+   phone rows as it does for a second computer today.
+10. Recognizer: Claude Sonnet first (proven on desktop, streaming early fill). CardSight as an A/B once the 0.9.0
+    desktop scores exist, through the same bridge; the overlay never shows a strong suggestion that is wrong
+    (same rules as desktop).
 
 ### Phases
 
-0. Shell: permission flow (overlay, capture consent, notifications), foreground service, overlay WebView with
-   CardComp, a read-now button on the bubble: frame to bridge, Claude read, `autoMatch`, results in the panel, tap
-   copies the bid. GitHub Action builds the APK. This already beats PalletTrade for Derek: max bid, JP, printings.
-1. Automatic trigger: port the watcher (thumbnail diff, 2 reads per gap, no re-read of the sold card), the
-   watcher line, and the lot timer from OCR so the start read lands about 1 s after the timer begins.
-2. Lot state and the log: OCR strip to the shared lot reader, `cardcomp-lot` / `cardcomp-lot-end` into the app,
-   labels from taps and opened cards, rows to `cardcomp-data` through the bridge, stats and haul in the panel.
-3. Only if asked: AccessibilityService fills Whatnot's Custom bid box with the tapped bid.
+0. Shell: permission flow (overlay, capture consent, notifications, accessibility), foreground service, overlay
+   WebView with CardComp in the three states, the keyboard focus rule, a read-now bubble: frame to bridge, Claude
+   read, `autoMatch`, results in the panel, tap copies the bid. GitHub Action builds the APK. Already beats
+   PalletTrade for Derek: max bid, JP, printings, Whatnot's keyboard still works.
+1. Accessibility reader: lot state from Whatnot's views into `cardcomp-lot` / `cardcomp-lot-end`, the lot strip,
+   labels from taps and opened cards, rows to `cardcomp-data`. Then the bid fill into the Custom box with the
+   bid-ack flow (Whatnot $X, under next $N, lot sold). Needs one evening of Derek's dumps of Whatnot's view tree
+   (the service can save them, like copy debug) to pick selectors.
+2. Automatic trigger: port the watcher (thumbnail diff, 2 reads per gap, no re-read of the sold card), the
+   watcher line, start read about 1 s after the timer begins, picture match.
+3. TCGplayer fast reads from the phone, stats and haul in the strip, CardSight A/B.
 
+### Open questions for Derek
+
+- Android version from Settings > About phone (One UI 7 would be Android 15).
+- Full panel over the top 55 to 60% of the screen with the video still showing underneath: right, or taller?
+- OK to share a few Whatnot view-tree dumps from the phone (lot row, Custom bid modal, end screen) for phase 1?
 ### Open questions for Derek
 
 - Phone model and Android version.
