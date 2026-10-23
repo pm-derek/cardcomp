@@ -38,6 +38,11 @@ class Prefs(ctx: Context) {
         get() = p.getInt("panelW", -1)
         set(v) = p.edit().putInt("panelW", v).apply()
 
+    /** width of the small card since 0.7 (the old full-width default is not carried over) */
+    var panelW2: Int
+        get() = p.getInt("panelW2", -1)
+        set(v) = p.edit().putInt("panelW2", v).apply()
+
     /** a bid tap also opens Whatnot's Custom sheet and enters the amount (needs the screen reader) */
     var fillBid: Boolean
         get() = p.getBoolean("fillBid", true)

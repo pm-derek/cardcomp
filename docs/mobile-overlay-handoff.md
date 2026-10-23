@@ -459,3 +459,20 @@ Derek: Custom fill worked once, then failed 2-3 times; port whatever is easy, li
 - Automatic read when a lot's timer starts (setup screen switch, off by default), keyed to the lot.
 - Checked in headless Chromium against Android-layout screen texts: 53 checks (live lot, Custom sheet, sale, next lot,
   own win, tap label in the log row, auto read once per lot, fast read then browser).
+
+## 0.7 (2026-10-23): background condition read, DMG, narrower panel, bigger card
+
+Derek: run the quick TCGplayer check on LP / MP / HP / DMG every time a card opens; DMG was missing; show two or three
+pills at a time and scroll sideways; the panel takes most of the width; bigger card.
+- Every card the small card shows gets the fast read in the background (`autoFast`): same request a condition link
+  sends, put in the app's own `FAST_REQ` slot so its ack handler applies every condition and the grid (mirrored by
+  the pills) re-renders. Once per printing per 10 min, 0.6 s after the card settles (stepping with ‹ › does not fire
+  a read per step). A failed automatic read stays quiet (no "reading the page instead" note, no browser). The
+  controls row says "TCG" (pulsing while reading, green when read, struck through when it failed), else the match
+  label (guess / pic).
+- Pills NM / LP / MP / HP / DMG in a sideways scroller (scroll snap), two fully visible with the next peeking; the
+  scroll position is kept across repaints of the same card.
+- Card picture 78 x 109 on the left; name, set line, then ‹ n/N › / status / 🔍; pills under them. ~133 css px tall
+  at 250 px wide.
+- Native: the small card starts at 60% of the screen width (new pref `panelW2`, so the old full-width setting is not
+  carried over); the full view (list / typing) widens to the whole width and returns to Derek's width and place.

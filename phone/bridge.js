@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.6.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.7.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 5;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -354,7 +354,8 @@
           if (!f) r = { ok: false, errs: ["fast read not loaded"] };
           else { try { r = await f(d); r.ok = Object.values(r.conds || {}).some((c) => c.market > 0); } catch (e) { r = { ok: false, errs: [e.message] }; } }
           FAST_OK[String(d.pid)] = { ok: !!r.ok, at: Date.now() };
-          toApp(Object.assign({}, r, { type: "cardcomp-tcg-fast-ack", req: d.req }));
+          if (r.ok || !d.auto) toApp(Object.assign({}, r, { type: "cardcomp-tcg-fast-ack", req: d.req }));
+          paintBar();
         });
         break;
       case "cardcomp-log-save": storeReady.then((S) => { if (S) S.queueLog(d.rec); }); break;
@@ -444,21 +445,25 @@
     "body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
     "#phonecard{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}" +
     "#phonebar .pc{display:flex;gap:8px;align-items:flex-start;padding:3px 0 2px}" +
-    "#phonebar .pimg{flex:none;width:46px;height:64px;border-radius:4px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
+    "#phonebar .pimg{flex:none;width:78px;height:109px;border-radius:5px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
     "#phonebar .pimg img{width:100%;height:100%;object-fit:contain;display:block}" +
     "#phonebar .pmain{flex:1;min-width:0}" +
-    "#phonebar .ph{display:flex;align-items:center;gap:4px;height:30px}" +
-    "#phonebar .pn{flex:1;min-width:0;cursor:pointer;line-height:1.15}" +
+    "#phonebar .pn{cursor:pointer;line-height:1.15}" +
     "#phonebar .pn b{display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    "#phonebar .pn span{display:block;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#phonebar .pn i{font-style:normal;color:var(--gold)}" +
-    "#phonebar .st{flex:none;border:1px solid var(--line);border-radius:7px;width:28px;height:28px;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
+    "#phonebar .pn span{display:block;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .ph{display:flex;align-items:center;gap:3px;height:28px;margin-top:2px}" +
+    "#phonebar .tg{flex:1;min-width:0;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px}#phonebar .tg i{font-style:normal;margin-right:5px;color:var(--gold)}" +
+    "#phonebar .tg i.ok{color:var(--green);font-weight:700}#phonebar .tg i.no{color:var(--faint);text-decoration:line-through}#phonebar .tg i.wt{color:var(--faint);animation:tgp 1s ease-in-out infinite alternate}@keyframes tgp{from{opacity:1}to{opacity:.35}}" +
+    "#phonebar .st{flex:none;border:1px solid var(--line);border-radius:7px;width:26px;height:26px;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
     "#phonebar .st.on{color:var(--gold);border-color:var(--gold)}" +
-    "#phonebar .sn{flex:none;font-size:10.5px;color:var(--faint);min-width:24px;text-align:center}" +
-    "#phonebar .pmiss{font-size:11px;color:var(--red);line-height:1.25;margin:1px 0 2px}" +
-    "#phonebar .prow{display:flex;gap:5px;margin-top:4px}" +
-    "#phonebar .pb{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:44px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
+    "#phonebar .sn{flex:none;font-size:10px;color:var(--faint);min-width:22px;text-align:center}" +
+    "#phonebar .pmiss{font-size:10.5px;color:var(--red);line-height:1.2;margin:1px 0}" +
+    // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
+    "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
+    "#phonebar .prow::-webkit-scrollbar{display:none}" +
+    "#phonebar .pb{flex:0 0 44%;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:46px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
     "#phonebar .pb em{font-style:normal;font-size:10px;font-weight:700}" +
-    "#phonebar .pb b{font-size:16px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    "#phonebar .pb b{font-size:17px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
     "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
@@ -513,7 +518,28 @@
     OPENED = null;
     if (card && !card.classList.contains("open")) { const r = card.querySelector(".row"); if (r) { r.click(); OPENED = card; } }
   }
-  const SHOW = ["NM", "LP", "MP", "HP"];
+  const SHOW = ["NM", "LP", "MP", "HP", "DMG"];
+  // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
+  // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
+  // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card
+  // mirrors, re-renders. Once per printing per 10 minutes; a failure is only marked, never opens the browser.
+  const FAST_AUTO = {}; let fastT = 0, fastKey = "";
+  function autoFast(card) {
+    const a = card && card.querySelector('.condgrid a.clink[href*="tcgplayer.com/product/"]'); if (!a) return;
+    let u; try { u = new URL(a.href); } catch (_) { return; }
+    const pid = (/\/product\/(\d+)/.exec(u.pathname) || [])[1], printing = u.searchParams.get("Printing") || "";
+    if (!pid) return;
+    const k = pid + "|" + printing;
+    if (k === fastKey || (FAST_AUTO[k] && Date.now() - FAST_AUTO[k] < 10 * 60e3)) return;
+    fastKey = k; clearTimeout(fastT);
+    fastT = setTimeout(() => {   // settle: stepping through candidates does not fire a read per step
+      if (fastKey !== k) return;
+      FAST_AUTO[k] = Date.now();
+      const q = { req: Date.now(), pid, printing, cond: "NM" };
+      try { FAST_REQ = q; } catch (_) {}   // the app's own request slot: its ack handler applies the reply
+      handle(Object.assign({ type: "cardcomp-tcg-fast", auto: true }, q));
+    }, 600);
+  }
   function paintBar() {
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phonebar");
@@ -528,6 +554,7 @@
     const list = cands(), i = list.indexOf(card), n = list.length;
     const grid = card.querySelector(".condgrid");
     const btns = grid ? Array.from(grid.querySelectorAll(".bd.cpy[data-cond]")) : [];
+    if (grid) autoFast(card);
     const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
     let rows;
     if (btns.length) {
@@ -542,12 +569,16 @@
     const col = (c) => (typeof COND_COLORS !== "undefined" && COND_COLORS[c]) || "var(--ink)";
     const flash = (c) => FLASH && FLASH.until > Date.now() && FLASH.cond === c ? FLASH.txt : null;
     const miss = notExact(r);
+    const fk = card.querySelector('.condgrid a.clink[href*="tcgplayer.com/product/"]'), fpid = fk ? (/\/product\/(\d+)/.exec(fk.href) || [])[1] : "";
+    const fo = fpid && FAST_OK[fpid], live = fo ? (fo.ok ? '<i class="ok" title="every condition read from TCGplayer">TCG</i>' : '<i class="no" title="TCGplayer read failed: usual condition shares">TCG ✗</i>') : fpid && FAST_AUTO[Object.keys(FAST_AUTO).find((k) => k.startsWith(fpid + "|")) || ""] ? '<i class="wt" title="reading every condition on TCGplayer">TCG</i>' : "";
     const html =
       `<div class="pc">` +
         `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
-          `<div class="ph"><div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}${tag ? ` · <i>${esc(tag)}</i>` : ""}</span></div>` +
+          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}</span></div>` +
+          `<div class="ph">` +
             (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
+            `<span class="tg">${live || (tag ? `<i>${esc({ "best guess": "guess", "picture": "pic", "auto + picture": "pic ✓" }[tag] || tag)}</i>` : "")}</span>` +
             `<span class="st" data-t="search" title="search">&#128269;</span>` +
             (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "") +
           `</div>` +
@@ -558,7 +589,11 @@
           `</div>` +
         `</div>` +
       `</div>`;
-    if (el.innerHTML !== html) { el.innerHTML = html; wire(el, card); }
+    if (el.innerHTML !== html) {
+      const pr0 = el.querySelector(".prow"), sx = pr0 ? pr0.scrollLeft : 0, same = el.dataset.id === r.id;
+      el.innerHTML = html; el.dataset.id = r.id; wire(el, card);
+      const pr1 = el.querySelector(".prow"); if (pr1 && same) pr1.scrollLeft = sx;
+    }
     paintStat(); sizeSoon();
   }
   function wire(el, card) {

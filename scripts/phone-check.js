@@ -106,7 +106,8 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
     ok(e2.length === 0, "no page errors on the live-bridge path" + (e2.length ? ": " + e2.join(" | ") : ""));
     await p2.close();
   }
-  const fit = async (cap) => { await page.waitForTimeout(250); const h = await page.evaluate(() => window.__h || 100); await page.setViewportSize({ width: 360, height: Math.min(h, cap || 9999) }); await page.waitForTimeout(150); return h; };
+  // small card ~60% of the phone's width (250 css px), full view the whole width (360)
+  const fit = async (cap) => { await page.waitForTimeout(250); const h = await page.evaluate(() => window.__h || 100); await page.setViewportSize({ width: cap ? 360 : 250, height: Math.min(h, cap || 9999) }); await page.waitForTimeout(150); return h; };
 
   console.log("1. handshake");
   const h = await page.evaluate(() => ({
@@ -156,12 +157,22 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card"), "after the read: compact card, panel shown");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
-  ok(h2 > 60 && h2 < 120, "compact card with a result: thumbnail + 4 condition buttons, " + h2 + " css px");
+  ok(h2 > 100 && h2 < 150, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => ({ c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: r.querySelector("small").textContent.trim() })));
-  ok(rows.length === 4 && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition buttons mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (${x.px})`).join(" | "));
+  ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (${x.px})`).join(" | "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.textContent.trim() : ""; });
   ok(gridNM && rows[0].bid === "$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, ""))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
+  const scr = await page.evaluate(() => { const p = document.querySelector("#phonebar .prow"); const vis = Array.from(p.children).filter((b) => b.getBoundingClientRect().right <= p.getBoundingClientRect().right + 1).length; p.scrollLeft = 9999; return { vis, scrolls: p.scrollLeft > 0 }; });
+  ok(scr.vis === 2 && scr.scrolls, `pills scroll sideways: ${scr.vis} fully visible, swipe for the rest`);
+  await page.evaluate(() => { document.querySelector("#phonebar .prow").scrollLeft = 0; });
+  // the background TCGplayer read: started by itself for the card shown, once
+  await page.waitForTimeout(900);
+  const auto1 = (await calls()).filter((x) => x.n === "http" && /tcgplayer/.test(x.a[1])).length;
+  await page.evaluate(() => window.__phone.setMode("card")); await page.waitForTimeout(900);
+  const auto2 = (await calls()).filter((x) => x.n === "http" && /tcgplayer/.test(x.a[1])).length;
+  const fr = await page.evaluate(() => typeof FAST_REQ !== "undefined" && FAST_REQ && FAST_REQ.pid);
+  ok(auto1 > 0 && auto2 === auto1 && !!fr, `background read of every condition for the card shown, once (${auto1} requests, product ${fr}); repaint adds none`);
   // step through the candidates
   const step = await page.evaluate(() => { const a = document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent; document.querySelector('#phonebar [data-t="next"]').click(); return new Promise((r) => setTimeout(() => r([a, document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent, (document.querySelector("#phonebar .sn") || {}).textContent]), 50)); });
   ok(step[0] !== step[1] && step[2] === "2/" + r2.n, `› steps to the next candidate: ${step[1]} (${step[2]})`);
@@ -180,7 +191,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
 
   console.log("3. bid from the strip");
   const before = (await calls()).length;
-  await page.click("#phonebar .pb");
+  await page.evaluate(() => document.querySelector("#phonebar .pb").click());   // a tap (page.click scrolls the snapping pill row first)
   await page.waitForTimeout(300);
   c = (await calls()).slice(before);
   const bid = c.find((x) => x.n === "bid");
@@ -195,7 +206,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
 
   // LP from the compact card: labelled LP, same number as the grid
   const b3 = (await calls()).length;
-  await page.click('#phonebar .pb[data-c="LP"]');
+  await page.evaluate(() => document.querySelector('#phonebar .pb[data-c="LP"]').click());
   await page.waitForTimeout(300);
   const lpBid = (await calls()).slice(b3).find((x) => x.n === "bid");
   const lpTap = await page.evaluate(() => LAST_TAP && LAST_TAP.cond);
@@ -221,7 +232,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
 
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
-  await page.click('#phonebar [data-t="search"]');   // 🔍 opens the list and focuses the box
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box
   await page.waitForTimeout(100);
   c = (await calls()).slice(b4);
   ok(c.some((x) => x.n === "focus" && x.a[0] === true), "focus(true) when the search box takes focus");
@@ -241,7 +252,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
 
   // typing a whole query: focus stays in the box, the text arrives whole, nothing is opened under the finger
   await page.evaluate(() => { const q = document.querySelector("#q"); q.value = ""; });
-  await page.click('#phonebar [data-t="search"]');
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());
   await page.keyboard.type("reshiram charizard sm247", { delay: 60 });
   await page.waitForTimeout(500);
   const ty = await page.evaluate(() => ({ v: document.querySelector("#q").value, f: document.activeElement && document.activeElement.id, top: (document.querySelector("#results .card .nm") || {}).textContent || "", open: document.querySelectorAll("#results .card.open").length }));
@@ -283,7 +294,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   // Derek taps the NM bid of the card on screen while the lot runs (the compact card shows Charizard from the read)
   await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "charizard 4/102"; run("charizard 4/102"); window.__phone.setMode("card"); });
   await page.waitForTimeout(800);
-  await page.click('#phonebar .pb[data-c="NM"]');
+  await page.evaluate(() => document.querySelector('#phonebar .pb[data-c="NM"]').click());
   await feed(sheet(140, 5));
   await feed(live(140, 6, "00:01", "caydenarterbury", 7));
   await feed(sold(140, 6, "caydenarterbury"));

@@ -1,7 +1,7 @@
 # CardComp: browser vs phone
 
 What the desktop (CardComp in Chrome + the extension) does, and where the phone app (android/, phone/bridge.js) stands.
-Updated 2026-10-23 with phone 0.6. Keep it current when a row moves.
+Updated 2026-10-23 with phone 0.7. Keep it current when a row moves.
 
 Status: **done** (working on the phone) · **ported** (built from the extension's code, checked in the browser test,
 not yet confirmed on a real stream) · **next** (definitely wanted) · **nice** (worth it later) · **no** (impossible or
@@ -13,13 +13,13 @@ not worth it).
 |---|---|---|
 | Search, abbreviations, sounds-like, set chips, JP / EN | done | Same app page. |
 | Condition grid, cascade, verified prices, bid math, speed margin, profit buttons, your-bid box | done | In the full view (tap the card name). |
-| Max bid per condition at a glance | done | The small card: NM / LP / MP / HP buttons. |
+| Max bid per condition at a glance | done | The small card: NM / LP / MP / HP / DMG pills, two at a time, swipe sideways. |
 | "No such card" | done | Phone only: "no card #X in the catalog (likely under $1.50)". |
 | Read the card on stream (read now) | done | Gold bubble. |
 | Zoomed re-read, picture match | done | Same code as desktop. |
 | Read at each lot's timer start | ported | Setup screen switch, off by default. |
 | Read a card held still before the timer (watcher) | next | Needs frames every ~0.7 s between lots: port recog-whatnot.js's thumbnail check to the app. |
-| TCGplayer fast read (all conditions in one tap) | ported | Same tcgfast.js; requests go through the app. The browser opens only if it fails. |
+| TCGplayer fast read (all conditions in one tap) | ported | Same tcgfast.js through the app. On the phone it runs by itself for every card shown; "TCG" turns green when it landed. A link opens the browser only if it fails. |
 | TCGplayer page read (background tab) | no | No background tabs on a phone; the fast read replaces it. |
 | Save verified prices for everyone (live.json) | ported | Needs the GitHub token in the app. Reading them already worked. |
 | Settings panel (margin %, list markup, multipliers) | nice | Hidden on the phone; it uses the defaults (10% margin, as you run). |

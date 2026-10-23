@@ -206,6 +206,20 @@ class OverlayService : Service() {
     }
     private fun typing(on: Boolean) { if (on != typingNow) { typingNow = on; place() } }
 
+    /** The full view (results, grid, search) gets the whole width; the small card goes back to Derek's width and place. */
+    private var wide = false
+    private var userW = 0
+    private var userX = 0
+    private fun widen(on: Boolean) {
+        val lp = bandLp ?: return
+        val b = band ?: return
+        if (on == wide) return
+        wide = on
+        if (on) { userX = lp.x; userW = lp.width; lp.x = dp(8); lp.width = screenW - dp(16) }
+        else { lp.width = userW.coerceIn(dp(200), screenW); lp.x = userX.coerceIn(0, maxOf(0, screenW - lp.width)) }
+        if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
+    }
+
     private fun setFocusable(want: Boolean, ime: Boolean) {
         val lp = bandLp ?: return
         val b = band ?: return
@@ -361,7 +375,9 @@ class OverlayService : Service() {
         val wv = makeWeb()
         root.addView(wv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val w0 = if (prefs.panelW > 0) prefs.panelW.coerceIn(dp(240), screenW) else screenW - dp(16)
+        // small card by default: ~60% of the width (Derek, 2026-10-23: "taking up most of the left-to-right"); ◢ changes it
+        val w0 = if (prefs.panelW2 > 0) prefs.panelW2.coerceIn(dp(200), screenW) else (screenW * 0.6).toInt().coerceAtLeast(dp(220))
+        userW = w0
         val lp = WindowManager.LayoutParams(
             w0, GRIP + dp(70),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -373,10 +389,11 @@ class OverlayService : Service() {
         lp.x = if (prefs.panelX >= 0) prefs.panelX.coerceIn(0, maxOf(0, screenW - w0)) else dp(8)
         lp.y = if (prefs.panelY >= 0) prefs.panelY.coerceIn(0, (screenH * 0.85).toInt()) else (screenH * 0.09).toInt()
         homeY = lp.y
+        userX = lp.x
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         lp.fitInsetsTypes = 0   // the drag clamps use the full display: let the window go there (nav bar strip included)
 
-        dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { prefs.panelX = lp.x; prefs.panelY = lp.y; homeY = lp.y; typingNow = false }))
+        dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { if (!wide) { prefs.panelX = lp.x; userX = lp.x }; prefs.panelY = lp.y; homeY = lp.y; typingNow = false }))
         collapse.setOnClickListener { showPanel(false) }
         resize.setOnTouchListener(widthListener(lp, root))
 
@@ -391,11 +408,11 @@ class OverlayService : Service() {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { x0 = e.rawX; w0 = lp.width; return true }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.width = (w0 + (e.rawX - x0)).toInt().coerceIn(dp(240), screenW - lp.x)
+                    lp.width = (w0 + (e.rawX - x0)).toInt().coerceIn(dp(200), screenW - lp.x)
                     try { wm.updateViewLayout(win, lp) } catch (_: Exception) {}
                     return true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { prefs.panelW = lp.width; return true }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { if (!wide) { prefs.panelW2 = lp.width; userW = lp.width }; return true }
             }
             return false
         }
@@ -643,7 +660,7 @@ class OverlayService : Service() {
         @JavascriptInterface fun open(url: String) { if (url.startsWith("https://")) main.post { openExternal(url) } }
         @JavascriptInterface fun focus(want: Boolean) { main.post { setFocusable(want, want) } }
         /** the page's mode changed (card, list, typing) or a read landed: the panel shows, collapsed or not */
-        @JavascriptInterface fun layout(s: String) { main.post { typing(s == "typing"); showPanel(true) } }
+        @JavascriptInterface fun layout(s: String) { main.post { typing(s == "typing"); widen(s != "card"); showPanel(true) } }
         @JavascriptInterface fun size(cssPx: Int) { main.post { setContentHeight(cssPx) } }
         @JavascriptInterface fun collapse() { main.post { showPanel(false) } }
         @JavascriptInterface fun toast(t: String) { this@OverlayService.toast(t) }
