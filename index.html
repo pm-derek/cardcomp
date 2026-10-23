@@ -1688,12 +1688,12 @@ function profitSteps(mkt, atRec){   // round profits under what the recommended 
 // much margin"): round UP when that still keeps at least 75% of the profit at the exact max bid, else round down.
 // $8.99 -> $9 (keeps 99%), $8.40 -> $8 (up would keep 29%), $2.40 -> $2 (up loses money), $214.49 -> $215. np = net
 // proceeds if listed at market. Under $1 stays as is (floors to 0: "under $1").
-const ROUND_KEEP=0.75;
+const ROUND_KEEP=0.75, ROUND_CENTS=0.25;   // up if it keeps 75% of the profit, or costs $0.25 or less (and still profits)
 function wholeBid(exact, np){
   if(!(exact>=1)) return Math.max(0, Math.floor(exact||0));
   const fl=Math.floor(exact), up=Math.ceil(exact); if(up===fl) return fl;
   const p0=np-exact, p1=np-up;
-  return (p1>0 && p1>=ROUND_KEEP*p0) ? up : fl;
+  return (p1>0 && (p1>=ROUND_KEEP*p0 || p0-p1<=ROUND_CENTS)) ? up : fl;   // cheap cards: a few cents is a big % of a small profit (Holon Fossil RH NM $3.89 -> $4 costs $0.11 of $0.39)
 }
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
