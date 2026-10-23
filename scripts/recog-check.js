@@ -230,6 +230,7 @@ async function appPage(browser, base, blockRecog) {
     await page.goto(base + "/__mock?mode=" + mode);
     await page.waitForFunction(() => window.__mockReady === true);
     await page.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
+    await page.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-read.js") });
     await page.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
     const shot = "data:image/jpeg;base64," + (await page.screenshot({ type: "jpeg", quality: 90 })).toString("base64");
     await page.evaluate((shot) => { window.__shot = shot; return new Promise((r) => chrome.storage.local.set({ recogMode: "manual", recogKey: "sk-ant-test" }, r)); }, shot);
@@ -327,6 +328,7 @@ async function appPage(browser, base, blockRecog) {
   await mp.waitForFunction(() => window.__mockReady === true);
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-whatnot.js") });
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/imgmatch.js") });
+  await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-read.js") });
   await mp.addScriptTag({ path: path.join(ROOT, "extension/recog/recog-bg.js") });
   // a live lot: the timer counts down (whatnot.js calls __recogTick on every page change, so every second)
   const tick = (key) => mp.evaluate((key) => {
