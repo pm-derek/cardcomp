@@ -406,3 +406,20 @@ Independent review of the Android code (fresh agent, same day), fixed in 0.3.1:
 - Overlay windows use the whole display (`fitInsetsTypes = 0`), matching the drag limits; monochrome status icon.
 - Not changed: the screen reader gets events from every app (no `packageNames` until Whatnot's package id is known
   from a dump); keep it off unless dumping, since it also makes the WebView build its accessibility tree.
+
+## 0.4 (2026-10-23, after Derek's second live try, mewcollector05)
+
+Reads worked (Zeraora V TG16/TG30 exact; Mewtwo-EX 54/99 after the zoomed re-read). Feedback: the panel was hard to
+read ("not very aesthetic"), show the card picture, PalletTrade's layout was fine; pulling down the notification to
+dump the screen mid-stream is not a thing he will do.
+- Compact card redone: card picture on the left (tap: full view), 🔍 and ▾ under it; name, "set · #num · printing",
+  ‹ best guess 1/3 ›; a table NM / LP / MP / HP with the price bids use and the max bid as a gold button (whole
+  dollars, what gets copied). The rows mirror the card's real condition grid: the card is opened in the hidden
+  results and each button taps the grid's own `.bd.cpy`, so cascade, verified prices, lot label and log match the
+  full view. System sans-serif. About 215 css px tall with a result.
+- Screen layouts are saved by the screen reader itself: on a Whatnot live screen ("Say something" box), when the set of
+  auction words changes (timer start, price, bids, Sold / won, Custom bid sheet, Awaiting next item), at most one per
+  8 s, 60 kept. With the GitHub token saved they are uploaded to `cardcomp-data/phone-dumps/`. Setup screen shows the
+  count and the upload status.
+- Restricted settings on One UI 7: the ⋮ "Allow restricted settings" item in App info only appears after a denied
+  attempt to turn on the accessibility switch for this install (a reinstall resets it).

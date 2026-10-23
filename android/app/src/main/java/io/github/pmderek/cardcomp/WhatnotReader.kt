@@ -13,14 +13,20 @@ import java.util.Locale
 
 /**
  * The phone twin of extension/whatnot.js: reads the Whatnot app's view tree instead of the web page's DOM.
- * Phase 0: only [dump], a text listing of every window on screen (class, id, text, bounds, flags), saved under
- * files/dumps and copied to the clipboard, so the lot reader and the bid fill (phase 1) can be written from
- * what Whatnot's Android app really shows. Nothing here acts on the screen.
+ * Phase 0: [dump], a text listing of every window on screen (class, id, text, bounds, flags), saved under
+ * files/dumps, so the lot reader and the bid fill (phase 1) can be written from what Whatnot's Android app really
+ * shows. Dumps are taken by themselves (Derek, 2026-10-23: pulling down the notification mid-stream is not a thing
+ * he will do): while a Whatnot live screen is up ("Say something" chat box), whenever the auction words on screen
+ * change (timer start, bids, Sold / won, Custom bid sheet, Awaiting next item), at most one per 8 s, 60 kept.
+ * With a GitHub token saved, each dump is also uploaded to the private repo pm-derek/cardcomp-data (phone-dumps/),
+ * where Claude reads them. Nothing here acts on the screen.
  */
 class WhatnotReader : AccessibilityService() {
     companion object {
         @Volatile var instance: WhatnotReader? = null
         @Volatile var lastPackage: String = ""
+        /** HTTP status of the last dump upload ("201" = saved in cardcomp-data), shown on the setup screen */
+        @Volatile var lastUpload: String = ""
         fun connected(): Boolean = instance != null
     }
 
@@ -31,9 +37,58 @@ class WhatnotReader : AccessibilityService() {
         }
     }
 
+    private val worker = android.os.HandlerThread("cardcomp-reader").apply { start() }
+    private val bg = android.os.Handler(worker.looper)
+    private var lastSig = ""
+    private var lastDumpAt = 0L
+    private val check = Runnable { autoDump() }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val p = event?.packageName?.toString() ?: return
-        if (p.isNotEmpty()) lastPackage = p
+        if (p.isEmpty() || p == packageName || p == "com.android.systemui") return
+        lastPackage = p
+        bg.removeCallbacks(check); bg.postDelayed(check, 1500)   // settle: Whatnot re-renders in bursts
+    }
+
+    /** auction words on screen, as a signature: a new one means a new state worth a dump */
+    private val AUCTION = Regex("""^(Sold|Custom|Submit Max Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
+    private fun autoDump() {
+        try {
+            val root = rootInActiveWindow ?: return
+            val texts = ArrayList<String>()
+            collect(root, texts, 0)
+            if (texts.none { it.startsWith("Say something") }) return   // not a Whatnot live screen
+            val sig = texts.filter { AUCTION.matches(it) }.map { if (Regex("^[0-9]{1,2}:[0-9]{2}$").matches(it)) "timer" else it }.distinct().sorted().joinToString("|")
+            val now = System.currentTimeMillis()
+            if (sig == lastSig || now - lastDumpAt < 8000) return
+            lastSig = sig; lastDumpAt = now
+            val txt = dump()
+            upload(txt)
+        } catch (_: Exception) {}
+    }
+    private fun collect(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
+        if (depth > 60 || out.size > 2000) return
+        n.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it.replace('\n', ' ')) }
+        for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; collect(c, out, depth + 1) }
+    }
+
+    /** to the private log repo, so Derek never has to share anything (needs Contents write on cardcomp-data) */
+    private fun upload(txt: String) {
+        val tok = Prefs(this).ghToken
+        if (tok.isEmpty()) return
+        val name = "phone-dumps/dump-" + SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date()) + ".txt"
+        try {
+            val c = java.net.URL("https://api.github.com/repos/pm-derek/cardcomp-data/contents/$name").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "PUT"; c.doOutput = true; c.connectTimeout = 10000; c.readTimeout = 20000
+            c.setRequestProperty("Authorization", "Bearer $tok")
+            c.setRequestProperty("Accept", "application/vnd.github+json")
+            c.setRequestProperty("Content-Type", "application/json")
+            val body = org.json.JSONObject().put("message", "phone screen dump").put("branch", "main")
+                .put("content", android.util.Base64.encodeToString(txt.toByteArray(), android.util.Base64.NO_WRAP))
+            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            lastUpload = "${c.responseCode}"
+            c.disconnect()
+        } catch (e: Exception) { lastUpload = "error: ${e.message}" }
     }
 
     override fun onInterrupt() {}
@@ -44,6 +99,7 @@ class WhatnotReader : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        worker.quitSafely()
         instance = null
         super.onDestroy()
     }
@@ -68,7 +124,7 @@ class WhatnotReader : AccessibilityService() {
         try {
             val dir = File(filesDir, "dumps"); dir.mkdirs()
             File(dir, "dump-$ts.txt").writeText(txt)
-            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { it.delete() }
+            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(60)?.forEach { it.delete() }
         } catch (_: Exception) {}
         return txt
     }

@@ -40,6 +40,7 @@ class MainActivity : Activity() {
     private lateinit var keyNote: TextView
     private lateinit var updNote: TextView
     private lateinit var updBtn: Button
+    private lateinit var dumpNote: TextView
     private var updChecked = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,8 +73,9 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
         button("2. Allow notifications") { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1) }
-        button("3. Screen reader (for Dump screen, optional for now)") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        text("If its switch is greyed out: tap the button below, then ⋮ (top right) > Allow restricted settings, then try 3 again.", 12f)
+        button("3. Screen reader (saves Whatnot's layout for phase 1)") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        text("Android blocks this switch for apps installed from a download. Try it once (it says the app was denied), " +
+            "then tap Open App info below: ⋮ at the top right > Allow restricted settings. The ⋮ only appears after that denied try.", 12f)
         button("Open App info") {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
         }
@@ -108,8 +110,10 @@ class MainActivity : Activity() {
         updBtn = button("Install update") { update() }
         updBtn.visibility = View.GONE
 
-        head("Screen dumps (for the phase 1 reader)")
-        text("Notification > Dump screen copies Whatnot's screen layout. Take one on a live lot, one with Custom bid open, one on a sold screen.", 12f)
+        head("Screen layouts (for the phase 1 reader)")
+        text("With the screen reader on, nothing to do: during a stream it saves Whatnot's screen layout by itself whenever the auction changes " +
+            "(lot starts, bids, Custom bid opened, sold). With the GitHub token saved they go to your private cardcomp-data repo, where Claude reads them.", 12f)
+        dumpNote = text("", 12f)
         button("Share last screen dump") { lastDump()?.let { share(it) } ?: toast("no dump yet") }
         text("Version ${BuildConfig.VERSION_NAME} · build ${BuildConfig.BUILD_ID.take(7)}", 12f)
 
@@ -129,6 +133,15 @@ class MainActivity : Activity() {
         val notes = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         status.text = "display over apps ${mark(overlay)} · notifications ${mark(notes)} · API key ${mark(prefs.anthropicKey.isNotEmpty())} · " +
             "screen reader ${mark(WhatnotReader.connected())}\noverlay ${if (OverlayService.running) "running" else "stopped"}"
+        val n = File(filesDir, "dumps").listFiles()?.size ?: 0
+        val up = WhatnotReader.lastUpload
+        dumpNote.text = "$n layouts saved on the phone" + when {
+            prefs.ghToken.isEmpty() -> " · no GitHub token: tap Share below after a stream"
+            up == "201" -> " · uploading to cardcomp-data ✓"
+            up.isEmpty() -> ""
+            up == "401" || up == "403" || up == "404" -> " · upload refused ($up): the token needs Contents read/write on cardcomp-data"
+            else -> " · last upload: $up"
+        }
     }
     private fun mark(b: Boolean) = if (b) "✓" else "✗"
 

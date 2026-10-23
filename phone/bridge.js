@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.3.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.4.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 3;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -241,31 +241,47 @@
     "body.phone #automodes,body.phone #automodel,body.phone #gamesel,body.phone select{display:none!important}" +
     "body.phone #autoline{padding:2px 6px;font-size:11px;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}body.phone #autoline.full{-webkit-line-clamp:unset}" +
     // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
-    "body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
+    "body.ph-card .searchrow{padding-bottom:0!important}body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
     "body.ph-list #phonestat,body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
-    "#phonecard{font-family:'JetBrains Mono',monospace}" +
-    "#phonebar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:2px 0;font-size:12px;line-height:1.25}" +
-    "#phonebar .pnw{flex:1 1 150px;min-width:0;display:flex;align-items:center;gap:4px}" +
-    "#phonebar .pn{flex:1;min-width:0;overflow:hidden;cursor:pointer}#phonebar .pn b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:13px}" +
-    "#phonebar .pn span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim);font-size:10.5px}" +
-    "#phonebar .st{flex:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;min-width:30px;height:30px;font-size:15px;display:flex;align-items:center;justify-content:center}" +
-    "#phonebar .sn{flex:none;color:var(--faint);font-size:10.5px;min-width:30px;text-align:center}" +
-    "#phonebar .pr{flex:1 0 auto;display:flex;align-items:center;gap:6px;justify-content:flex-end}" +
-    "#phonebar .pb{flex:none;border:2px solid var(--gold);background:rgba(245,179,1,.14);color:var(--gold);border-radius:8px;padding:6px 10px;font-weight:700;font-size:17px;min-width:62px;text-align:center}" +
-    "#phonebar .pb.none{border-color:var(--line);color:var(--faint);background:none;font-size:13px}#phonebar .px{flex:none;color:var(--dim);font-size:10.5px;line-height:1.25;text-align:right;white-space:nowrap}" +
-    "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;min-width:34px;height:32px;font-size:14px;display:flex;align-items:center;justify-content:center}" +
+    "#phonecard{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}" +
+    "#phonebar .pc{display:flex;gap:10px;align-items:flex-start;padding:4px 0 2px}" +
+    "#phonebar .pleft{flex:none;width:86px}#phonebar .pleft .ptools{display:flex;gap:6px;margin-top:6px}#phonebar .pleft .pt{flex:1;min-width:0}" +
+    "#phonebar .pimg{width:86px;height:120px;border-radius:6px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
+    "#phonebar .pimg img{width:100%;height:100%;object-fit:contain;display:block}" +
+    "#phonebar .pmain{flex:1;min-width:0}" +
+    "#phonebar .ph{display:flex;align-items:flex-start;gap:6px}" +
+    "#phonebar .pn{flex:1;min-width:0;cursor:pointer}" +
+    "#phonebar .pn b{display:block;font-size:16px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .pn span{display:block;font-size:12px;color:var(--dim);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .pn .pp{color:var(--faint);font-size:11px}#phonebar .pn .pp i{font-style:normal;color:var(--gold);margin-left:6px}" +
+    "#phonebar .pstep{flex:none;display:flex;align-items:center;gap:2px}" +
+    "#phonebar .st{border:1px solid var(--line);border-radius:7px;width:30px;height:30px;font-size:18px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
+    "#phonebar .sn{font-size:11px;color:var(--faint);min-width:28px;text-align:center;line-height:1.15}#phonebar .sn i{display:block;font-style:normal;color:var(--gold);font-size:10px;white-space:nowrap}" +
+    "#phonebar .ptab{margin-top:4px}#phonebar .pth{display:flex;font-size:10px;color:var(--faint);padding-bottom:2px;border-bottom:1px solid var(--line)}" +
+    "#phonebar .pth span:nth-child(1){width:34px}#phonebar .pth span:nth-child(2){flex:1;text-align:right;padding-right:10px}#phonebar .pth span:nth-child(3){min-width:58px;text-align:right}" +
+    "#phonebar .pr{display:flex;align-items:center;height:30px;border-bottom:1px solid var(--line)}" +
+    "#phonebar .pc1{width:34px;font-weight:700;font-size:13px}" +
+    "#phonebar .pm{flex:1;text-align:right;font-size:14px;font-variant-numeric:tabular-nums;padding-right:10px}" +
+    "#phonebar .pb{min-width:64px;text-align:center;font-weight:800;font-size:15px;color:var(--gold);border:1.5px solid var(--gold);border-radius:7px;padding:2px 8px;background:rgba(245,179,1,.12);font-variant-numeric:tabular-nums}" +
+    "#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{color:#000;background:var(--green);border-color:var(--green);font-size:12px}" +
+    "#phonebar .pfoot{display:flex;align-items:center;gap:6px;margin-top:4px}#phonebar .pfl{flex:1;font-size:10.5px;color:var(--faint)}" +
+    "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:7px;min-width:36px;height:30px;font-size:14px;display:flex;align-items:center;justify-content:center}" +
     "body.ph-list #phonebar .pt.tg,body.ph-typing #phonebar .pt.tg{color:var(--gold);border-color:var(--gold)}" +
-    "#phonestat{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
+    "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
+    "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
+    "#phonestat{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
   document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) { a.classList.toggle("full"); sizeSoon(); } });
 
-  // ---------------------------------------------------------------- the card line: name (‹ › through the candidates), the max bid, NM / LP / MP
-  // The card shown: the open card, else the one stepped to, else the best guess of the last reading, else the top result
-  // of a typed search (never the default list). The bid button taps that card's own bid chip, so copyAmt, the lot label
-  // and the log see the same tap as a tap on the tile.
-  let wrapEl = null, FLASH = null, CUR = -1;
+  // ---------------------------------------------------------------- the compact card (Derek, 2026-10-23: "show me the card picture", PalletTrade's layout)
+  // Picture on the left; name, set and number; a table of NM / LP / MP / HP with the price bids use and the max bid as
+  // a button. The card shown: the one stepped to with ‹ ›, else the open card, else the best guess of the last
+  // reading, else the top result of a typed search (never the default list). The rows mirror that card's real
+  // condition grid: the card is opened in the (hidden) results, and each bid button taps the grid's own button, so the
+  // numbers, the cascade from verified prices, the lot label and the log are the same as in the full view.
+  let wrapEl = null, FLASH = null, CUR = -1, OPENED = null;
   function wrap() {
     if (wrapEl && wrapEl.isConnected) return wrapEl;
     const sr = $(".searchrow"); if (!sr) return null;
@@ -278,47 +294,77 @@
     };
     return wrapEl;
   }
-  const money = (v) => "$" + (v >= 100 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2));
+  const money = (v) => "$" + (v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2));
   const cands = () => Array.from(document.querySelectorAll("#results .card")).slice(0, 16);
   function focusCard() {
-    const open = $("#results .card.open"); if (open) return open;
     const list = cands();
     if (CUR >= 0 && list[CUR]) return list[CUR];
+    const open = $("#results .card.open"); if (open) return open;
     const q = $("#q"), typed = q && q.value.trim();
     return $("#results .card.autosug") || (typed ? list[0] : null);
   }
+  // open the shown card in the hidden results so its condition grid exists; close the one this view opened before
+  function ensureOpen(card) {
+    if (OPENED && OPENED !== card && OPENED.isConnected && OPENED.classList.contains("open")) { const r = OPENED.querySelector(".row"); if (r) r.click(); }
+    OPENED = null;
+    if (card && !card.classList.contains("open")) { const r = card.querySelector(".row"); if (r) { r.click(); OPENED = card; } }
+  }
+  const SHOW = ["NM", "LP", "MP", "HP"];
   function paintBar() {
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phonebar");
+    const tools = `<span class="pt" data-t="search" title="search">&#128269;</span><span class="pt tg" data-t="toggle" title="results and the full condition grid">${MODE === "card" ? "&#9662;" : "&#9652;"}</span>`;
     const card = focusCard(), id = card && card.dataset.id, r = id && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === id) : null;
-    const tg = `<span class="pt tg" data-t="toggle" title="results and the condition grid">${MODE === "card" ? "&#9662;" : "&#9652;"}</span>`;
-    const srch = '<span class="pt" data-t="search" title="search">&#128269;</span>';
     if (!r) {
-      el.innerHTML = `<div class="pnw"><div class="pn"><b style="color:var(--faint)">no card yet</b><span>tap the gold read bubble, or search</span></div></div><div class="pr">${srch}${tg}</div>`;
-      wire(el, null, null); paintStat(); sizeSoon(); return;
+      const html = `<div class="pe"><div><b>No card yet</b><span>Tap the gold <b>read</b> bubble when a card is on screen, or search.</span></div><div class="ptools">${tools}</div></div>`;
+      if (el.innerHTML !== html) { el.innerHTML = html; wire(el, null); }
+      paintStat(); sizeSoon(); return;
     }
-    const list = cands(), i = list.indexOf(card), n = list.length, step = !card.classList.contains("open") && n > 1 && i >= 0;
-    const chip = card.querySelector(".bids .bm b.rounded") || card.querySelector(".bids .bm b");
-    const bid = chip ? chip.textContent.trim() : "";
-    const m = typeof bestMarket === "function" ? bestMarket(r) : 0;
-    const mult = (c) => (typeof condMult === "function" ? condMult(c, r.y, m) : 1);
-    const px = m > 0 ? `NM ${money(m)}<br>LP ${money(m * mult("LP"))} · MP ${money(m * mult("MP"))}` : "no market";
-    const tag = card.classList.contains("open") ? "open" : card.classList.contains("autosug") ? "best guess" : i === 0 ? "top result" : "";
-    el.innerHTML = `<div class="pnw">${step ? '<span class="st" data-t="prev">&#8249;</span>' : ""}` +
-      `<div class="pn" title="open: condition grid"><b>${esc(r.n)}</b><span>${esc(r.s)} #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${tag ? " · " + tag : ""}</span></div>` +
-      (step ? `<span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") + `</div>` +
-      `<div class="pr"><span class="pb${bid ? "" : " none"}" data-t="bid" title="tap: bid to the clipboard">${bid ? esc(FLASH && FLASH.until > Date.now() ? FLASH.txt : bid) : "bid"}</span>` +
-      `<span class="px">${px}</span>${srch}${tg}</div>`;
-    wire(el, card, chip); paintStat(); sizeSoon();
+    if (MODE === "card" || !card.classList.contains("open")) ensureOpen(card);
+    const list = cands(), i = list.indexOf(card), n = list.length;
+    const grid = card.querySelector(".condgrid");
+    const btns = grid ? Array.from(grid.querySelectorAll(".bd.cpy[data-cond]")) : [];
+    const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
+    let rows;
+    if (btns.length) {
+      const whole = (t) => { const v = Math.floor(parseFloat(String(t).replace(/[^0-9.]/g, "")) || 0); return v >= 1 ? "$" + v : "<$1"; };   // what copyAmt copies
+      rows = SHOW.map((c) => { const b = btns.find((x) => x.dataset.cond === c); return b ? { c, mkt: +b.dataset.mkt || 0, bid: whole(b.dataset.bid || b.textContent), b } : null; }).filter(Boolean);
+    } else {   // grid still loading: NM from the tile, the others from the usual condition shares
+      const m = typeof bestMarket === "function" ? bestMarket(r) : 0, chip = card.querySelector(".bids .bm b.rounded");
+      rows = SHOW.map((c) => ({ c, mkt: m * (typeof condMult === "function" ? condMult(c, r.y, m) : 1), bid: c === "NM" && chip ? chip.textContent.trim() : "…", b: null }));
+    }
+    const tag = card.classList.contains("autosug") ? (card.classList.contains("byboth") ? "auto + picture" : card.classList.contains("bypic") ? "picture" : "best guess") : "";
+    const img = typeof imgOf === "function" ? imgOf(r) : "";
+    const col = (c) => (typeof COND_COLORS !== "undefined" && COND_COLORS[c]) || "var(--ink)";
+    const flash = (c) => FLASH && FLASH.until > Date.now() && FLASH.cond === c ? FLASH.txt : null;
+    const html =
+      `<div class="pc">` +
+        `<div class="pleft"><div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="ptools">${tools}</div></div>` +
+        `<div class="pmain">` +
+          `<div class="ph"><div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}</span></div>` +
+            (n > 1 && i >= 0 ? `<div class="pstep"><span class="st" data-t="prev">&#8249;</span><span class="sn">${tag ? `<i>${esc(tag)}</i>` : ""}${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span></div>`
+              : tag ? `<div class="pstep"><span class="sn"><i>${esc(tag)}</i></span></div>` : "") +
+          `</div>` +
+          `<div class="ptab"><div class="pth"><span>cond</span><span>price</span><span>max bid · tap copies</span></div>` + rows.map((x) =>
+            `<div class="pr"><span class="pc1" style="color:${col(x.c)}">${x.c}</span><span class="pm">${x.mkt > 0 ? money(x.mkt) : "–"}</span>` +
+            `<span class="pb${x.b ? "" : " wait"}${flash(x.c) ? " fl" : ""}" data-t="bid" data-c="${x.c}">${esc(flash(x.c) || x.bid)}</span></div>`).join("") +
+          `</div>` +
+        `</div>` +
+      `</div>`;
+    if (el.innerHTML !== html) { el.innerHTML = html; wire(el, card); }
+    paintStat(); sizeSoon();
   }
-  function wire(el, card, chip) {
-    const on = (t, f) => { const x = el.querySelector(`[data-t="${t}"]`); if (x) x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(); }; };
-    const nm = el.querySelector(".pn");
-    if (nm) nm.onclick = () => { if (card && !card.classList.contains("open")) { const row = card.querySelector(".row"); if (row) row.click(); } setMode("list"); };
-    on("bid", () => { touched(); if (chip) chip.click(); else setMode("list"); });
+  function wire(el, card) {
+    const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(x); }; });
+    on("open", () => { OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
+    on("bid", (x) => {
+      touched();
+      const b = card && card.querySelector(`.condgrid .bd.cpy[data-cond="${x.dataset.c}"]`);
+      if (b) b.click(); else setMode("list");
+    });
     on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
     on("search", () => { setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
-    const n = cands().length, i = cands().indexOf(card);
+    const list = cands(), i = list.indexOf(card), n = list.length;
     on("prev", () => { touched(); CUR = (i - 1 + n) % n; paintBar(); });
     on("next", () => { touched(); CUR = (i + 1) % n; paintBar(); });
   }
@@ -333,13 +379,13 @@
     if (st.innerHTML !== html) st.innerHTML = html;   // only on change: this runs from a body observer
   }
   function flashBid(r) {
-    const txt = r && r.ok ? "Whatnot ✓" : r && r.why === "under" && r.min ? "under $" + r.min : r && r.why === "sold" ? "sold" : "copied";
-    FLASH = { txt, until: Date.now() + 2500 }; paintBar(); setTimeout(paintBar, 2600);
+    const txt = r && r.ok ? "Whatnot ✓" : r && r.why === "under" && r.min ? "under $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";
+    FLASH = { txt, cond: (typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.cond) || "NM", until: Date.now() + 2500 }; paintBar(); setTimeout(paintBar, 2600);
   }
   let barTimer = 0;
   const results = $("#results");
   const mo = new MutationObserver((recs) => {
-    if (recs.some((x) => x.type === "childList" && x.target === results)) CUR = -1;   // new results: back to the best guess
+    if (recs.some((x) => x.type === "childList" && x.target === results)) { CUR = -1; OPENED = null; }   // new results: back to the best guess
     clearTimeout(barTimer); barTimer = setTimeout(paintBar, 120);
   });
   if (results) mo.observe(results, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });

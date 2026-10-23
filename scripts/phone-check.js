@@ -35,6 +35,9 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const page = await ctx.newPage();
   const errors = []; page.on("pageerror", (e) => errors.push(e.message));
   await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => {
+    if (/tcgplayer-cdn|pokemontcg\.io/.test(r.request().url())) {   // card photos: a stand-in card, the sandbox cannot reach the CDNs
+      return r.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="245" height="342"><rect width="245" height="342" rx="12" fill="#f0c419"/><rect x="14" y="40" width="217" height="140" fill="#e2583e"/><rect x="14" y="196" width="217" height="120" fill="#fff6d6"/><text x="20" y="28" font-size="20" font-family="sans-serif">Charizard</text></svg>' });
+    }
     if (/api\.anthropic\.com\/v1\/messages/.test(r.request().url())) {
       return r.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" }, contentType: "application/json",
         body: JSON.stringify({ model: "claude-sonnet-5-5", usage: { input_tokens: 1500, output_tokens: 70 }, stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(READ) }] }) });
@@ -116,7 +119,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(h.ext, "the app heard cardcomp-ext-ready (WN_EXT)");
   ok(!h.readbtn, "the page's read button is hidden on the phone (the bubble reads)");
   ok(/Whatnot ✓/.test(h.wnstat), "status ack painted: " + h.wnstat.replace(/<[^>]+>/g, ""));
-  ok(/no card yet/.test(h.bar), "card line before any read: " + h.bar.trim());
+  ok(/no card yet/i.test(h.bar), "card line before any read: " + h.bar.trim());
   const h0 = await fit();
   ok(h0 > 30 && h0 < 110, "compact card asks for a small panel: " + h0 + " css px");
   await page.screenshot({ path: path.join(OUT, "phone-card-empty.png") });
@@ -151,7 +154,11 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card"), "after the read: compact card, panel shown");
   ok(/charizard/i.test(r2.stat) && /frame/.test(r2.stat), "status line says what was read, with the frame link: " + r2.stat.trim().slice(0, 90));
   const h2 = await fit();
-  ok(h2 < 140, "compact card with a result stays small: " + h2 + " css px");
+  ok(h2 > 120 && h2 < 225, "compact card with a result: picture + 4 condition rows, " + h2 + " css px");
+  const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pr")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+  ok(rows.length === 4 && rows.every((t) => /^(NM|LP|MP|HP) ?\$[\d,.]+ ?\$\d+$/.test(t)), "condition rows mirror the grid: " + rows.join(" | "));
+  const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.textContent.trim() : ""; });
+  ok(gridNM && rows[0].endsWith("$" + Math.floor(parseFloat(gridNM.replace(/[^0-9.]/g, "")))), "NM bid equals the full grid's NM bid, whole dollars: " + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
   // step through the candidates
   const step = await page.evaluate(() => { const a = document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent; document.querySelector('#phonebar [data-t="next"]').click(); return new Promise((r) => setTimeout(() => r([a, document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent, (document.querySelector("#phonebar .sn") || {}).textContent]), 50)); });
@@ -180,6 +187,15 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const tapped = await page.evaluate(() => typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.n);
   ok(/charizard/i.test(String(tapped)), "the tap labeled the lot through the card's own chip: " + tapped);
   await page.screenshot({ path: path.join(OUT, "phone-card-copied.png") });
+  await page.waitForTimeout(2700);
+
+  // LP from the compact card: labelled LP, same number as the grid
+  const b3 = (await calls()).length;
+  await page.click('#phonebar .pb[data-c="LP"]');
+  await page.waitForTimeout(300);
+  const lpBid = (await calls()).slice(b3).find((x) => x.n === "bid");
+  const lpTap = await page.evaluate(() => LAST_TAP && LAST_TAP.cond);
+  ok(lpBid && lpTap === "LP" && rows[1].endsWith("$" + lpBid.a[0]), `LP bid button sends the grid's LP bid, labelled LP: $${lpBid && lpBid.a[0]} (${lpTap})`);
   await page.waitForTimeout(2700);
 
   console.log("3b. picture match, clipboard, long press");
