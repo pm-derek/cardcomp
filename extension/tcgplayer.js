@@ -20,7 +20,8 @@ function marketPrice(condName) {
   if (condName) {
     const rows = [...document.querySelectorAll("tr,li,div,section")].filter((el) => {
       const t = (el.textContent || "").trim();
-      return t.length < 160 && t.includes(condName) && /market/i.test(t) && money(t) != null;
+      // not a listing row ("Add to Cart" / shipping): those carry a seller's asking price, not the market price
+      return t.length < 160 && t.includes(condName) && /market/i.test(t) && money(t) != null && !/add to cart|shipping/i.test(t);
     });
     rows.sort((a, b) => a.textContent.length - b.textContent.length);
     if (rows[0]) return money(rows[0].textContent);
@@ -57,6 +58,10 @@ function lowestListing(condName) {
 }
 
 let reported = false;   // anything read since this page / filter loaded
+// Wait for the page to settle (Pikachu EX XY174 Jumbo, 2026-10-22: the LP listings rendered before the market price, so the
+// first report was "low $29" alone, CardComp showed it as the LP price, and the market $18.53 replaced it a moment later):
+// report only when the same read holds for 2 ticks (1 s), and a listing price without a market only after 6 s.
+let prevRead = "", stable = 0, t0 = Date.now();
 function send(extra) {
   const c = ctx();
   try { chrome.runtime.sendMessage(Object.assign({ type: "cardcomp-tcg-price", pid: c.pid, printing: c.printing, cond: c.cond, href: location.href }, extra)); } catch (_) {}
@@ -67,6 +72,9 @@ function report() {
   const market = marketPrice(c.condName), low = lowestListing(c.condName);
   if (market == null && low == null) return false;
   const key = [c.pid, c.printing, c.cond, market, low].join("|");
+  if (key !== prevRead) { prevRead = key; stable = 0; return true; }   // changed since the last tick: wait for it to hold
+  if (++stable < 2) return true;
+  if (market == null && Date.now() - t0 < 6000) return true;          // a listing alone: give the market price time to render
   if (key === last) return true;
   last = key;
   send({ market, low });
@@ -77,7 +85,7 @@ function report() {
 // Prices render after load, and the condition filter is client-side routing: poll, lightly.
 let href = location.href, tries = 0;
 const tick = () => {
-  if (location.href !== href) { href = location.href; last = ""; tries = 0; reported = false; }
+  if (location.href !== href) { href = location.href; last = ""; tries = 0; reported = false; prevRead = ""; stable = 0; t0 = Date.now(); }
   report();
   tries++;
   if (tries === 16 && !reported) send({ none: true });   // 8 s and nothing read: tell CardComp so Derek knows the reader missed
