@@ -234,9 +234,11 @@ class OverlayService : Service() {
                 return true
             }
             override fun onPageFinished(view: WebView, url: String) {
-                if (url.startsWith(APP_URL)) view.evaluateJavascript(
-                    "(function(){if(window.__phone)return;var s=document.createElement('script');" +
-                        "s.src='phone/bridge.js?v='+Math.floor(Date.now()/3600000);document.head.appendChild(s)})()", null)
+                // the bridge and the shared reader ship inside the APK (copied from phone/ and extension/recog/ at
+                // build time), so the app works whatever branch the live site is on
+                if (url.startsWith(APP_URL)) view.evaluateJavascript("!!window.__phone") { has ->
+                    if (has != "true") view.evaluateJavascript(bundled(), null)   // top level: the reader's globals must stay global
+                }
             }
         }
         wv.webChromeClient = object : WebChromeClient() {
@@ -382,6 +384,11 @@ class OverlayService : Service() {
         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         catch (e: Exception) { toast("cannot open: ${e.message}") }
     }
+
+    private var bundledJs: String? = null
+    private fun bundled(): String = bundledJs ?: try {
+        (assets.open("recog-read.js").bufferedReader().readText() + "\n;\n" + assets.open("bridge.js").bufferedReader().readText()).also { bundledJs = it }
+    } catch (e: Exception) { Log.w(TAG, "bundled js: ${e.message}"); "" }
 
     private fun js(code: String) { main.post { web?.evaluateJavascript(code, null) } }
     private fun toast(t: String) { main.post { Toast.makeText(this, t, Toast.LENGTH_SHORT).show() } }

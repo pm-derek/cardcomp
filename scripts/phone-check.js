@@ -63,7 +63,8 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.goto(base + "/");
   await page.waitForFunction(() => typeof CARDS !== "undefined" && CARDS.length > 1000, null, { timeout: 60000 });
   // what OverlayService does after the page loads
-  await page.evaluate(() => { const s = document.createElement("script"); s.src = "phone/bridge.js"; document.head.appendChild(s); });
+  const bundle = fs.readFileSync(path.join(ROOT, "extension/recog/recog-read.js"), "utf8") + "\n;\n" + fs.readFileSync(path.join(ROOT, "phone/bridge.js"), "utf8");
+  await page.addScriptTag({ content: bundle });   // what OverlayService injects (both files, top level)
   await page.waitForFunction(() => !!window.__phone && typeof window.recogRead === "function", null, { timeout: 10000 });
   await page.waitForTimeout(400);
   const calls = () => page.evaluate(() => window.__calls);
