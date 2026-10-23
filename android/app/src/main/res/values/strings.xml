@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CardComp</string>
+    <string name="reader_name">CardComp screen reader</string>
+    <string name="reader_desc">Reads the Whatnot auction on screen (lot title, price, timer, winner) so CardComp can label and log lots. Phase 0: screen dumps only, taken when you press Dump screen.</string>
+</resources>

@@ -1,0 +1,45 @@
+package io.github.pmderek.cardcomp
+
+import android.content.Context
+import android.content.SharedPreferences
+
+/** App settings. App-private storage (the Android sandbox); keys never leave the phone except to the API they are for. */
+class Prefs(ctx: Context) {
+    private val p: SharedPreferences = ctx.getSharedPreferences("cardcomp", Context.MODE_PRIVATE)
+
+    var anthropicKey: String
+        get() = p.getString("anthropicKey", "") ?: ""
+        set(v) = p.edit().putString("anthropicKey", v).apply()
+
+    var ghToken: String
+        get() = p.getString("ghToken", "") ?: ""
+        set(v) = p.edit().putString("ghToken", v).apply()
+
+    /** haiku / sonnet / opus, set from CardComp's auto line */
+    var model: String
+        get() = p.getString("model", "sonnet") ?: "sonnet"
+        set(v) = p.edit().putString("model", v).apply()
+
+    /** off / manual / auto (phase 0 reads only on a tap, so auto behaves like manual) */
+    var mode: String
+        get() = p.getString("mode", "manual") ?: "manual"
+        set(v) = p.edit().putString("mode", v).apply()
+
+    /** top strip height, % of the screen */
+    var stripPct: Int
+        get() = p.getInt("stripPct", 15)
+        set(v) = p.edit().putInt("stripPct", v).apply()
+
+    /** bottom panel height, % of the screen (dragged by its top edge) */
+    var panelPct: Int
+        get() = p.getInt("panelPct", 32)
+        set(v) = p.edit().putInt("panelPct", v).apply()
+
+    var bubbleX: Int
+        get() = p.getInt("bubbleX", -1)
+        set(v) = p.edit().putInt("bubbleX", v).apply()
+
+    var bubbleY: Int
+        get() = p.getInt("bubbleY", -1)
+        set(v) = p.edit().putInt("bubbleY", v).apply()
+}
