@@ -143,6 +143,8 @@
   .condgrid .bd.cpy:hover{background:rgba(255,255,255,.09)}
   .condgrid .bd.cpy:active{transform:scale(.97)}
   .condgrid .mg{font-weight:600;text-align:right}
+  .condgrid .cdet{grid-column:1/-1;margin:-6px 0 3px;font-size:10.5px;line-height:1.35;color:var(--faint)}
+  .condgrid .cdet.warn{color:#e8a33d}
   @media (max-width:440px){ .card img,.card.open > .row img,#results.grid .card.open img{width:44px;height:62px} }   /* phone: names keep their width; tap the picture for full size */
   @media (max-width:440px){   /* phone: drop the % column so the bid button keeps its width */
     .condgrid{grid-template-columns:auto auto minmax(80px,1fr) auto auto;gap:7px 7px}
@@ -1854,7 +1856,7 @@ window.addEventListener("message", e=>{
   }
   const parts=[];
   for(const c of CONDS){ const o=(d.conds||{})[c]; if(!o) continue;
-    if(o.market>0||o.low>0) applyLive(Object.assign({pid:q.pid, printing:q.printing, cond:c, fast:true}, o));
+    if(o.market>0||o.low>0) applyLive(Object.assign({pid:q.pid, printing:q.printing, cond:c, fast:true, salesSeen:d.salesSeen}, o));
     parts.push(`${c} ${o.market>0?"$"+o.market.toFixed(2):"no market"}`); }
   const t=(d.conds||{})[q.cond]||{}, ls=t.sales&&t.sales[0];
   const dt=ms=>new Date(ms).toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -2677,7 +2679,7 @@ function liveFor(pid, cond, nm, k){   // -> {price, days, src, m, nm} or null; s
   const lk=liveKey(pid, k, cond), e=LIVE[lk]||LIVE_STORE[lk]; if(!e || !(e.at>0)) return null;
   const days=(Date.now()-e.at)/86400000; if(days>LIVE_MAX_DAYS) return null;
   const price=(nm>0 && e.r>0) ? nm*e.r : e.m; if(!(price>0)) return null;
-  return {price, days, src:e.src, m:e.m, nm:e.nm, ls:e.ls, lc:e.lc, lo:e.lo};
+  return {price, days, src:e.src, m:e.m, nm:e.nm, ls:e.ls, lc:e.lc, lo:e.lo, n:e.n, sv:e.sv};
 }
 function liveAge(days){ return days<1 ? "today" : Math.round(days)+"d"; }
 const liveAgo=(days)=>days<1 ? "today" : Math.round(days)+"d ago";
@@ -2716,11 +2718,50 @@ function applyLive(d){
   else if(FAST_AT[key] && Date.now()-FAST_AT[key]<120000) return;   // the page caught up after the fast read: keep the fast one
   if(!d.fast) liveNote(d.market>0 ? `${d.cond} verified on TCGplayer: $${price.toFixed(2)} market` : `${d.cond}: no market price on TCGplayer, lowest listing $${price.toFixed(2)}. The bid uses the lower of that and the estimate`);
   const rec={r: nm>0 ? +(price/nm).toFixed(4) : 0, m:price, nm, src:d.market>0?"market":"low", at:Date.now()};
-  if(d.fast){ const s0=d.sales&&d.sales[0]; if(s0) rec.ls={p:s0.p, at:s0.at}; if(d.salesN) rec.n=d.salesN; if(d.listed!=null) rec.lc=d.listed; if(d.low>0) rec.lo=d.low; }   // last sale, sales seen, listed, cheapest listing
+  if(d.fast){ const s0=d.sales&&d.sales[0]; if(s0) rec.ls={p:s0.p, at:s0.at}; if(d.salesN) rec.n=d.salesN; if(d.listed!=null) rec.lc=d.listed; if(d.low>0) rec.lo=d.low; if(d.salesSeen>0) rec.sv=d.salesSeen; }   // last sale, its condition's sales seen, listed, cheapest listing, all sales seen
   LIVE[key]=rec;
   const msg={type:"cardcomp-live-save", key, rec};   // the extension writes it to the live branch (desktop only; silent without a token)
   extPost(msg);
   if(LIVE_REDRAW) LIVE_REDRAW();
+}
+// Stale condition market (Derek, 2026-10-23, Slugma Deoxys RH: "NM sold 100-200, LP market very low, lowest LP listed
+// very high; LP should relate to NM"). TCGplayer's market price for a thin condition can rest on one old sale. When the
+// fast read saw no sale of that condition among the printing's last sales (or the last is 90+ days old) and the market
+// is 35%+ away from the NM-based estimate, price it from NM, capped at the cheapest listing of that condition.
+// Page reads and older store entries carry no sales (sv), so they are trusted as before.
+function staleMarket(lv, est){
+  if(!lv || lv.src==="low" || !(lv.sv>0) || !(est>0)) return null;
+  const old=lv.ls && lv.ls.at>0 ? Date.now()-lv.ls.at>90*86400000 : true;
+  if(lv.n>0 && !old) return null;
+  if(Math.abs(lv.price/est-1)<=0.35) return null;
+  const capped=lv.lo>0 && lv.lo<est;
+  const why=lv.n>0 && lv.ls ? `since ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}` : `in the last ${lv.sv} sales`;
+  return { price:capped?lv.lo:est, est, capped, why };
+}
+// The line under each condition row (Derek, 2026-10-23: "show market, lowest listed, and our estimate, in case of wild
+// fluctuations or spreads"): what TCGplayer says (market, cheapest listing, last sale) and how the est. was reached.
+// Amber with ⚠ when the est. is 25%+ away from TCGplayer's market or listings sit 2x+ away from it.
+function condDetail(o){
+  const {cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low}=o, P=v=>"$"+v.toFixed(2), sh=base>0?Math.round(tierP/base*100)+"%":"";
+  const tm=lv&&lv.src!=="low" ? lv.m : (cond==="NM" && !lv ? base : 0);
+  const lo=lv ? (lv.src==="low" ? lv.m : lv.lo||0) : 0;
+  const parts=[];
+  if(tm>0) parts.push(`TCG ${P(tm)}${lv&&lv.days>=1?` (${liveAge(lv.days)})`:""}`); else if(lv) parts.push(`no TCG ${cond} market`);
+  if(lo>0) parts.push(`listed ${P(lo)}${lv&&lv.lc>1?` (${lv.lc})`:""}`); else if(lv && lv.lc===0) parts.push("none listed");
+  else if(!lv && cond==="NM" && low>0) parts.push(`listed ${P(low)} any cond.`);
+  if(lv && lv.ls && lv.ls.at>0) parts.push(`sold ${P(lv.ls.p)} ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`);
+  else if(lv && lv.sv>0) parts.push(`no ${cond} sale in last ${lv.sv}`);
+  let how;
+  if(stale) how=stale.capped ? "est. = cheapest listed" : `est. NM×${sh}`;
+  else if(cap) how=`est. capped at ${cap.cond}`;
+  else if(lv && lv.src==="low") how=atc>=lo-0.005 ? `est. = listing, under NM×${sh}` : `est. NM×${sh}${dv?` ×${dv.k.toFixed(2)} (${dv.cond})`:""}, under listing`;
+  else if(lv) how="est. = TCG";
+  else if(dv) how=`est. NM×${sh} ×${dv.k.toFixed(2)} (${dv.cond})`;
+  else how=cond==="NM" ? "est. = TCG" : `est. NM×${sh}`;
+  if(atc<pre-0.005 && !cap) how+=`, capped at ${aboveC}`;
+  parts.push(how);
+  const warn=(tm>0 && Math.abs(atc/tm-1)>0.25) || (tm>0 && lo>0 && (lo/tm>2 || lo/tm<0.5));
+  return `<span class="cdet${warn?" warn":""}">${warn?"⚠ ":""}${parts.join(" · ")}</span>`;
 }
 function condGridHTML(prices, key, mf, year, pid, card){
   const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
@@ -2733,22 +2774,24 @@ function condGridHTML(prices, key, mf, year, pid, card){
   let anchor=null, prevP=Infinity, prevC="";
   const rows=CONDS.map(cond=>{
     const lv=liveFor(pid, cond, base, key), tierP=base*condMult(cond, year, base);
-    let atc, dv=null, cap=null;
+    let atc, dv=null, cap=null, stale=null;
     // A lowest listing is an asking price, not a sale (Pikachu EX XY174: LP listed $29, LP market $18.53): it caps the
     // estimate and never raises it, and only market reads set the cascade for the conditions below.
     if(lv && lv.src==="low"){ const est=anchor&&tierP>0 ? tierP*anchor.k : tierP; atc=est>0 ? Math.min(est, lv.price) : lv.price; if(anchor && est<lv.price) dv=anchor; }
+    else if(lv && (stale=staleMarket(lv, anchor&&tierP>0 ? tierP*anchor.k : tierP))){ atc=stale.price; }
     else if(lv){ atc=lv.price; if(atc>prevP){ cap={cond:prevC, read:atc}; atc=prevP; } if(tierP>0) anchor={cond, k:atc/tierP, pct:base>0?atc/base:0, usual:base>0?tierP/base:0}; }
     else if(anchor && tierP>0){ atc=tierP*anchor.k; dv=anchor; }
     else atc=tierP;
+    const pre=atc, aboveC=prevC;
     if(atc>prevP) atc=prevP;
     prevP=atc; prevC=cond;
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${cap?`${cond} market on TCGplayer is $${cap.read.toFixed(2)}, above ${cap.cond} at $${atc.toFixed(2)} (thin or stale ${cond} sales), so ${cond} is priced at ${cap.cond}. Verified ${liveAgo(lv.days)}`:lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAgo(lv.days)}, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAgo(lv.days)}: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&!cap&&lv.days<=7?'var(--gold)':'inherit'}">${dv?"≈":""}$${atc.toFixed(2)}${cap?`<sup style="color:var(--faint);font-size:8px"> ≤${cap.cond}</sup>`:lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${stale?`${cond} market $${lv.m.toFixed(2)} has no ${cond} sale behind it ${stale.why}, so it is priced from NM: ${cond} usually sells at ${base>0?Math.round(stale.est/base*100):"?"}% of NM = $${stale.est.toFixed(2)}${stale.capped?`, capped at the cheapest ${cond} listed ($${lv.lo.toFixed(2)})`:""}${lv.lc!=null?`. ${lv.lc} listed`:""}`:cap?`${cond} market on TCGplayer is $${cap.read.toFixed(2)}, above ${cap.cond} at $${atc.toFixed(2)} (thin or stale ${cond} sales), so ${cond} is priced at ${cap.cond}. Verified ${liveAgo(lv.days)}`:lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAgo(lv.days)}, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAgo(lv.days)}: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&!cap&&!stale&&lv.days<=7?'var(--gold)':'inherit'}">${dv||stale?"≈":""}$${atc.toFixed(2)}${stale?`<sup style="color:var(--faint);font-size:8px"> ${stale.capped?"listed":"NM"}</sup>`:cap?`<sup style="color:var(--faint);font-size:8px"> ≤${cap.cond}</sup>`:lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>${condDetail({cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low:pr&&pr.low})}`;
   }).join("");
-  return `<span class="c h">cond</span><span class="mk h">market</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
+  return `<span class="c h">cond</span><span class="mk h" title="the price bids use: TCGplayer's market when it holds up, else our estimate (the line under each row says which)">est.</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
 async function loadPrices(card, host){
   const e = card && card.px;
