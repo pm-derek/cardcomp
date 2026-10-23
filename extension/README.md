@@ -43,6 +43,13 @@ extension reads that condition's market price (lowest listing if no market) and 
 market gets a `✓ today` mark, its max bid is recomputed from the live number, and the chip is ready to
 tap. Changing the condition filter on the TCGplayer page updates the matching row too.
 
+Fast read (0.8): the same tap also asks TCGplayer's data services directly for every condition of that printing (market
+price, cheapest listing, how many are listed, recent sales), usually in about half a second, and fills all the rows at
+once. The line under the card says what came back. If that fails, the page read above still fills the row, and the line
+offers "copy debug": paste it to Claude. CardComp's own TCGplayer tab skips images (except the card photo), fonts and
+ad / analytics scripts so it loads faster; your own TCGplayer tabs are untouched. Chrome asks for the new permission
+when you reload the extension.
+
 ## Verified prices on every device
 
 Each live read is saved to `live.json` on the `live` branch of pm-derek/cardcomp (one small commit, batched
