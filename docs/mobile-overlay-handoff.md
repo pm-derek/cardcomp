@@ -386,3 +386,23 @@ Review findings fixed:
   the results so a late ranking never reorders under the finger.
 - Setup screen: sections (Start, Setup, Keys, Model, Update, Screen dumps), status bar insets, "Open App info"
   for the restricted-settings step, "Save keys and test the API key" (16-token Haiku call).
+
+Independent review of the Android code (fresh agent, same day), fixed in 0.3.1:
+- Focus on touch-down would have closed Whatnot's keyboard whenever a bid was tapped and sent Back to the panel.
+  The panel is now never focusable on its own: the page asks (`pointerdown` / `focusin` on a visible text field),
+  a touch outside drops it, and hiding the panel (–, app in front) drops it too.
+- `onRenderProcessGone` rebuilds the WebView in place (a killed renderer used to take the whole app down);
+  `onReceivedError` on the main frame retries every 5 s.
+- Loader: a live bridge that throws falls back to the built-in one.
+- The release (download link, in-app update) is only published from main or a manual "Run workflow".
+- Capture: frames are taken on a capture thread, the virtual display has no surface between reads (nothing is
+  composited while the stream plays), the second frame after attaching is used, one read at a time ("still reading
+  the last card"), a new Start consent replaces the running capture, and our own stop no longer toasts "capture
+  stopped".
+- Screen dump runs off the main thread. Before a read the keyboard is closed (it would be in the frame). The
+  notification lost its Read action (it left the shade open over the frame); the bubble reads.
+- Keys go only to the CardComp page (main-frame URL under the app path); WebView debugging only in debug builds;
+  navigation inside the panel only within the app path.
+- Overlay windows use the whole display (`fitInsetsTypes = 0`), matching the drag limits; monochrome status icon.
+- Not changed: the screen reader gets events from every app (no `packageNames` until Whatnot's package id is known
+  from a dump); keep it off unless dumping, since it also makes the WebView build its accessibility tree.

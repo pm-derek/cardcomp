@@ -96,7 +96,8 @@ class OverlayService : Service() {
                 }
               } catch (e) {}
               if (window.__phone) return;
-              (0, eval)(code || A.bundled());
+              if (code) { try { (0, eval)(code); } catch (e) { A.log('live bridge failed: ' + e); } }
+              if (!window.__phone) (0, eval)(A.bundled());   // a bad merge on the live site never leaves the phone without a bridge
             })();
         """.trimIndent()
     }
@@ -138,10 +139,14 @@ class OverlayService : Service() {
                 measure()
                 if (web == null) { makeBand(); makeBubble(); appOpen = MainActivity.resumed; applyVisibility() }
                 val code = intent.getIntExtra(EXTRA_CODE, 0)
-                val data: Intent? = intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
-                if (data != null && capture?.running != true) {
-                    val c = Capture(this) {
+                val data: Intent? = if (Build.VERSION.SDK_INT >= 34) intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
+                    else @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_DATA)   // the typed overload is broken on 33
+                if (data != null) {
+                    capture?.release()   // Start again (say, to switch to "a single app"): the new consent wins
+                    var c: Capture? = null
+                    c = Capture(this) {
                         main.post {
+                            if (capture !== c) return@post
                             capture = null
                             toast("screen capture stopped: start again from the CardComp app")
                             js("window.__phone&&window.__phone.captureLost&&window.__phone.captureLost()")
@@ -234,6 +239,7 @@ class OverlayService : Service() {
         applyVisibility()
     }
     private fun applyVisibility() {
+        if (collapsed || appOpen) setFocusable(false, false)   // a hidden window gets no outside touch: drop focus now, or it takes Whatnot's keyboard when it shows again
         band?.visibility = if (collapsed || appOpen) View.GONE else View.VISIBLE
         bubble?.visibility = if (appOpen) View.GONE else View.VISIBLE
     }
@@ -245,7 +251,6 @@ class OverlayService : Service() {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_OUTSIDE -> { setFocusable(false, false); js("window.__phone&&window.__phone.blur&&window.__phone.blur()") }
-                MotionEvent.ACTION_DOWN -> setFocusable(true, false)   // a touch inside: focusable before the page handles the tap, so a text field can raise the keyboard
             }
             return super.dispatchTouchEvent(ev)
         }
@@ -265,6 +270,71 @@ class OverlayService : Service() {
     private fun gripText(t: String, sizeSp: Float, color: String): TextView = TextView(uiCtx).apply {
         text = t; textSize = sizeSp; setTextColor(Color.parseColor(color)); gravity = Gravity.CENTER
         typeface = Typeface.DEFAULT_BOLD
+    }
+
+    /** CardComp's WebView (also rebuilt in place when its renderer dies) */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun makeWeb(): WebView {
+        val wv = WebView(uiCtx)
+        wv.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            cacheMode = WebSettings.LOAD_DEFAULT
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            userAgentString = userAgentString + " CardCompPhone/" + BuildConfig.VERSION_NAME
+            setSupportZoom(false)
+        }
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)   // chrome://inspect would expose the keys: debug builds only
+        wv.setBackgroundColor(Color.parseColor("#0b0d10"))
+        wv.addJavascriptInterface(Bridge(), "Android")
+        wv.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val u = request.url
+                if (u.toString().startsWith(APP_URL)) return false
+                openExternal(u.toString())   // TCGplayer and the rest open in the browser over Whatnot
+                return true
+            }
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) { pageUrl = url }
+            // no network at start: retry instead of leaving Chromium's error page in the panel
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                if (request.isForMainFrame) main.postDelayed({ if (web === view) view.loadUrl(APP_URL) }, 5000)
+            }
+            // the renderer was killed (memory) or crashed: build a new WebView instead of taking the whole app down
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                main.post { rebuildWeb(view) }
+                return true
+            }
+            override fun onPageFinished(view: WebView, url: String) {
+                // the bridge and the shared reader ship inside the APK (copied from phone/ and extension/recog/ at
+                // build time), so the app works whatever branch the live site is on
+                if (url.startsWith(APP_URL)) view.evaluateJavascript(LOADER, null)
+            }
+        }
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean { Log.d(TAG, "js: ${m.message()} @${m.lineNumber()}"); return true }
+            // A WebView outside an Activity cannot show dialogs (BadTokenException): alerts become a toast, confirms and
+            // prompts answer "cancel" (only stats clean-up uses them, and that is desktop only)
+            override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean { toast(message); result.confirm(); return true }
+            override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean { toast("not on the phone: $message".take(120)); result.cancel(); return true }
+            override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String?, result: JsPromptResult): Boolean { result.cancel(); return true }
+            override fun onJsBeforeUnload(view: WebView, url: String, message: String, result: JsResult): Boolean { result.confirm(); return true }
+        }
+        return wv
+    }
+
+    @Volatile private var pageUrl = ""
+    private fun rebuildWeb(dead: WebView) {
+        val root = band ?: return
+        if (web !== dead) return
+        val i = root.indexOfChild(dead)
+        try { root.removeView(dead); dead.destroy() } catch (_: Exception) {}
+        val wv = makeWeb()
+        root.addView(wv, if (i >= 0) i else root.childCount, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        web = wv; pageUrl = ""
+        wv.loadUrl(APP_URL)
+        toast("CardComp reloaded (the page ran out of memory)")
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -288,42 +358,7 @@ class OverlayService : Service() {
         grip.addView(resize, LinearLayout.LayoutParams(dp(44), GRIP))
         root.addView(grip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, GRIP))
 
-        val wv = WebView(uiCtx)
-        wv.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            mediaPlaybackRequiresUserGesture = false
-            cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            userAgentString = userAgentString + " CardCompPhone/" + BuildConfig.VERSION_NAME
-            setSupportZoom(false)
-        }
-        WebView.setWebContentsDebuggingEnabled(true)   // chrome://inspect from a desktop Chrome
-        wv.setBackgroundColor(Color.parseColor("#0b0d10"))
-        wv.addJavascriptInterface(Bridge(), "Android")
-        wv.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val u = request.url
-                if (u.host == APP_HOST) return false
-                openExternal(u.toString())   // TCGplayer and the rest open in the browser over Whatnot
-                return true
-            }
-            override fun onPageFinished(view: WebView, url: String) {
-                // the bridge and the shared reader ship inside the APK (copied from phone/ and extension/recog/ at
-                // build time), so the app works whatever branch the live site is on
-                if (url.startsWith(APP_URL)) view.evaluateJavascript(LOADER, null)
-            }
-        }
-        wv.webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(m: ConsoleMessage): Boolean { Log.d(TAG, "js: ${m.message()} @${m.lineNumber()}"); return true }
-            // A WebView outside an Activity cannot show dialogs (BadTokenException): alerts become a toast, confirms and
-            // prompts answer "cancel" (only stats clean-up uses them, and that is desktop only)
-            override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean { toast(message); result.confirm(); return true }
-            override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean { toast("not on the phone: $message".take(120)); result.cancel(); return true }
-            override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String?, result: JsPromptResult): Boolean { result.cancel(); return true }
-            override fun onJsBeforeUnload(view: WebView, url: String, message: String, result: JsResult): Boolean { result.confirm(); return true }
-        }
+        val wv = makeWeb()
         root.addView(wv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val w0 = if (prefs.panelW > 0) prefs.panelW.coerceIn(dp(240), screenW) else screenW - dp(16)
@@ -339,6 +374,7 @@ class OverlayService : Service() {
         lp.y = if (prefs.panelY >= 0) prefs.panelY.coerceIn(0, (screenH * 0.85).toInt()) else (screenH * 0.09).toInt()
         homeY = lp.y
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        lp.fitInsetsTypes = 0   // the drag clamps use the full display: let the window go there (nav bar strip included)
 
         dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { prefs.panelX = lp.x; prefs.panelY = lp.y; homeY = lp.y; typingNow = false }))
         collapse.setOnClickListener { showPanel(false) }
@@ -387,6 +423,7 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.START
+        lp.fitInsetsTypes = 0
         lp.x = if (prefs.bubbleX >= 0) prefs.bubbleX else screenW - size - dp(8)
         lp.y = if (prefs.bubbleY >= 0) prefs.bubbleY else (screenH * 0.26).toInt()
         tv.setOnTouchListener(dragListener(lp, tv, onTap = { readNow("bubble") }, onLong = { showPanel(collapsed) }, save = { prefs.bubbleX = lp.x; prefs.bubbleY = lp.y }))
@@ -436,17 +473,24 @@ class OverlayService : Service() {
     private fun readNow(src: String) {
         if (web == null) return
         if (capture?.running != true) { toast("screen capture is off: start the overlay from the CardComp app"); return }
+        js("window.__phone&&window.__phone.blur&&window.__phone.blur()")   // the keyboard sits above every overlay: it would be in the frame
+        setFocusable(false, false)
         flashBubble("…", 3000)
-        js("window.__phone&&window.__phone.readNow(" + JSONObject.quote(src) + ")")
+        main.postDelayed({ js("window.__phone&&window.__phone.readNow(" + JSONObject.quote(src) + ")") }, 120)
     }
 
     private fun dump() {
         val r = WhatnotReader.instance
         if (r == null) { toast("screen reader is off: turn on CardComp under Settings > Accessibility"); return }
-        val txt = try { r.dump() } catch (e: Exception) { "dump failed: ${e.message}" }
-        copy(txt)
-        toast("screen dump copied (${txt.length} chars), also saved in the app")
-        js("window.__phone&&window.__phone.dumpNote&&window.__phone.dumpNote('screen dump copied')")
+        toast("dumping the screen…")
+        pool.execute {
+            val txt = try { r.dump() } catch (e: Exception) { "dump failed: ${e.message}" }
+            main.post {
+                copy(txt)
+                toast("screen dump copied (${txt.length} chars), also saved in the app")
+                js("window.__phone&&window.__phone.dumpNote&&window.__phone.dumpNote('screen dump copied')")
+            }
+        }
     }
 
     private fun copy(text: String) {
@@ -504,7 +548,7 @@ class OverlayService : Service() {
             .put("reader", WhatnotReader.connected()).put("capture", capture?.running == true)
             .put("w", screenW).put("h", screenH).toString()
 
-        @JavascriptInterface fun key(name: String): String = when (name) {
+        @JavascriptInterface fun key(name: String): String = if (!pageUrl.startsWith(APP_URL)) "" else when (name) {
             "anthropic" -> prefs.anthropicKey
             "github" -> prefs.ghToken
             else -> ""
@@ -526,7 +570,7 @@ class OverlayService : Service() {
                 // a whole-screen capture would include the panel and bubble: hide them for the frame (~0.2 s blink).
                 // Capturing "a single app" leaves them out anyway.
                 band?.alpha = 0f; bubble?.alpha = 0f
-                main.postDelayed({ c.grab { bmp ->
+                main.postDelayed({ val started = c.grab { bmp ->
                     band?.alpha = 1f; bubble?.alpha = 1f
                     if (bmp == null) js("window.__phone.frameFail($q,'no frame from the screen capture')")
                     else Thread {
@@ -534,7 +578,9 @@ class OverlayService : Service() {
                         val url = Capture.jpegDataUrl(f, 88)
                         js("window.__phone.frame($q,${JSONObject.quote(url)},${f.width},${f.height})")
                     }.start()
-                } }, 150)
+                }
+                    if (!started) { band?.alpha = 1f; bubble?.alpha = 1f; js("window.__phone.frameFail($q,'still reading the last card')") }
+                }, 150)
             }
             return "ok"
         }
@@ -580,12 +626,11 @@ class OverlayService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val icon = Icon.createWithResource(this, R.drawable.ic_launcher)
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("CardComp over Whatnot")
-            .setContentText("tap the bubble to read the card on screen")
+            .setContentText("tap the gold bubble to read the card on screen")
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(icon, "Read", act(ACTION_READ, 1)).build())
             .addAction(Notification.Action.Builder(icon, "Dump screen", act(ACTION_DUMP, 2)).build())
             .addAction(Notification.Action.Builder(icon, "Stop", act(ACTION_STOP, 3)).build())
             .build()

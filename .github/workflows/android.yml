@@ -66,7 +66,9 @@ jobs:
         with:
           name: cardcomp-phone-${{ github.sha }}
           path: cardcomp-phone-*.apk
+      # the download link and the in-app update only ever get main builds, or a build someone ran by hand (Run workflow)
       - name: Release (direct download link)
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

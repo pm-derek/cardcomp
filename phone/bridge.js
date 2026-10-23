@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.3.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.3.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 3;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -204,6 +204,9 @@
   // keyboard: the window is focusable only while a text field has focus (native drops it on any touch outside)
   const isField = (t) => !!(t && t.closest && t.closest("input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable]")) &&
     getComputedStyle(t).opacity !== "0";   // the page's copy fallback focuses an invisible textarea: no keyboard for that
+  // The panel window is never focusable on its own (it would take the keyboard and Back from Whatnot): touching a text
+  // field asks for focus first. Chromium may hold focus events until the window has focus, so this goes on pointerdown.
+  document.addEventListener("pointerdown", (e) => { if (isField(e.target)) { try { A.focus(true); } catch (_) {} } }, true);
   document.addEventListener("focusin", (e) => {
     if (!isField(e.target)) return;
     try { A.focus(true); } catch (_) {}
@@ -347,6 +350,7 @@
 
   // ---------------------------------------------------------------- hello
   function hello() {
+    try { const q = $("#q"); if (q && document.activeElement === q) q.blur(); } catch (_) {}   // the page focuses the box at load: no keyboard until Derek taps it
     toApp({ type: "cardcomp-ext-ready" });   // the app shows the auto line, asks for state and status, sends bids our way
     state(); status();
     setMode("card", true);

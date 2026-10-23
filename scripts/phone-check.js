@@ -213,6 +213,13 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(c.some((x) => x.n === "focus" && x.a[0] === false), "focus(false) on blur");
   ok(c.filter((x) => x.n === "layout").pop().a[0] === "list", "after typing with text in the box: the list");
 
+  const b4b = (await calls()).length;
+  await page.evaluate(() => document.querySelector("#q").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  ok((await calls()).slice(b4b).some((x) => x.n === "focus" && x.a[0] === true), "touch-down on a text field asks for focus (the panel is never focusable on its own)");
+  const b4c = (await calls()).length;
+  await page.evaluate(() => document.querySelector("#phonebar").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  ok(!(await calls()).slice(b4c).some((x) => x.n === "focus" && x.a[0] === true), "touch-down elsewhere does not");
+
   console.log("5. links");
   const b5 = (await calls()).length;
   await page.evaluate(() => { const a = document.createElement("a"); a.href = "https://www.tcgplayer.com/product/42?Printing=Unlimited"; a.textContent = "x"; document.body.appendChild(a); a.click(); });

@@ -35,7 +35,8 @@ class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) ?: return
+                val confirm = (if (android.os.Build.VERSION.SDK_INT >= 34) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                    else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_INTENT)) ?: return   // the typed overload is broken on 33
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 try { ctx.startActivity(confirm) } catch (e: Exception) { toast(ctx, "could not open the installer: ${e.message}") }
             }
