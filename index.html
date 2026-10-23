@@ -1669,7 +1669,7 @@ function speedReason(sp){ return `${sp.tier||"normal"}: ${sp.why}, ~${sp.months<
 function flatBidTag(sp, mkt, tiers){   // the bid at your flat settings margin, shown only when speed lowered the bid
   const floor=getNum("tgtmargin",10)/100;
   if(!sp || !(sp.margin>floor+1e-9) || !(mkt>0)) return "";
-  const fb=bidForMargin(mkt, floor, tiers), w=Math.floor(fb)>=1?String(Math.floor(fb)):fb.toFixed(2);
+  const fb=bidForMargin(mkt, floor, tiers), wf=wholeBid(fb, netProceeds(listSale(mkt), tiers)), w=wf>=1?String(wf):fb.toFixed(2);
   if(fb-bidForMargin(mkt, sp.margin, tiers) < 1) return "";   // under a dollar apart: not worth the space
   return `<span class="blab">flat</span><b class="cpy flat" data-bid="${w}" title="flat ${Math.round(floor*100)}% bid, ignores speed · tap to copy">$${w}</b>`;
 }
@@ -1682,6 +1682,17 @@ function profitSteps(mkt, atRec){   // round profits under what the recommended 
   const lo=nice(mkt*0.03);
   const out=PROFIT_NICE.filter(v=>v>=lo && v<=atRec).reverse().slice(0,4);
   return out.length ? out : (atRec>=0.5 ? [1] : []);   // cheap card: the recommended bid already nets about $1
+}
+// Whole-dollar bids (Derek, 2026-10-23: "a max of $8.99 went in as $8, it should be 9; but rounding up sometimes eats too
+// much margin"): round UP when that still keeps at least 75% of the profit at the exact max bid, else round down.
+// $8.99 -> $9 (keeps 99%), $8.40 -> $8 (up would keep 29%), $2.40 -> $2 (up loses money), $214.49 -> $215. np = net
+// proceeds if listed at market. Under $1 stays as is (floors to 0: "under $1").
+const ROUND_KEEP=0.75;
+function wholeBid(exact, np){
+  if(!(exact>=1)) return Math.max(0, Math.floor(exact||0));
+  const fl=Math.floor(exact), up=Math.ceil(exact); if(up===fl) return fl;
+  const p0=np-exact, p1=np-up;
+  return (p1>0 && p1>=ROUND_KEEP*p0) ? up : fl;
 }
 function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
@@ -1716,7 +1727,7 @@ function bidTableHTML(np, bid, pbid, mkt, td){
   const money=v=>(v>0?"+$":v<0?"-$":"$")+Math.abs(v).toFixed(2);
   const c=(lab,cls,val,dat,pct,net,tip)=>({lab,cls,val,dat,pct,net,tip});
   const cols=[
-    c("margin","",`$${bid.toFixed(2)}`,bid.toFixed(2),pctMkt(bid,mkt),np-bid,"exact bid that hits your target margin"),
+    c("margin","",`$${bid.toFixed(2)}`,String(wholeBid(bid,np)>=1?wholeBid(bid,np):bid.toFixed(2)),pctMkt(bid,mkt),np-bid,`exact bid that hits your target margin; a tap sends $${wholeBid(bid,np)>=1?wholeBid(bid,np):bid.toFixed(2)}`),
     fl>=1 ? c("round ↓","dn",`$${fl}`,String(fl),pctMkt(fl,mkt),np-fl,"rounded down - pays less, nets more")
           : c("round ↓","dn","—",null,"—",null,"no whole-dollar bid clears your margin here"),
     c("round ↑","up",`$${ce}`,String(ce),pctMkt(ce,mkt),np-ce,"rounded up - only safe while net stays green"),
@@ -1742,7 +1753,7 @@ function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
   const tileChip=!!(el && el.closest && el.closest("#results.grid .card:not(.open) .bids"));
   const short=m=>!tileChip ? m : m.replace(/^copied \$(\d+)$/,"✓ $$$1").replace(/^Whatnot \$(\d+) ✓$/,"✓ $$$1").replace(/^under next \$/,"need $$").replace(/^lot sold, not sent$/,"sold").replace(/^under \$1$/,"<$$1");
-  const show=(msg,col)=>{ msg=short(msg); if(!el) return; if(el._t0==null){ el._t0=el.textContent; el._c0=el.style.color; } el.textContent=msg; el.style.color=col||"var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.textContent=el._t0; el.style.color=el._c0; el._t0=null; },col?2200:900); };
+  const show=(msg,col)=>{ msg=short(msg); if(!el) return; if(el._t0==null){ el._t0=el.innerHTML; el._c0=el.style.color; } el.textContent=msg; el.style.color=col||"var(--green)"; clearTimeout(el._tm); el._tm=setTimeout(()=>{ el.innerHTML=el._t0; el.style.color=el._c0; el._t0=null; },col?2200:900); };   // restore markup (grid bid "$9 <small>8.99</small>")
   const flash=()=>show("copied $"+s);
   // Whatnot's minimum bid is $1: a sub-$1 max floors to 0, so nothing is copied or sent, but the tap still
   // labels the lot with this card (data-collection taps on bulk cards)
@@ -2807,11 +2818,11 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const pre=atc, aboveC=prevC;
     if(atc>prevP) atc=prevP;
     prevP=atc; prevC=cond;
-    const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), net=netProceeds(listSale(atc))-bid;   // each condition row: its own price and speed
+    const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), np=netProceeds(listSale(atc)), wb=wholeBid(bid, np), net=np-(wb>=1?wb:bid);   // each condition row: its own price and speed; sends / nets the whole-dollar bid
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
-    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${stale?`${cond} market $${lv.m.toFixed(2)} has no ${cond} sale behind it ${stale.why}, so it is priced from NM: ${cond} usually sells at ${base>0?Math.round(stale.est/base*100):"?"}% of NM = $${stale.est.toFixed(2)}${stale.capped?`, capped at the cheapest ${cond} listed ($${lv.lo.toFixed(2)})`:""}${lv.lc!=null?`. ${lv.lc} listed`:""}`:cap?`${cond} market on TCGplayer is $${cap.read.toFixed(2)}, above ${cap.cond} at $${atc.toFixed(2)} (thin or stale ${cond} sales), so ${cond} is priced at ${cap.cond}. Verified ${liveAgo(lv.days)}`:lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAgo(lv.days)}, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAgo(lv.days)}: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&!cap&&!stale&&lv.days<=7?'var(--gold)':'inherit'}">${dv||stale?"≈":""}$${atc.toFixed(2)}${stale?`<sup style="color:var(--faint);font-size:8px"> ${stale.capped?"listed":"NM"}</sup>`:cap?`<sup style="color:var(--faint);font-size:8px"> ≤${cap.cond}</sup>`:lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="copy bid" style="color:${col}">$${bid.toFixed(2)}</span><span class="pc">${pctMkt(bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>${condDetail({cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low:pr&&pr.low})}`;
+    return `<span class="c" style="color:${col}">${clab}</span><span class="mk">${cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="${stale?`${cond} market $${lv.m.toFixed(2)} has no ${cond} sale behind it ${stale.why}, so it is priced from NM: ${cond} usually sells at ${base>0?Math.round(stale.est/base*100):"?"}% of NM = $${stale.est.toFixed(2)}${stale.capped?`, capped at the cheapest ${cond} listed ($${lv.lo.toFixed(2)})`:""}${lv.lc!=null?`. ${lv.lc} listed`:""}`:cap?`${cond} market on TCGplayer is $${cap.read.toFixed(2)}, above ${cap.cond} at $${atc.toFixed(2)} (thin or stale ${cond} sales), so ${cond} is priced at ${cap.cond}. Verified ${liveAgo(lv.days)}`:lv&&lv.src==="low"?`no ${cond} market price on TCGplayer ${liveAgo(lv.days)}, lowest listing $${lv.m.toFixed(2)}: the price here is the lower of that and the estimate`:lv?`verified on TCGplayer ${liveAgo(lv.days)}: ${cond} $${lv.m.toFixed(2)} market when NM was $${(lv.nm||0).toFixed(2)}; applied to today's NM${lv.ls?`. Last ${cond} sale $${lv.ls.p.toFixed(2)} on ${new Date(lv.ls.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`:""}${lv.lc!=null?`. ${lv.lc} listed${lv.lo?` from $${lv.lo.toFixed(2)}`:""}`:""}`:dv?`scaled from your verified ${dv.cond}: it sells at ${Math.round(dv.pct*100)}% of NM vs the usual ${Math.round(dv.usual*100)}%, so ${cond} moves by the same factor (x${dv.k.toFixed(2)}). Tap to see ${cond} listings on TCGplayer`:`see ${cond} listings on TCGplayer`}" style="color:${lv&&lv.src!=="low"&&!cap&&!stale&&lv.days<=7?'var(--gold)':'inherit'}">${dv||stale?"≈":""}$${atc.toFixed(2)}${stale?`<sup style="color:var(--faint);font-size:8px"> ${stale.capped?"listed":"NM"}</sup>`:cap?`<sup style="color:var(--faint);font-size:8px"> ≤${cap.cond}</sup>`:lv&&lv.src==="low"?`<sup style="color:var(--faint);font-size:8px"> listed $${lv.price.toFixed(0)}</sup>`:lv?`<sup style="color:${lv.days<=7?'var(--gold)':'var(--faint)'};font-size:8px"> ✓${liveAge(lv.days)}</sup>`:dv?`<sup style="color:var(--faint);font-size:8px"> ${dv.cond}</sup>`:''}</a>`:`${dv?"≈":""}$${atc.toFixed(2)}`}</span><span class="bd cpy" data-bid="${wb>=1?wb:bid.toFixed(2)}" data-exact="${bid.toFixed(2)}" data-cond="${cond}" data-mkt="${atc.toFixed(2)}" title="sends $${wb>=1?wb:bid.toFixed(2)}: exact max $${bid.toFixed(2)}, ${wb>bid?"rounded up (keeps 75%+ of the profit)":"rounded down"}" style="color:${col}">${wb>=1?`$${wb}<small style="font-size:11px;font-weight:500;opacity:.55;margin-left:6px">${bid.toFixed(2)}</small>`:`$${bid.toFixed(2)}`}</span><span class="pc">${pctMkt(wb>=1?wb:bid,atc)}</span><span class="mg" style="color:${ncol}">+$${net.toFixed(2)}</span><button class="cadd" data-cond="${cond}" title="add ${cond} to cart">+ add</button>${condDetail({cond, lv, atc, pre, aboveC, base, tierP, stale, cap, dv, low:pr&&pr.low})}`;
   }).join("");
   return `<span class="c h">cond</span><span class="mk h" title="the price bids use: TCGplayer's market when it holds up, else our estimate (the line under each row says which)">est.</span><span class="bd h">max bid</span><span class="pc h">% mkt</span><span class="mg h">net</span><span class="h hadd"></span>${rows}`;
 }
@@ -2906,7 +2917,9 @@ function renderPrices(host, data, prices, src){
         const fl=Math.floor(val);
         if(ex){ ex.textContent="$"+val.toFixed(2); ex.dataset.bid=val.toFixed(2); }
         else if(b){ b.textContent="$"+val.toFixed(2); b.dataset.bid=val.toFixed(2); }
-        if(rd){ rd.textContent=fl>=1?"$"+fl:"$"+val.toFixed(2); rd.dataset.bid=fl>=1?String(fl):val.toFixed(2); }
+        const wv=wholeBid(val, netProceeds(listSale(mkt)));
+        if(ex) ex.dataset.bid=wv>=1?String(wv):val.toFixed(2);
+        if(rd){ rd.textContent=wv>=1?"$"+wv:"$"+val.toFixed(2); rd.dataset.bid=wv>=1?String(wv):val.toFixed(2); }
         if(pc) pc.textContent=pctMkt(val,mkt);
       };
       put(".bids .bm", bid, nm);
@@ -2918,7 +2931,7 @@ function renderPrices(host, data, prices, src){
     const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel)||fallbackUrl;
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view ${prettyPrinting(sel)} on TCGplayer ↗</a>`:"";
     cgEl.innerHTML=condGridHTML(prices, sel, mf, yr, pid, card);
-    if((!ovrIn.value || ovrIn.dataset.auto) && bid>=1){ ovrIn.value=String(Math.floor(bid)); ovrIn.dataset.auto="1"; ovrIn.dataset.cond="NM"; }   // starts at the selected printing's NM margin bid (and follows a printing switch); after that it follows taps and typing
+    if((!ovrIn.value || ovrIn.dataset.auto) && bid>=1){ ovrIn.value=String(wholeBid(bid, np)); ovrIn.dataset.auto="1"; ovrIn.dataset.cond="NM"; }   // starts at the selected printing's NM margin bid (and follows a printing switch); after that it follows taps and typing
     ovrUpd();
     cgEl.querySelectorAll(".cadd").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); if(card){ addToCart({id:card.id,n:card.n,s:card.s,printing:sel,market:(prices[sel].market??prices[sel].mid??0),cond:b.dataset.cond,y:card.y,lang:card.lang||"en",game:card.game||"pkmn",r:card.r}); b.textContent="\u2713"; setTimeout(()=>{b.textContent="+";},900); } });
     [mbEl,cgEl].forEach(scope=>scope.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); ovrIn.dataset.cond=(scope===cgEl && el.dataset.cond)||"NM"; copyAmt(el.dataset.bid, el); }));
@@ -3000,13 +3013,13 @@ function renderCart(){
   if(!CART.length){ bar.style.display="none"; const it=$("#cartitems"); if(it) it.style.display="none"; return; }
   bar.style.display="block";
   const mf=getNum("tgtmargin",10)/100;
-  let totMkt=0, totBid=0;
+  let totMkt=0, totBid=0, totNp=0;
   const rows=CART.map((it,i)=>{
     const sealed = it.sealed || String(it.id||"").startsWith("sl:");
     const cond = sealed ? "sealed" : (it.cond||"NM");
     const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
     const tiers = sealed ? buildSealedFeeTiers(it.wtier||"M") : undefined;   // sealed uses its picked weight postage
-    const bid=bidForMargin(atc, sealed ? mf : speedOf(it, atc, cond).margin, tiers); totMkt+=atc; totBid+=bid;
+    const bid=bidForMargin(atc, sealed ? mf : speedOf(it, atc, cond).margin, tiers); totMkt+=atc; totBid+=bid; totNp+=netProceeds(listSale(atc), tiers);
     const pk = (it.game||"pkmn")==="pkmn";
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
@@ -3018,7 +3031,7 @@ function renderCart(){
   { const t=$("#cartitems").querySelector(".carttot"); if(t) t.onclick=(e)=>{ e.stopPropagation(); copyAmt(t.dataset.bid, t); }; }
   $("#cartsum").innerHTML = `🛒 ${CART.length} card${CART.length>1?"s":""} <span style="color:var(--faint);font-size:11px">· tap to view</span>`;
   // the cart's max bid sits in the bar itself: one tap sends it, no need to open the list first
-  const cs=$("#cartsend"); if(cs){ cs.dataset.bid=totBid.toFixed(2); cs.textContent="bid $"+Math.floor(totBid); cs._t0=null; cs.onclick=(e)=>{ e.stopPropagation(); copyAmt(cs.dataset.bid, cs); }; }
+  const cs=$("#cartsend"); if(cs){ const tw=wholeBid(totBid, totNp); cs.dataset.bid=tw>=1?String(tw):totBid.toFixed(2); cs.textContent="bid $"+(tw>=1?tw:Math.floor(totBid)); cs._t0=null; cs.onclick=(e)=>{ e.stopPropagation(); copyAmt(cs.dataset.bid, cs); }; }
   $("#cartitems").querySelectorAll(".crm").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); CART.splice(+b.dataset.i,1); saveCart(); renderCart(); });
   $("#cartitems").querySelectorAll(".citem").forEach(el=>el.onclick=()=>{ openFromCart(CART[+el.dataset.i]); });
 }
@@ -3586,7 +3599,7 @@ function render(res, literal, newestFirst){
     const mb = best>0 ? bidForMargin(best, sp.margin) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${mb.toFixed(2)}" title="${cpTitle()}">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${Math.floor(mb)>=1?Math.floor(mb):mb.toFixed(2)}" title="whole dollars, rounded down · tap to copy">${Math.floor(mb)>=1?`$${Math.floor(mb)}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${wholeBid(mb,netProceeds(listSale(best)))>=1?wholeBid(mb,netProceeds(listSale(best))):mb.toFixed(2)}" title="${cpTitle()}">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${wholeBid(mb,netProceeds(listSale(best)))>=1?wholeBid(mb,netProceeds(listSale(best))):mb.toFixed(2)}" title="whole dollars (rounded up when that keeps 75%+ of the profit) · tap to copy">${wholeBid(mb,netProceeds(listSale(best)))>=1?`$${wholeBid(mb,netProceeds(listSale(best)))}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
         <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="${cpTitle()}">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `

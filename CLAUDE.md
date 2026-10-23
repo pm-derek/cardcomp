@@ -86,7 +86,7 @@ mf            = getNum("tgtmargin",10)/100   // "target margin %" setting; Derek
 
 So the bid is the highest price that still nets the target margin. Do **not** reintroduce flat %-of-market bidding — it was replaced deliberately.
 
-Bids **copy to clipboard as whole dollars, floored** (`Math.floor`) — Whatnot rejects cents, and flooring guarantees the pasted number never exceeds the true ceiling.
+Bids go out as **whole dollars** (Whatnot rejects cents), rounded by `wholeBid(exact, np)` (Derek, 2026-10-23: "a max of $8.99 went in as $8, should be 9; but rounding up sometimes eats too much margin"): round UP when the profit at the rounded-up bid is still >= 75% (`ROUND_KEEP`) of the profit at the exact max, else down. $8.99 -> 9, $7.85 -> 8 (keeps 81%), $8.05 -> 8, $6.58 -> 6 (up keeps 45%), $2.46 -> 2, $54.54 -> 55, $214.49 -> 215. Applied where whole bids are made: condition grid (button shows "$215" with the exact "214.49" small beside it; net and % mkt at the sent bid), bid table "margin" tap, tile chips / collapsed rows (`put`), the your-bid box start, the cart total, the flat bid. `copyAmt` still floors whatever it is handed (sub-$1 -> "under $1"); profit buttons already send floor(np - $N). The copy flash restores the button's markup (`_t0` = innerHTML).
 
 Each condition row and the collapsed card also show the **net $ profit** at that bid. `thinFlag()` marks bids built on shaky price data (no market, low-listing-only, or wide spread).
 
