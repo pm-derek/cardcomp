@@ -46,6 +46,10 @@ base64 -w0 cardcomp.jks   # -> CC_KEYSTORE_B64
 
 Without them each build is signed with a throwaway key and the previous build must be uninstalled first.
 
+With the secrets set, later builds install from the app itself: setup screen > Update > Install update (Android asks
+to allow CardComp to install apps once, then to confirm each update). Page-side changes (`phone/bridge.js`, the
+reader, the matcher) need no APK at all once merged: the app runs the live site's copy when it is newer.
+
 Local build: Android Studio or `gradle -p android assembleDebug` with the SDK installed (platform 35).
 Debugging the page: desktop Chrome, chrome://inspect, with the phone on USB (WebView debugging is on).
 Logs: `adb logcat -s CardComp`.

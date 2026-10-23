@@ -352,3 +352,37 @@ What went wrong in 0.1:
 - Every overlay window hides while the CardComp app screen is in front; Start sends the app to the background.
 - Capture at the screen's own resolution; a read sends the card band (7% to 84% of the height) at up to 1600 px.
 - Checked: `node scripts/phone-check.js` (card ~62 css px empty, ~119 with a result).
+
+## 0.3 (2026-10-23): review before the second install
+
+Derek: the APK download was blocked by Google on the phone (he went through Google Drive from his PC).
+- In-app update: the setup screen checks the `phone-latest` release ("built from <sha>") against its own build and
+  offers "Install update" (download in the app, platform PackageInstaller, Android asks to confirm; needs "install
+  unknown apps" for CardComp once). Works only between builds signed with one key: repo secrets `CC_KEYSTORE_B64` +
+  `CC_KEYSTORE_PASS`. Without them each build gets a throwaway key and the update reports "signed with a different key".
+- Loader (`OverlayService.LOADER`): after each page load, runs the live site's `phone/bridge.js` (plus
+  `recog-read.js`, `imgmatch.js`) when its `VER` is newer than the APK's built-in copy and its `PHONE_API` is <=
+  `NATIVE_API`; else the built-in one. Once merged, page-side changes reach the phone with no new APK.
+
+Review findings fixed:
+- A WebView outside an Activity cannot show dialogs: a `<select>` dropdown or `confirm()` would crash or fail.
+  Alerts are toasts, confirm / prompt answer cancel, every `<select>` is hidden on the phone (model picker moved to
+  the app's setup screen; the auto mode switch is hidden, the phone only has off / manual).
+- `copyAmt` tries `navigator.clipboard`, refused in an unfocused overlay, then focuses a hidden textarea: that
+  would raise the keyboard on every bid. The bridge replaces `navigator.clipboard.writeText` with `Android.copy`,
+  and ignores focus on invisible fields.
+- Long press fires `contextmenu`, which auto-ui maps to read now: blocked on the phone.
+- Keyboard: the panel becomes focusable on touch-down and the keyboard is requested when the window actually gains
+  focus (`onWindowFocusChanged`), not after a fixed delay.
+- Placement: the panel keeps its dragged position (`homeY`); a taller list lifts it only as needed, it returns when
+  the list closes; typing moves a low panel to the top and caps it at 50%.
+- Frames: panel and bubble go transparent for ~0.2 s around a grab, so an "Entire screen" capture never puts
+  CardComp's own results (card pictures) in front of the model.
+- The service is never restarted by the system without a capture token (START_NOT_STICKY, stop on a null intent).
+- Condition links: "opened on TCGplayer in your browser: check the price there" instead of "reading every
+  condition" (there is no TCGplayer reader on the phone yet).
+- Picture match: `cardcomp-auto-img` is answered on the phone. Photos come through `Android.img` (the CDN refuses
+  cross-origin reads), ranked with `imgmatch.js` exactly as `recog-bg.js` does; card-line taps count as touching
+  the results so a late ranking never reorders under the finger.
+- Setup screen: sections (Start, Setup, Keys, Model, Update, Screen dumps), status bar insets, "Open App info"
+  for the restricted-settings step, "Save keys and test the API key" (16-token Haiku call).
