@@ -244,14 +244,73 @@ async function recogRead(img, modelKey, apiKey, onPartial) {
   return { error: "API options rejected", ms: Date.now() - t0, model };
 }
 
+// ---------------------------------------------------------------- CardSight, side by side (Derek, 2026-10-23)
+// "I don't want to switch between CardSight and ours; show me one or the other at random and compare in the
+// background." On read-nows and lot-start reads, within a monthly allowance spread over the days left, the same frame
+// also goes to CardSight (cardsight.ai, a card recognition API: POST /v1/identify/card/pokemon, multipart "image",
+// X-API-Key). A coin decides which answer fills CardComp; the other one is sent as a "shadow" that CardComp only
+// records, so the auction log carries both and scripts/recog-score-log.js scores each against the card Derek tapped.
+// If the shown one comes back empty, the other one fills instead. Key and monthly calls on the Options page.
+const CS_URL = "https://api.cardsight.ai/v1/identify/card/pokemon";
+const csGet = () => new Promise((res) => chrome.storage.local.get(["csKey", "csMonthly", "csUse", "csForce"], (r) => res(r || {})));
+// Calls allowed today: what is left of the month spread evenly over the days left (750 a month on the free plan = ~25 a day).
+async function csBudget() {
+  const s = await csGet(); if (!s.csKey) return { ok: false };
+  const now = new Date(), month = now.toISOString().slice(0, 7), day = now.toISOString().slice(0, 10);
+  let u = s.csUse && s.csUse.month === month ? s.csUse : { month, n: 0, day, dn: 0, n0: 0 };
+  if (u.day !== day) u = Object.assign({}, u, { day, dn: 0, n0: u.n });
+  const cap = Math.max(1, +s.csMonthly || 750);
+  const daysLeft = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate() - now.getUTCDate() + 1;
+  const today = Math.max(1, Math.floor((cap - u.n0) / daysLeft));
+  if (u.n >= cap || u.dn >= today) return { ok: false, why: "CardSight: today's share of the month used" };
+  u = Object.assign({}, u, { n: u.n + 1, dn: u.dn + 1 });
+  await new Promise((r) => chrome.storage.local.set({ csUse: u }, r));
+  return { ok: true, key: s.csKey, force: s.csForce || "" };
+}
+function csErr(status, txt) {
+  if (status === 401 || status === 403) return "CardSight key rejected (Options page)";
+  if (status === 402 || status === 429) return "CardSight: out of calls or rate limited";
+  return "CardSight error " + status + ": " + String(txt || "").slice(0, 100);
+}
+// The best detection -> the same reading shape Claude returns, so autoMatch takes it as is.
+const CS_CONF = { High: 0.95, Medium: 0.82, Low: 0.62 }, CS_RANK = { High: 3, Medium: 2, Low: 1 };
+function csField(card, k) { const f = ((card && card.fields) || []).find((x) => x && String(x.key || "").toLowerCase() === k); return f && f.value != null ? String(f.value) : ""; }
+function csToRead(j) {
+  const d = ((j && j.detections) || []).filter((x) => x && x.card && x.card.name).sort((a, b) => (CS_RANK[b.confidence] || 0) - (CS_RANK[a.confidence] || 0))[0];
+  if (!d) return { card_visible: !!(j && j.detectedCount > 0), name: "", number: "", total: "", language: "", rarity: "", stamp: "", finish: "", set: "", confidence: 0, box: [] };
+  const c = d.card, m = String(c.number || "").match(/^\s*([^/\s]+)\s*(?:\/\s*(\S+))?/) || [];
+  const lg = csField(c, "card_language").toLowerCase();
+  return { card_visible: true, name: String(c.name), number: m[1] || "", total: m[2] || "", language: !lg || lg === "en" ? "en" : lg === "ja" ? "jp" : lg === "zh" ? "zh" : lg === "ko" ? "ko" : "other",
+    rarity: csField(c, "rarity"), stamp: "", finish: "", set: c.setName || c.releaseName || "", confidence: CS_CONF[d.confidence] || 0.6, box: [] };
+}
+// What CardSight said, small enough to ride on the log row (for checking the mapping above against real replies).
+function csBrief(j) {
+  return { req: j.requestId || "", pt: j.processingTime || 0, det: j.detectedCount, ids: j.identifiedCount,
+    top: ((j.detections || []).slice(0, 3)).map((d) => { const c = d.card || {}; return { conf: d.confidence, name: c.name || "", num: c.number || "", set: c.setName || "", rel: c.releaseName || "", year: c.year || "", id: c.id || "",
+      lang: csField(c, "card_language"), rarity: csField(c, "rarity"), sugg: (c.suggestions || []).slice(0, 3).map((x) => [x.name || "", x.number || "", x.setName || ""].join(" | ")) }; }) };
+}
+async function csIdentify(img, key) {
+  const t0 = Date.now(), ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const blob = await (await fetch(img)).blob(), fd = new FormData();
+    fd.append("image", blob, "frame.jpg");
+    const r = await fetch(CS_URL, { method: "POST", headers: { "X-API-Key": key }, body: fd, signal: ctl.signal });
+    const txt = await r.text(), ms = Date.now() - t0;
+    if (!r.ok) return { error: csErr(r.status, txt), status: r.status, ms, model: "cardsight" };
+    let j; try { j = JSON.parse(txt); } catch (_) { return { error: "CardSight: unreadable reply", ms, model: "cardsight" }; }
+    return { read: csToRead(j), cs: csBrief(j), ms, model: "cardsight" };
+  } catch (e) { return { error: e && e.name === "AbortError" ? "CardSight timed out (6 s)" : "CardSight network: " + (e && e.message), ms: Date.now() - t0, model: "cardsight" }; }
+  finally { clearTimeout(tm); }
+}
+
 // ---------------------------------------------------------------- settings, cap, messages to CardComp
 // Mode (Derek, 2026-10-20: auto used up the hourly cap and blocked his read-nows): "off", "manual" (read now only,
 // the watcher reads nothing) or "auto" (watcher + read now). Older installs only stored recogOn.
-const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn", "recogMode", "recogModel", "recogKey"], (r) => res(r || {})));
+const recogGet = () => new Promise((res) => chrome.storage.local.get(["recogOn", "recogMode", "recogModel", "recogKey", "csKey"], (r) => res(r || {})));
 const recogModeOf = (s) => (["off", "manual", "auto"].includes(s.recogMode) ? s.recogMode : s.recogOn ? "auto" : "off");
 async function recogState() {
   const s = await recogGet(), mode = recogModeOf(s);
-  return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey, ver: chrome.runtime.getManifest ? chrome.runtime.getManifest().version : "" };
+  return { type: "cardcomp-auto-state", on: mode !== "off", mode, model: s.recogModel || "sonnet", hasKey: !!s.recogKey, cs: !!s.csKey, ver: chrome.runtime.getManifest ? chrome.runtime.getManifest().version : "" };
 }
 function recogToApp(msg, tab) {   // to the CardComp copies paired with that tab's window (bg.js toApps); no tab = every copy
   if (typeof toApps === "function") { toApps(msg, tab); return; }
@@ -287,6 +346,20 @@ async function recogOnFrame(msg, tab) {
     recogToApp(Object.assign(head, { error }), tab); return;
   }
   const fr = { n, trigger: msg.trigger || "start", diff: msg.diff, sinceStart: msg.sinceStart, w: frame.w, h: frame.h, luma: frame.luma, method: frame.method, kb: Math.round(frame.img.length * 0.75 / 1024), img: frame.img };
+  // CardSight side by side: same frame, a coin for which answer fills CardComp (the other is a shadow, recorded only)
+  let cs = null;
+  if (msg.trigger === "manual" || (msg.trigger === "start" && n === 1)) {
+    const b = await csBudget();
+    if (b.ok) { cs = { shown: b.force === "cs" ? true : b.force === "claude" ? false : Math.random() < 0.5, done: null, sentShown: false }; cs.p = csIdentify(frame.img, b.key).then((r) => (cs.done = r)); }
+  }
+  const csUsable = () => !!(cs && cs.done && cs.done.read && cs.done.read.name && cs.done.read.card_visible !== false);
+  const csMsg = (shadow) => Object.assign({}, head, { src: "cardsight", read: cs.done.read || null, error: cs.done.error || "", model: "cardsight", ms: cs.done.ms || 0, cost: 0, short: 0, cs: cs.done.cs || null, shadow, fallback: !!cs.fallback });
+  const csShow = () => { if (cs.sentShown || !csUsable()) return; cs.sentShown = true; if (!PIC_FRAMES.has(key + "|" + n)) picKeep(key, n, frame.img, null); recogToApp(csMsg(false), tab); };
+  if (cs) cs.p.then(async () => {
+    await recogLot(key, (rec) => { lotHead(rec); rec.reads.push(Object.assign({ n, src: "cardsight", shown: cs.shown }, cs.done, { read: cs.done.read })); });
+    if (cs.shown && csUsable()) csShow(); else if (!cs.sentShown) recogToApp(csMsg(true), tab);   // a failed or empty answer is still recorded
+  });
+  const claudeShadow = async () => { if (!cs || !cs.shown) return false; await cs.p; return csUsable(); };   // CardSight drew the coin and answered
   let res;
   if (!s.recogKey) res = { error: "no API key: add it on the extension's Options page" };
   else if (!recogCapOK(kind)) {
@@ -296,12 +369,17 @@ async function recogOnFrame(msg, tab) {
     }
     res = { error: "read-now limit reached (" + RECOG_HOURLY_CAP + " an hour)" };
   }
-  else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey, (read, ms) =>
-    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) }), tab));
+  else res = await recogRead(frame.img, s.recogModel || "sonnet", s.recogKey, (read, ms) => {
+    if (cs && cs.shown && (!cs.done || csUsable())) return;   // CardSight fills this one: no early Claude fill
+    recogToApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[s.recogModel || "sonnet"] || "", short: Math.min(frame.w || 0, frame.h || 0) }), tab);
+  });
   const prev = recogPrev[tab ? tab.id : 0];
   if (res.read) picKeep(key, n, frame.img, res.read.box);   // before CardComp hears of it: it asks for the picture match next
   await recogLot(key, (rec) => { lotHead(rec); rec.frames.push(fr); rec.reads.push(Object.assign({ n, modelPicked: s.recogModel || "sonnet" }, res)); });
-  recogToApp(Object.assign(head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
+  const shadow = await claudeShadow();
+  recogToApp(Object.assign({}, head, { src: "claude", shadow, read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
+  // Claude came back empty or failed while CardSight answered: CardSight fills instead (the coin only decides between two answers)
+  if (cs && !cs.shown && !(res.read && res.read.name && res.read.card_visible !== false)) { await cs.p; if (csUsable()) { cs.shown = true; cs.fallback = true; csShow(); } }
   // no number (or unsure): read the enlarged card from the same frame; CardComp keeps it only if it is better
   let best = res.read;
   if (res.read && res.read.card_visible !== false && res.read.name && (!res.read.number || (res.read.confidence || 0) < 0.7) && s.recogKey) {
@@ -312,14 +390,14 @@ async function recogOnFrame(msg, tab) {
       await recogLot(key, (rec) => { rec.frames.push(zf); rec.reads.push(Object.assign({ n, zoom: zc.z, modelPicked: s.recogModel || "sonnet" }, zr)); });
       if (zr.read && recogBetter(zr.read, res.read)) {
         best = zr.read;
-        recogToApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
+        recogToApp(Object.assign({}, head, { src: "claude", shadow, zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short: Math.min(frame.w || 0, frame.h || 0) }), tab);
       }
     }
   }
   if (best && tab) {
     const r = best, held = n === 1 && !msg.afterPre && sameCard(r, prev);
     if (n === 1) recogPrev[tab.id] = r;
-    if (n === 1 && msg.trigger !== "pre" && msg.trigger !== "manual" && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
+    if (n === 1 && msg.trigger !== "pre" && msg.trigger !== "manual" && !(cs && cs.shown && csUsable()) && (r.card_visible === false || !r.number || (r.confidence || 0) < 0.6 || held)) {
       setTimeout(() => { const p = chrome.tabs.sendMessage(tab.id, { type: "recog-grab-again", key, n: 2, why: held ? "same card as the previous lot" : "unsure" }); if (p && p.catch) p.catch(() => {}); }, 2000);
     }
   }
@@ -444,6 +522,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // The auction log row is the record (it is what stats use): copy its card onto the lot's reading too, so the
   // results page shows the same card, printing and max as the log. No reply: bg.js stores the row.
   if (msg.type === "cardcomp-log-save" && msg.rec && msg.rec.startedAt) { recogOutcome(msg.rec.startedAt, recogOutcomeOf(msg.rec), true); return; }
+  if (msg.type === "cs-key-test") {   // Options page: a free CardSight call (the identifiable-sets list does not count toward usage)
+    csGet().then(async (s) => {
+      if (!s.csKey) return reply({ ok: false, why: "no key saved" });
+      try { const r = await fetch("https://api.cardsight.ai/v1/identify/list/sets?take=1", { headers: { "X-API-Key": s.csKey } }); reply(r.ok ? { ok: true } : { ok: false, why: csErr(r.status, await r.text()) }); }
+      catch (e) { reply({ ok: false, why: "network: " + e.message }); }
+    });
+    return true;
+  }
   if (msg.type === "recog-key-test") {   // Options page: tiny text-only call to prove the key works
     recogGet().then(async (s) => {
       if (!s.recogKey) return reply({ ok: false, why: "no key saved" });
