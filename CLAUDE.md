@@ -278,7 +278,9 @@ CardSight side by side (Derek, 2026-10-23: "I don't want to switch; show me Card
 background"): with a CardSight key on the Options page (cardsight.ai; plan calls a month, default 750), read-nows and
 lot-start reads also send the same frame to CardSight (`csIdentify`: POST api.cardsight.ai/v1/identify/card/pokemon,
 multipart "image", X-API-Key; reply mapped by `csToRead`: name, number "109/076" split, CARD_LANGUAGE ja -> jp, Rarity
-field, setName, High/Medium/Low -> 0.95/0.82/0.62). `csBudget` spreads the month over the days left (Free ~25 a day).
+field, setName, High/Medium/Low -> 0.95/0.82/0.62). First live replies (2026-10-23): Pokemon cards come back with
+setName "Checklist" and the real set in releaseName ("Phantasmal Flames", "Wizards Black Star Promos"), numbers without
+the total ("13"); `csToRead` uses releaseName then. `csBudget` spreads the month over the days left (Free ~25 a day).
 A coin per read decides which answer fills CardComp; the other arrives as `shadow:true`, which `onShadow` only records
 (`AUTO[lot].alt`, never painted). Claude's early fill is held back while CardSight is the shown one; if the shown answer
 is empty or fails, the other fills (`fallback`). The log row carries `recog.src`, `recog.cs` (CardSight's raw top 3) and
