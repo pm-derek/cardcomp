@@ -183,10 +183,18 @@ async function appPage(browser, base, blockRecog) {
       const bad = left.filter((l) => /recog|automatch|auto-ui|cardcomp-auto|__recog/i.test(l) || !later.has(l));
       ok(bad.length === 0, `${f}: ${left.length ? "matches the pre-experiment version apart from " + left.length + " line(s) main changed since" : "identical to the pre-experiment version"} after strip` + (bad[0] ? " (leftover: " + bad[0].slice(0, 100) + ")" : ""));
     }
-    const om = JSON.parse(execSync(`git show ${baseRef}:extension/manifest.json`, { cwd: ROOT }).toString());
+    // the manifest after strip = today's manifest without the experiment's parts (later non-experiment additions, such as
+    // the fast TCGplayer read's permission and hosts, stay)
+    const om = JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8"));
     const sm = JSON.parse(fs.readFileSync(path.join(tmp, "extension/manifest.json"), "utf8"));
-    delete om.version; delete sm.version;
-    ok(JSON.stringify(om) === JSON.stringify(sm), "manifest identical to the pre-experiment version after strip (version aside)");
+    const base = JSON.parse(execSync(`git show ${baseRef}:extension/manifest.json`, { cwd: ROOT }).toString());
+    if (om.commands) { delete om.commands["recog-grab"]; if (!Object.keys(om.commands).length) delete om.commands; }
+    om.content_scripts = (om.content_scripts || []).filter((c) => !(c.js || []).every((j) => j.startsWith("recog/")));
+    om.permissions = (om.permissions || []).filter((p) => p !== "activeTab");
+    om.host_permissions = (om.host_permissions || []).filter((h) => !/anthropic\.com|tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io/.test(h));
+    const baseScripts = JSON.stringify((base.content_scripts || []).map((c) => c.js.join(",")));
+    ok(JSON.stringify(om) === JSON.stringify(sm) && !/recog|anthropic/i.test(JSON.stringify(sm)) && JSON.stringify(sm.content_scripts.map((c) => c.js.join(","))) === baseScripts,
+      "manifest after strip: the experiment's shortcut, content script and permissions gone, everything else kept");
   } else ok(false, "could not find the commit that added the experiment");
   ok(!fs.existsSync(path.join(tmp, "recog")) && !fs.existsSync(path.join(tmp, "extension/recog")), "recog folders gone");
   for (const f of fs.readdirSync(path.join(tmp, "extension")).filter((f) => f.endsWith(".js"))) {
@@ -245,6 +253,22 @@ async function appPage(browser, base, blockRecog) {
     onMsg2({ source: w2, origin: "https://pm-derek.github.io", data: { type: "cardcomp-auto-img", key: 777, n: 1, cands: [] } });
     const a1 = got.find((m) => m.type === "cardcomp-auto-img-ack"), a2 = got2.find((m) => m.type === "cardcomp-auto-img-ack");
     ok(a1 && a1.key === 777 && a1.n === 1 && a2 && a2.key === 777 && a2.n === 1, "picture match relays: the ack keeps the reading's key and n (side panel and CardComp tab)");
+  }
+
+  // ---------- 4c. fast TCGplayer read (extension/tcgfast.js, not part of the experiment): every condition from 4 requests
+  {
+    const calls = [], realFetch = global.fetch, J = (x) => ({ ok: true, json: async () => x });
+    global.fetch = async (url, o) => { const u = String(url); calls.push(u);
+      if (u.includes("/details")) return J({ skus: [{ sku: 11, condition: "Near Mint", variant: "Holofoil", language: "English" }, { sku: 12, condition: "Lightly Played", variant: "Holofoil", language: "English" }, { sku: 21, condition: "Near Mint", variant: "Reverse Holofoil", language: "English" }] });
+      if (u.includes("marketprice")) return J(JSON.parse(o.body).skuIds.map((id) => ({ skuId: id, marketPrice: { 11: 39.05, 12: 18.53 }[id] })));
+      if (u.includes("/listings")) return J({ results: [{ totalResults: 3, results: [{ condition: "Lightly Played", printing: "Holofoil", price: 29 }, { condition: "Near Mint", printing: "Holofoil", price: 41 }] }] });
+      if (u.includes("latestsales")) return J({ data: [{ condition: "Lightly Played", variant: "Holofoil", language: "English", purchasePrice: 19.5, orderDate: "2026-10-12T10:00:00Z" }, { condition: "Near Mint", variant: "Reverse Holofoil", language: "English", purchasePrice: 99, orderDate: "2026-10-20T10:00:00Z" }] });
+      return { ok: false, status: 404 }; };
+    const { tcgFast } = require(path.join(ROOT, "extension/tcgfast.js"));
+    const r = await tcgFast({ pid: "198772", printing: "Holofoil", cond: "LP" });
+    global.fetch = realFetch;
+    ok(r.conds.NM.market === 39.05 && r.conds.LP.market === 18.53 && r.conds.LP.low === 29 && r.conds.LP.sales[0].p === 19.5 && !r.conds.NM.sales && r.market === 18.53 && calls.length === 4,
+      "fast TCGplayer read: every condition of the printing from 4 requests, other printings left out (" + r.errs.length + " errors)");
   }
 
   // ---------- 5. auto mode, extension side: lot timer -> frame -> API (mocked) -> CardComp message + lot record
