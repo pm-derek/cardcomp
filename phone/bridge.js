@@ -12,7 +12,8 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.1.0";
+  const VER = "0.1.0";          // bridge version
+  const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
   let readerReady = null;
@@ -30,7 +31,7 @@
   // ---------------------------------------------------------------- state to the app
   function state() {
     const c = cfg(), mode = ["off", "manual", "auto"].includes(c.mode) ? c.mode : "manual";
-    toApp({ type: "cardcomp-auto-state", on: mode !== "off", mode, model: c.model || "sonnet", hasKey: !!c.hasKey, ver: c.ver || VER });
+    toApp({ type: "cardcomp-auto-state", on: mode !== "off", mode, model: c.model || "sonnet", hasKey: !!c.hasKey, ver: PROTO });
   }
   function status() {
     const c = cfg();
@@ -152,7 +153,8 @@
   css.textContent =
     "body.phone{padding:0 6px 4px}body.phone h1,body.phone #gear,body.phone #settings,body.phone #filterbar,body.phone #filterwrap,body.phone #stale,body.phone #wnstat{display:none!important}" +
     "body.phone .searchrow{padding:4px 0;gap:4px}body.phone #q{padding:9px 10px;font-size:15px}body.phone #langbtn{padding:6px 8px;min-width:40px}body.phone #readbig{width:54px;max-height:40px}" +
-    "body.phone #lotstrip{padding:3px 7px;font-size:11.5px}body.phone #autoline{padding:2px 6px;font-size:11px}" +
+    "body.phone #lotstrip{padding:3px 7px;font-size:11.5px}body.phone #readbig .k{display:none}" +
+    "body.phone #autoline{padding:2px 6px;font-size:11px;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}body.phone #autoline.full{-webkit-line-clamp:unset}" +
     "body.ph-strip #sug,body.ph-strip #read,body.ph-strip #status,body.ph-strip #results,body.ph-strip #cart,body.ph-strip #pickbar,body.ph-strip #autoline{display:none!important}" +
     "body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
     "#phonebar{display:flex;align-items:center;gap:6px;min-height:34px;padding:2px 0;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.25}" +
@@ -163,6 +165,7 @@
     "#phonebar .pt{flex:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:5px 7px;font-size:12px}body.ph-panel #phonebar .pt{color:var(--gold);border-color:var(--gold)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
+  document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) a.classList.toggle("full"); });
 
   // ---------------------------------------------------------------- the strip's card line: name, the max bid, NM / LP / MP
   // The card shown: the open card, else the best guess of the last reading, else the first result. The bid button taps
@@ -176,8 +179,9 @@
     return barEl;
   }
   const money = (v) => "$" + (v >= 100 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2));
-  function focusCard() {
-    return $("#results .card.open") || $("#results .card.autosug") || $("#results .card");
+  function focusCard() {   // the default list on load is not a card Derek asked about: only a search or a read puts one on the strip
+    const q = $("#q"), typed = q && q.value.trim();
+    return $("#results .card.open") || $("#results .card.autosug") || (typed ? $("#results .card") : null);
   }
   function paintBar() {
     const el = bar(); if (!el) return;
@@ -217,7 +221,7 @@
   function hello() {
     toApp({ type: "cardcomp-ext-ready" });   // the app shows the auto line, asks for state and status, sends bids our way
     state(); status();
-    paintBar();
+    layout("strip");
   }
   // CardComp needs its catalog before results can render; the handshake itself can go at once
   if (document.readyState === "complete") hello(); else window.addEventListener("load", hello);

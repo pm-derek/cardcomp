@@ -288,3 +288,45 @@ taps the bid and it lands in the Custom box; he submits; every lot is logged as 
 - Panel size and place: is a 60% wide strip under the seller header right, or a bubble only until a card is read?
 - Same private log for phone lots (assumed yes).
 - Clipboard enough for phase 0, or go straight to the Custom box fill?
+
+## Built: phase 0 (2026-10-23)
+
+Branch `ccr-0906818a-47v4iz`. APK from the "Phone app" Action (artifact `cardcomp-phone-<sha>`; on main also the
+`phone-latest` pre-release). Not yet run on a phone: the cloud sandbox cannot reach dl.google.com, so the Kotlin was
+compiled only by the Action (first build green) and the page half was checked in headless Chromium
+(`node scripts/phone-check.js`, 25 checks). First live try on the S25+ decides what is wrong.
+
+- `android/` (Kotlin, no library dependencies, minSdk 33, targetSdk 35): `OverlayService` (foreground service of type
+  mediaProjection: screen capture in `Capture.kt`, the band window holding CardComp in a WebView, the gold read
+  bubble, the notification with Read / Dump screen / Stop), `WhatnotReader` (accessibility service; phase 0 only
+  dumps the view tree of every window to the clipboard and `files/dumps/`), `MainActivity` (permission buttons, keys,
+  start / stop, copy / share the last dump), `Prefs` (app-private storage; EncryptedSharedPreferences was skipped
+  to keep the app dependency-free, the sandbox is the protection).
+- `phone/bridge.js`: injected after each page load; plays the extension's background: `cardcomp-ext-ready`,
+  `cardcomp-auto-state` (reports protocol 0.9.0 so the app asks for the picture match, which it answers "not on the
+  phone yet"), `cardcomp-auto-read` / bubble -> `Android.grab` -> `__phone.frame` -> `recogRead` ->
+  `cardcomp-auto` (partial early fill, then the full reading, then the zoom re-read when no number was read),
+  `cardcomp-bid` -> `Android.bid` (clipboard) -> `cardcomp-bid-ack {why:"copied"}`, `cardcomp-open-bg` ->
+  `Android.open` (TCGplayer in the browser over Whatnot). Log save / read, live store, fast read and snapshot are
+  answered "not on the phone yet" or logged: phase 1.
+- Layout: `body.phone` plus `ph-strip` / `ph-typing` / `ph-panel`. The strip is the search row (read button, box,
+  EN/JP) and `#phonebar`: card name, set and number, the max bid button (taps the card's own chip, so `copyAmt`,
+  `LAST_TAP` and the lot label work as on desktop), NM / LP / MP, and a ▼ / ▲ to the bottom panel. The card on the
+  strip is the open card, else the best guess, else the top result of a typed search (never the default list).
+  A read opens the panel; a bid tap or a tap outside returns to the strip; focusing the search box grows the
+  band to 42% (typing) and back. The auto line is clamped to 2 lines (tap to unfold).
+- Keyboard rule in `OverlayService`: the band is `FLAG_NOT_FOCUSABLE`; a tap inside makes it focusable (so the
+  page's field can raise the keyboard, `Android.focus(true)` shows it), a touch outside or Back drops it.
+- Capture: 720 px wide ImageReader, frames discarded until a grab; grab waits up to 1.5 s for a new frame (a still
+  screen sends none). "A single app" in the consent dialog keeps the overlay out of the frame.
+- `extension/recog/recog-read.js`: the model call moved out of `recog-bg.js` (which imports it with
+  `importScripts`); `recog-check.js` loads both. The extension is otherwise unchanged (0.8.2).
+- Known gaps for the first try: the WebView's `navigator.clipboard` may fail (the native copy is what counts);
+  `fitQ` and the "new lot selects the search box" behaviour will flip the band to typing when the reader lands in
+  phase 1 (gate it on the phone); the `#readbig` button still says "read" but the bubble is the primary trigger;
+  the Custom bid sheet of Whatnot opens over the bottom panel (phase 1 closes the panel when the reader sees it).
+
+Phase 1 next: a few screen dumps from a stream (lot row, Custom bid sheet with the amount, end screen) -> the
+reader in `WhatnotReader.kt` (same `cardcomp-lot` / `cardcomp-lot-end` records as `whatnot.js`), the bid fill,
+the log through the bridge (`store.js` logic with the token from `Android.key("github")`), TCGplayer fast reads
+through a native fetch.
