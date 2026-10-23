@@ -12,8 +12,8 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.5.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
-  const PHONE_API = 4;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
+  const VER = "0.6.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const PHONE_API = 5;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
@@ -31,7 +31,7 @@
 
   // ---------------------------------------------------------------- state to the app
   function state() {
-    const c = cfg(), mode = c.mode === "off" ? "off" : "manual";   // no automatic watcher on the phone yet: auto reads as manual
+    const c = cfg(), mode = c.mode === "off" ? "off" : c.mode === "auto" ? "auto" : "manual";   // auto = a read when each lot's timer starts (setup screen)
     toApp({ type: "cardcomp-auto-state", on: mode !== "off", mode, model: c.model || "sonnet", hasKey: !!c.hasKey, ver: PROTO });
   }
   function status() {
@@ -55,20 +55,21 @@
 
   async function runRead(img, w, h, p) {
     P.lastFrame = img;   // "frame" on the status line shows what was read
-    FRAMES.set(String(p.at), { img, box: null, at: Date.now() });   // the picture match ranks this frame (box once the reply names it)
+    FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), { img, box: null, at: Date.now() });   // the picture match ranks this frame (box once the reply names it)
     for (const [k, f] of FRAMES) if (Date.now() - f.at > 5 * 60e3) FRAMES.delete(k);
     const c = cfg(), modelKey = c.model || "sonnet", key = p.at;   // keyed by press time, like the extension's read now
-    const head = { type: "cardcomp-auto", key, n: 1, capAt: key, title: "", seller: "", pre: false, manual: true };
+    const auto = p.src === "auto", lk = auto && lot ? lot.startedAt : key;   // an automatic read belongs to its lot (auto-ui keys readings by lot)
+    const head = { type: "cardcomp-auto", key: lk, n: 1, capAt: key, title: auto && lot ? lot.title : "", seller: auto ? SELLER : "", pre: false, manual: !auto };
     if (!(await loadReader())) { toApp(Object.assign(head, { error: "reader not loaded (extension/recog/recog-read.js)" })); return; }
     let apiKey = ""; try { apiKey = A.key("anthropic") || ""; } catch (_) {}
     if (!apiKey) { toApp(Object.assign(head, { error: "no API key: add it in the CardComp app" })); return; }
     const short = Math.min(w || 0, h || 0);
     const res = await recogRead(img, modelKey, apiKey, (read, ms) =>
       toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short })));
-    if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(key)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
+    if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(lk)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
     toApp(Object.assign({}, head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short }));
     log({ read: res.read || null, error: res.error || "", ms: res.ms, cost: res.cost, src: p.src });
-    setMode("card", true);   // the compact card shows the best guess; the list is one tap away
+    if (!auto || MODE === "card") setMode("card", true);   // the compact card shows the best guess (an automatic read never closes the full view)
     // no number read, or unsure: read the enlarged card from the same frame (CardComp keeps it only if it ranks higher)
     const r = res.read;
     if (r && r.card_visible !== false && r.name && (!r.number || (r.confidence || 0) < 0.7) && Array.isArray(r.box) && r.box.length === 4) {
@@ -99,6 +100,177 @@
       im.onerror = () => rej(new Error("frame unreadable")); im.src = src;
     });
   }
+
+  // ---------------------------------------------------------------- the extension's own files, run in the page
+  // store.js (auction log + verified prices to GitHub) and tcgfast.js (every condition from TCGplayer's data services)
+  // need only a token lookup and fetch: given a stand-in for each, they run unchanged. Source: the live site's copy,
+  // else the one built into the APK.
+  async function extFile(name, path) {
+    try { const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store" }); if (r.ok) return await r.text(); } catch (_) {}
+    try { return A.asset(name) || ""; } catch (_) { return ""; }
+  }
+  const tokenShim = { storage: { local: { get: (k, cb) => { let t = ""; try { t = A.key("github") || ""; } catch (_) {} cb({ ghToken: t }); }, set: () => {} } } };
+  let STORE = null;
+  const storeReady = extFile("store.js", "extension/store.js").then((src) => {
+    if (!src) return null;
+    try { STORE = new Function("chrome", src + "\n;return { queue, queueLog, readLog, editLog, pruneLog, test };")(tokenShim); } catch (e) { log("store.js: " + e.message); }
+    return STORE;
+  });
+  // fetch through the app for TCGplayer (its services allow no cross-origin page)
+  const HTTPQ = {}; let HTTPN = 0;
+  P.http = function (req, status, body) { const f = HTTPQ[req]; delete HTTPQ[req]; if (f) f(status, body); };
+  const nativeFetch = (url, opt) => new Promise((res, rej) => {
+    const r = "h" + (++HTTPN), o = opt || {};
+    HTTPQ[r] = (status, body) => status ? res({ ok: status >= 200 && status < 300, status, json: async () => JSON.parse(body), text: async () => body }) : rej(new Error(new URL(url).host + " unreachable"));
+    try { A.http(r, o.method || "GET", String(url), o.body || ""); } catch (e) { delete HTTPQ[r]; rej(e); }
+  });
+  let TCGFAST = null;
+  const fastReady = extFile("tcgfast.js", "extension/tcgfast.js").then((src) => {
+    if (!src) return null;
+    try { TCGFAST = new Function("fetch", src + "\n;return tcgFast;")(nativeFetch); } catch (e) { log("tcgfast.js: " + e.message); }
+    return TCGFAST;
+  });
+
+  // ---------------------------------------------------------------- the lot reader (the phone twin of extension/whatnot.js)
+  // The app's screen reader sends every text on Whatnot's screen with its bounds (__phone.screen). readLotPhone turns
+  // that into the same lot state whatnot.js reads from the web page, and the state machine below is whatnot.js's
+  // lotTick / endLot, unchanged apart from its input: same cardcomp-lot / cardcomp-lot-end messages, so the app's lot
+  // strip, tap labels, stats, haul and the auction log work as on desktop.
+  // Android layout (Derek's screenshots, 2026-10-23): seller top left, viewers top right; lot card above the buttons:
+  // title "Card on screen #141", condition "Mint", "$0.38 Shipping + Taxes", price "$4" right with "00:01" or "Sold";
+  // "X is winning!" / "X won!" above it; buttons "Custom" + "Bid $5" or "Awaiting Next Item"; Custom sheet: title,
+  // "$9 +Ship/Tax", timer, − $10 +, "Submit Max Bid"; end screen "X" + "Won the auction!".
+  const LRX = {
+    money: /^\$\s?([\d,]+(?:\.\d{2})?)$/, timer: /^\d{1,2}:\d{2}$/, ship: /\$([\d.]+)\s*shipping/i, free: /^free shipping/i,
+    win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i, me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i,
+    sold1: /^(\S+)\s+won!?$/i, wonTail: /^won!?$/i, auction: /^won the auction!?$/i, meWon: /^you won/i, joinedTail: /^joined\b/i,
+    skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|won!?$|won the auction|^you won|^sold$|^qty\.|^bid\b|^custom$|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max|^submit max|^say something|^\+ship|^earn more|^check here|^share$|^clip$|^boost$|^more$|^wallet$|^shop$|^giveaway$|^entries$|^show notes$|joined/i
+  };
+  const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products|more|boost|clip|share|wallet)$/i;
+  const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);
+  const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG", "mint": "NM", "new": "NM" };
+  let ME = ""; try { ME = (localStorage.getItem("cardcomp_wn_user") || "").toLowerCase(); } catch (_) {}
+  const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
+  const members = new Map();
+  function seen(user, how) { const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0, chats: 0, lastJoin: 0 }; m.last = Date.now(); if (how === "joins") { if (Date.now() - m.lastJoin < 5 * 60e3) { members.set(user, m); return; } m.lastJoin = Date.now(); } m[how] = (m[how] || 0) + 1; members.set(user, m); }
+  function roomSnapshot() { const cut = Date.now() - 30 * 60000, out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, min: Math.round((Date.now() - m.first) / 60000), ago: Math.round((Date.now() - m.last) / 60000) }; return out; }
+  let SELLER = "";
+  function readLotPhone(items, W, H) {
+    const it = items.filter((x) => x.t).sort((a, b) => a.y - b.y || a.l - b.l);
+    const st = { title: "", sub: "", cond: "", cur: null, next: null, bids: null, timer: "", lead: "", me: false, ship: null, sold: "", ended: false, waiting: false, seller: "", url: "whatnot-app", viewers: null, giveaway: null };
+    const sameRow = (a, b) => b && Math.abs((a.y + a.b) / 2 - (b.y + b.b) / 2) < Math.max(a.b - a.y, b.b - b.y) * 0.8;
+    const above = (a, b) => b && b.b <= a.y + 4 && a.y - b.b < (a.b - a.y) * 1.6 && Math.abs(a.l - b.l) < W * 0.25;   // b sits right above a
+    // seller: the first name-like text in the header; viewers: a bare number top right
+    for (const x of it) {
+      if (x.y > H * 0.11) break;
+      if (!st.seller && x.l < W * 0.6 && userLike(x.t)) st.seller = x.t;
+      if (st.viewers == null && x.l > W * 0.6 && /^\d{1,6}$/.test(x.t)) st.viewers = +x.t;
+    }
+    if (st.seller) SELLER = st.seller; else st.seller = SELLER;
+    st.url = "whatnot-app/" + (st.seller || "");
+    // the button row (or the Custom sheet's Submit) anchors the lot card above it
+    const sheet = it.find((x) => /^submit max bid$/i.test(x.t));
+    const btn = it.filter((x) => x.y > H * 0.55 && (/^custom$/i.test(x.t) || LRX.next.test(x.t) || /^awaiting next item$/i.test(x.t) || /^max bid added/i.test(x.t)));
+    const anchorY = sheet ? sheet.y : btn.length ? Math.min(...btn.map((x) => x.y)) : H * 0.94;
+    const say = it.find((x) => /^say something/i.test(x.t));
+    let topY = sheet ? anchorY - H * 0.36 : anchorY - H * 0.2;
+    if (say && !sheet && say.b < anchorY) topY = Math.max(topY, say.b - 2);   // chat lines sit above the chat box: never a title
+    const blk = it.filter((x) => x.y >= topY && x.b <= anchorY + 2);
+    const leadRow = blk.filter((x) => /winning!?$|won!?$/i.test(x.t));   // "X is winning!" / "X won!" line: its name is not a title
+    const texts = [];
+    for (const x of blk) {
+      let m;
+      if (LRX.money.test(x.t) && x.l > W * 0.62) { if (st.cur == null) st.cur = parseFloat(LRX.money.exec(x.t)[1].replace(/,/g, "")); }
+      else if (LRX.timer.test(x.t)) st.timer = x.t;
+      else if ((m = LRX.ship.exec(x.t))) st.ship = parseFloat(m[1]);
+      else if (LRX.free.test(x.t)) st.ship = 0;
+      else if (/^sold$/i.test(x.t)) st.ended = true;
+      else if (x.l < W * 0.62 && x.t.length > 1 && x.t.length < 120 && /[A-Za-z0-9]/.test(x.t) && !LRX.skip.test(x.t) && !leadRow.some((w) => w === x || sameRow(x, w))) texts.push(x.t);
+    }
+    st.title = texts[0] || ""; st.sub = texts[1] || "";
+    st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";
+    let wonBy = "", meWon = false, wonUser = "";
+    for (let i = 0; i < it.length; i++) {
+      const x = it[i], t = x.t; let m;
+      const left = it.slice(Math.max(0, i - 3), i).reverse().find((p) => sameRow(x, p) && p.r <= x.l + 8);   // the name beside it, same line
+      const up = it.slice(Math.max(0, i - 4), i).reverse().find((p) => above(x, p));                         // the line right above
+      if (LRX.me.test(t)) st.me = true;
+      else if (LRX.meWon.test(t)) { meWon = true; st.me = true; }   // before "X won!": "You won" is not a user named You
+      else if ((m = LRX.win.exec(t)) && userLike(m[1])) st.lead = m[1];
+      else if (LRX.winTail.test(t) && left && userLike(left.t)) st.lead = left.t;
+      else if (LRX.auction.test(t) && up && userLike(up.t)) { wonBy = up.t; wonUser = up.t; }       // "caydenarterbury" / "Won the auction!"
+      else if (LRX.wonTail.test(t) && left && userLike(left.t)) { wonBy = left.t; wonUser = left.t; }   // "caydenarterbury" + "won!"
+      else if ((m = LRX.sold1.exec(t)) && userLike(m[1])) { wonBy = m[1]; wonUser = m[1]; }            // "caydenarterbury won!"
+      else if (/^awaiting next item$/i.test(t)) st.waiting = true;
+      else if ((m = /^max bid added:?\s*\$([\d,]+)/i.exec(t))) st.placedMax = +m[1].replace(/,/g, "");
+      else if ((m = LRX.next.exec(t))) st.next = parseFloat(m[1].replace(/,/g, ""));
+      else if (LRX.joinedTail.test(t) && up && userLike(up.t)) seen(up.t, "joins");              // "turtle_hawk" / "joined 👋"
+      else if (/^entries$/i.test(t) && up && /^\d{1,6}$/.test(up.t)) st.giveaway = +up.t;
+      else if (/^entries$/i.test(t) && left && /^\d{1,6}$/.test(left.t)) st.giveaway = +left.t;
+    }
+    if (isMe(st.lead)) st.me = true;
+    if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { localStorage.setItem("cardcomp_wn_user", wonUser); } catch (_) {} }
+    if (meWon) wonBy = "me";
+    if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
+    return st;
+  }
+  // ---- extension/whatnot.js lotTick / endLot, input swapped (keep in step with that file)
+  let lotLast = "", lot = null, lotLastState = null;
+  const sendApp = (m) => toApp(m);
+  function endLot(st) {
+    if (!lot || lot.ended) return;
+    lot.ended = true;
+    if (st.cur == null && st.bids == null) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }
+    sendApp({ type: "cardcomp-lot-end", rec: {
+      v: 3, src: "phone", title: lot.title, sub: st.sub || lot.sub, sellerCond: st.cond || lot.cond, start: lot.start, final: st.cur, bids: st.bids,
+      winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),
+      sold: !!st.ended, iLed: lot.iLed, placedMax: lot.placedMax != null ? lot.placedMax : null,
+      leaders: [...lot.leaders], hist: lot.hist,
+      ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
+      room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
+    } });
+  }
+  const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+  function lotTick(st) {
+    const tSec = secs(st.timer);
+    const lkey = st.title || (lot ? lot.title : ((st.cur != null || st.bids != null) ? "(untitled lot)" : ""));
+    const rolled = lot && lkey === lot.title && (
+      (st.bids != null && lot.maxBids > 0 && st.bids < lot.maxBids) ||
+      (lot.ended && !st.sold && tSec != null && lot.lastSec != null && tSec > lot.lastSec + 5));
+    if (lkey && lot && lkey !== lot.title && !rolled && !lot.ended && !lot.maxBids && !lot.hist.length) lot.title = lkey;
+    if ((lkey && (!lot || lkey !== lot.title)) || rolled) {
+      if (lot && lotLastState) endLot(lotLastState);
+      lot = { title: lkey, sub: st.sub, cond: st.cond, leaders: new Set(), hist: [], start: st.cur, viewers0: st.viewers, startedAt: Date.now(), ended: false, maxBids: 0, lastSec: null, iLed: false, lastLead: "" };
+    }
+    if (lot) {
+      if (st.lead) lot.lastLead = st.lead;
+      if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
+      if (tSec != null) lot.lastSec = tSec;
+      if (st.me) lot.iLed = true;
+      if (st.placedMax != null) lot.placedMax = st.placedMax;
+    }
+    if (lot && st.lead) {
+      lot.leaders.add(st.lead);
+      const h = lot.hist, last = h[h.length - 1];
+      if (!last || last.u !== st.lead || last.a !== st.cur) {
+        h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: st.lead, a: st.cur });
+        if (!last || last.u !== st.lead) seen(st.lead, "leads");
+      }
+      if (h.length > 400) h.shift();
+    }
+    if (lot && !lot.autoRead && tSec != null && !st.sold && !st.waiting) {
+      lot.autoRead = true;
+      if (cfg().mode === "auto") { const k = lot.startedAt; setTimeout(() => { if (lot && lot.startedAt === k && !lot.ended) P.readNow("auto"); }, 1000); }
+    }
+    if (lot && st.sold && !lot.ended) endLot(st);
+    st.endSent = !!(lot && lot.ended);
+    st.lotStart = lot ? lot.startedAt : null;
+    lotLastState = st;
+    const key = JSON.stringify(st);
+    if (key !== lotLast) { lotLast = key; sendApp(Object.assign({ type: "cardcomp-lot" }, st)); }
+  }
+  P.screen = function (items, W, H) { try { lotTick(readLotPhone(items || [], W || 1080, H || 2340)); } catch (e) { log("lot reader: " + e.message); } };
+  P.readLotPhone = readLotPhone;
 
   // ---------------------------------------------------------------- picture match (extension/recog/imgmatch.js, same as desktop)
   // The read frame is ranked against each candidate's TCGplayer photo; the photos come through the app (Android.img),
@@ -146,6 +318,7 @@
   const touched = () => { const r = $("#results"); if (r) r.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); };
 
   // ---------------------------------------------------------------- messages from the app (what the extension's background answers)
+  const FAST_OK = {};   // product id -> {ok, at}: the last fast read of it
   const HANDLED = new Set(["cardcomp-status", "cardcomp-auto-hello", "cardcomp-auto-config", "cardcomp-auto-read", "cardcomp-bid", "cardcomp-open-bg",
     "cardcomp-auto-img", "cardcomp-auto-match", "cardcomp-auto-outcome", "cardcomp-log-save", "cardcomp-live-save", "cardcomp-log-read", "cardcomp-log-edit",
     "cardcomp-log-prune", "cardcomp-tcg-fast", "cardcomp-snapshot", "cardcomp-live-test"]);
@@ -167,11 +340,33 @@
         if (MODE === "list") setTimeout(() => { if (MODE === "list") setMode("card"); }, 900);
         break;
       }
-      case "cardcomp-open-bg": A.open(String(d.url || "")); break;   // TCGplayer links open in the browser over Whatnot
+      case "cardcomp-open-bg": {   // a condition link: the fast read answers in ~1 s; the browser opens only when it cannot
+        const url = String(d.url || ""), pid = (/\/product\/(\d+)/.exec(url) || [])[1] || "", t0 = Date.now();
+        const wait = () => { const f = FAST_OK[pid]; if (f && f.at >= t0 - 500) { if (!f.ok) A.open(url); return; } if (Date.now() - t0 > 4000) { A.open(url); return; } setTimeout(wait, 150); };
+        if (pid) wait(); else A.open(url);
+        break;
+      }
       case "cardcomp-auto-img": picRank(d).then((r) => toApp(Object.assign({ type: "cardcomp-auto-img-ack" }, r, { key: d.key, n: d.n || 1 })),
         (e) => toApp({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n || 1, cands: 0, ok: false, why: e.message })); break;
-      case "cardcomp-tcg-fast":   // no TCGplayer reader on the phone: the link opened in the browser, the price is read there by eye
-        setTimeout(() => { try { if (typeof liveNote === "function") liveNote("opened on TCGplayer in your browser: check the price there, then come back"); } catch (_) {} }, 0);
+      case "cardcomp-tcg-fast":   // every condition from TCGplayer's data services (extension/tcgfast.js through the app)
+        fastReady.then(async (f) => {
+          let r;
+          if (!f) r = { ok: false, errs: ["fast read not loaded"] };
+          else { try { r = await f(d); r.ok = Object.values(r.conds || {}).some((c) => c.market > 0); } catch (e) { r = { ok: false, errs: [e.message] }; } }
+          FAST_OK[String(d.pid)] = { ok: !!r.ok, at: Date.now() };
+          toApp(Object.assign({}, r, { type: "cardcomp-tcg-fast-ack", req: d.req }));
+        });
+        break;
+      case "cardcomp-log-save": storeReady.then((S) => { if (S) S.queueLog(d.rec); }); break;
+      case "cardcomp-live-save": storeReady.then((S) => { if (S) S.queue(d.key, d.rec); }); break;
+      case "cardcomp-log-read": case "cardcomp-log-edit": case "cardcomp-log-prune":
+        storeReady.then(async (S) => {
+          let r;
+          if (!S) r = { ok: false, why: "log store not loaded" };
+          else try { r = d.type === "cardcomp-log-read" ? await S.readLog(d.since) : d.type === "cardcomp-log-edit" ? await S.editLog(d.key, d.card, !!d.clear, d.patch) : await S.pruneLog(d.since, d.before); }
+          catch (e) { r = { ok: false, why: e.message }; }
+          toApp(Object.assign({ type: d.type + "-ack" }, r));
+        });
         break;
       case "cardcomp-snapshot": toApp({ type: "cardcomp-snapshot-ack", ok: false, why: "not on the phone yet" }); break;
       case "cardcomp-live-test": toApp({ type: "cardcomp-live-test-ack", ok: false, why: "not on the phone yet" }); break;
@@ -206,9 +401,12 @@
     getComputedStyle(t).opacity !== "0";   // the page's copy fallback focuses an invisible textarea: no keyboard for that
   // The panel window is never focusable on its own (it would take the keyboard and Back from Whatnot): touching a text
   // field asks for focus first. Chromium may hold focus events until the window has focus, so this goes on pointerdown.
-  document.addEventListener("pointerdown", (e) => { if (isField(e.target)) { try { A.focus(true); } catch (_) {} } }, true);
+  let TOUCH_FIELD_AT = 0;   // a focus without a touch on a field just before it is the page's own (a new lot selects the box on desktop): undone on the phone
+  document.addEventListener("pointerdown", (e) => { if (isField(e.target)) { TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} if (e.target.id === "q" && document.activeElement === e.target && MODE !== "typing") { MODE_BEFORE_TYPING = MODE; setMode("typing"); } } }, true);
+  P.wantFocus = () => { TOUCH_FIELD_AT = Date.now(); };
   document.addEventListener("focusin", (e) => {
     if (!isField(e.target)) return;
+    if (MODE !== "typing" && Date.now() - TOUCH_FIELD_AT > 1500) { const t = e.target; setTimeout(() => { if (document.activeElement === t) t.blur(); }, 0); return; }
     try { A.focus(true); } catch (_) {}
     if (e.target.id === "q" && MODE !== "typing") { MODE_BEFORE_TYPING = MODE; setMode("typing"); }
   }, true);
@@ -372,7 +570,7 @@
       if (b) b.click(); else setMode("list");
     });
     on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
-    on("search", () => { setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
+    on("search", () => { TOUCH_FIELD_AT = Date.now(); setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
     const list = cands(), i = list.indexOf(card), n = list.length;
     on("prev", () => { touched(); CUR = (i - 1 + n) % n; paintBar(); });
     on("next", () => { touched(); CUR = (i + 1) % n; paintBar(); });
@@ -387,11 +585,16 @@
     // the small card shows only what needs attention: a read in progress, no card seen, or an error; the full view shows all of it
     if (MODE === "card" && !/^(reading|no card)/i.test(t) && !(b00 && b00.textContent.trim() === (am.textContent || "").trim())) t = "";
     const b0 = am && am.querySelector(".bad"), bad = b0 && b0.textContent.trim() === am.textContent.trim();   // red only when the whole line is an error
-    const html = t ? (bad ? `<span class="bad">${esc(t)}</span>` : esc(t)) + (P.lastFrame ? ' · <a class="fr" href="#">frame</a>' : "") : "";
+    let html = t ? (bad ? `<span class="bad">${esc(t)}</span>` : esc(t)) + (P.lastFrame ? ' · <a class="fr" href="#">frame</a>' : "") : "";
+    if (NOTE && NOTE.until > Date.now()) html = `<span class="bad">${esc(NOTE.txt)}</span>`;
     if (st.innerHTML !== html) st.innerHTML = html;   // only on change: this runs from a body observer
   }
   // the Custom sheet result from the app: {ok} entered (Derek presses Submit), {why:"under", min}, {why:"sold"}, or why it could not
-  P.bidAck = function (r) { r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r); };
+  let NOTE = null;   // {txt, until}: a short message on the small card (why the Custom fill did not happen)
+  P.bidAck = function (r) {
+    r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r);
+    if (!r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) { NOTE = { txt: "Custom box: " + r.why + " (bid copied, paste it)", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
+  };
   function flashBid(r) {
     const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";
     if (r && !r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) log("custom fill: " + r.why);
@@ -407,6 +610,7 @@
   let statT = 0;
   new MutationObserver(() => { clearTimeout(statT); statT = setTimeout(() => { paintStat(); sizeSoon(); }, 80); })
     .observe(document.body, { childList: true, subtree: true, characterData: true });
+  { const ls = $("#lotstats"); if (ls) new MutationObserver(() => { if (getComputedStyle(ls).display !== "none" && MODE === "card") setMode("list"); }).observe(ls, { attributes: true, attributeFilter: ["style", "class"] }); }
   P.dumpNote = function (txt) { const w = wrap(); if (w) { const st = w.querySelector("#phonestat"); st.textContent = txt; sizeSoon(); } };
 
   // ---------------------------------------------------------------- hello

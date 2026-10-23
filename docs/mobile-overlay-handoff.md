@@ -441,3 +441,21 @@ dump the screen mid-stream is not a thing he will do.
   field, else by its − / + buttons with the amount read back after each press (never above the max). Written from
   the screenshots, not from a dump: the first live use (or the automatic layouts) will show which path runs. Setting
   on the setup screen (on by default). NATIVE_API 4 (bid answers later through `__phone.bidAck`).
+
+## 0.6 (2026-10-23): port what the extension already has
+
+Derek: Custom fill worked once, then failed 2-3 times; port whatever is easy, list the rest (docs/mobile-parity.md).
+- Custom fill: also finds the button once it reads "Max bid added $N" (the desktop notes say Whatnot swaps Custom for
+  that after a max is set: the likely cause), runs on its own thread, shows why on the small card when it fails, and
+  saves + uploads the screen at that moment.
+- Lot reader: WhatnotReader streams every text on Whatnot's screen with bounds (~3 a second at most) to
+  `__phone.screen`; `readLotPhone` reads the lot from it (layout from Derek's screenshots) and whatnot.js's
+  lotTick / endLot run unchanged after it, so the app's lot strip, labels, finishLot and the log work as on desktop.
+  Chat lines above "Say something" are never a title; "You won" is checked before "X won!".
+- store.js and tcgfast.js run in the page unchanged (`new Function` with a token stand-in and a fetch through the
+  app for TCGplayer hosts). Log save / read / edit / prune and live-price saves are answered; a condition link runs the
+  fast read and opens the browser only when it fails.
+- The page's own focus calls (new lot selects the search box) are undone on the phone (no keyboard per lot).
+- Automatic read when a lot's timer starts (setup screen switch, off by default), keyed to the lot.
+- Checked in headless Chromium against Android-layout screen texts: 53 checks (live lot, Custom sheet, sale, next lot,
+  own win, tap label in the log row, auto read once per lot, fast read then browser).

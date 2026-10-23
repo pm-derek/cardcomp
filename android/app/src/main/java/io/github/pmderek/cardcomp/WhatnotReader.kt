@@ -42,21 +42,40 @@ class WhatnotReader : AccessibilityService() {
     private var lastSig = ""
     private var lastDumpAt = 0L
     private val check = Runnable { autoDump() }
+    private var lastPush = 0L
+    private val push = Runnable { pushScreen() }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val p = event?.packageName?.toString() ?: return
         if (p.isEmpty() || p == packageName || p == "com.android.systemui") return
         lastPackage = p
         bg.removeCallbacks(check); bg.postDelayed(check, 1500)   // settle: Whatnot re-renders in bursts
+        // the lot reader: at most ~3 snapshots a second, the last change always sent
+        if (!bg.hasCallbacks(push)) bg.postDelayed(push, maxOf(0L, 350L - (System.currentTimeMillis() - lastPush)))
+    }
+
+    /** Every text on Whatnot's screen with its bounds, to the CardComp page (phone/bridge.js reads the lot from it,
+     *  like extension/whatnot.js reads the web page). Only while a Whatnot live screen is up. */
+    private fun pushScreen() {
+        lastPush = System.currentTimeMillis()
+        val svc = OverlayService.instance ?: return
+        val all = try { nodes() } catch (_: Exception) { return }
+        if (all.none { it.text.startsWith("Say something") || it.text == "Submit Max Bid" }) return
+        val arr = org.json.JSONArray()
+        for (n in all) {
+            if (n.text.isEmpty() || n.r.width() <= 0 || n.r.height() <= 0) continue
+            arr.put(org.json.JSONObject().put("t", n.text.take(160)).put("l", n.r.left).put("y", n.r.top).put("r", n.r.right).put("b", n.r.bottom)
+                .put("c", if (n.node.isClickable) 1 else 0))
+            if (arr.length() > 600) break
+        }
+        svc.pushScreen(arr.toString())
     }
 
     /** auction words on screen, as a signature: a new one means a new state worth a dump */
     private val AUCTION = Regex("""^(Sold|Custom|Submit Max Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
     private fun autoDump() {
         try {
-            val root = rootInActiveWindow ?: return
-            val texts = ArrayList<String>()
-            collect(root, texts, 0)
+            val texts = nodes().map { it.text }.filter { it.isNotEmpty() }
             if (texts.none { it.startsWith("Say something") }) return   // not a Whatnot live screen
             val sig = texts.filter { AUCTION.matches(it) }.map { if (Regex("^[0-9]{1,2}:[0-9]{2}$").matches(it)) "timer" else it }.distinct().sorted().joinToString("|")
             val now = System.currentTimeMillis()
@@ -99,10 +118,16 @@ class WhatnotReader : AccessibilityService() {
     private val MONEY = Regex("""^\$\s?([0-9][0-9,]*)$""")
     private fun dollars(t: String): Int? = MONEY.find(t)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull()
 
+    // its own thread: never queued behind a screen save or a screen push (a fill must land within a second or two)
+    private val fillThread = android.os.HandlerThread("cardcomp-fill").apply { start() }
+    private val fillBg = android.os.Handler(fillThread.looper)
     fun fillBid(amount: Int, done: (org.json.JSONObject) -> Unit) {
-        bg.post {
+        fillBg.removeCallbacksAndMessages(null)   // a newer tap replaces one still waiting
+        fillBg.post {
             val res = try { fill(amount) } catch (e: Exception) { org.json.JSONObject().put("ok", false).put("why", "error: ${e.message}") }
             done(res)
+            // the screen as the fill left it, so the next fix is written from facts (uploaded with a token)
+            if (!res.optBoolean("ok") && res.optString("why") !in setOf("sold", "under")) try { upload("custom fill: ${res.optString("why")}\n" + dump()) } catch (_: Exception) {}
         }
     }
     private fun fill(amount: Int): org.json.JSONObject {
@@ -113,7 +138,9 @@ class WhatnotReader : AccessibilityService() {
         val next = all.mapNotNull { Regex("""^Bid \$([0-9,]+)""").find(it.text)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() }.firstOrNull()
         if (next != null && amount < next) return no("under").put("min", next)
         if (all.none { it.text == "Submit Max Bid" }) {
-            val custom = all.firstOrNull { it.text.equals("Custom", true) } ?: return no("no Custom button on screen")
+            val custom = all.firstOrNull { it.text.equals("Custom", true) }
+                ?: all.firstOrNull { Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE).containsMatchIn(it.text) }
+                ?: return no("no Custom button on screen")
             val target = clickable(custom.node) ?: return no("Custom is not tappable")
             target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             var t = 0
@@ -180,7 +207,7 @@ class WhatnotReader : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        worker.quitSafely()
+        worker.quitSafely(); fillThread.quitSafely()
         instance = null
         super.onDestroy()
     }

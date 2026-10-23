@@ -103,6 +103,11 @@ class MainActivity : Activity() {
         })
         text("Off, or without the screen reader: the bid is copied, paste it in Custom yourself.", 12f)
 
+        col.addView(android.widget.CheckBox(this).apply {
+            text = "Read the card automatically ~1 s after each lot's timer starts (needs the screen reader; about 1¢ a read)"
+            isChecked = prefs.mode == "auto"; setOnCheckedChangeListener { _, v -> prefs.mode = if (v) "auto" else "manual" }
+        })
+
         head("Model that reads the card")
         val models = listOf("haiku" to "Haiku (fastest, cheapest, weakest)", "sonnet" to "Sonnet (what desktop uses)", "opus" to "Opus (slowest, priciest)")
         val group = RadioGroup(this)

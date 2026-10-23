@@ -76,7 +76,7 @@ class OverlayService : Service() {
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
         /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
-        const val NATIVE_API = 4
+        const val NATIVE_API = 5
         /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
          *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
          *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
@@ -536,6 +536,9 @@ class OverlayService : Service() {
         } finally { c.disconnect() }
     }
 
+    /** Whatnot's screen texts from WhatnotReader -> the page's lot reader */
+    fun pushScreen(json: String) { js("window.__phone&&window.__phone.screen&&window.__phone.screen($json,${screenW},${screenH})") }
+
     private fun js(code: String) { main.post { web?.evaluateJavascript(code, null) } }
     private fun toast(t: String) { main.post { Toast.makeText(this, t, Toast.LENGTH_SHORT).show() } }
 
@@ -605,6 +608,33 @@ class OverlayService : Service() {
             pool.execute {
                 val data = try { fetchDataUrl(url) } catch (_: Exception) { "" }
                 js("window.__phone.img($q,${JSONObject.quote(data)})")
+            }
+        }
+        /** A file shipped in the APK (assets/): the extension's store.js and tcgfast.js, run in the page with shims */
+        @JavascriptInterface fun asset(name: String): String = if (!Regex("^[a-z0-9-]+\\.js$").matches(name)) "" else try { assets.open(name).bufferedReader().readText() } catch (_: Exception) { "" }
+        /** HTTP for the TCGplayer fast read (its data services refuse cross-origin calls from a page) ->
+         *  window.__phone.http(req, status, body). TCGplayer hosts only. */
+        @JavascriptInterface fun http(req: String, method: String, url: String, body: String) {
+            val q = JSONObject.quote(req)
+            val host = try { java.net.URL(url).host } catch (_: Exception) { "" }
+            if (!url.startsWith("https://") || !(host == "tcgplayer.com" || host.endsWith(".tcgplayer.com"))) { js("window.__phone.http($q,0,'')"); return }
+            pool.execute {
+                var code = 0; var txt = ""
+                try {
+                    val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    c.connectTimeout = 5000; c.readTimeout = 6000
+                    c.setRequestProperty("Accept", "application/json")
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 15) CardCompPhone/" + BuildConfig.VERSION_NAME)
+                    if (method == "POST") {
+                        c.requestMethod = "POST"; c.doOutput = true
+                        c.setRequestProperty("Content-Type", "application/json")
+                        c.outputStream.use { it.write(body.toByteArray()) }
+                    }
+                    code = c.responseCode
+                    txt = ((if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: "").take(2_000_000)
+                    c.disconnect()
+                } catch (_: Exception) { code = 0 }
+                js("window.__phone.http($q,$code,${JSONObject.quote(txt)})")
             }
         }
         @JavascriptInterface fun copy(text: String) { main.post { this@OverlayService.copy(text) } }
