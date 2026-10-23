@@ -520,3 +520,14 @@ Derek: each bid button should show market price, break-even and the suggested bi
 bid (big, what a tap sends), "mkt" (the price bids use: TCGplayer's market or the estimate, from the grid's
 data-mkt) and "b/e" (the app's `bidForMargin(price, 0)`: fees, shipping, list markup, 0% margin; the desktop tiles'
 "b/e"), whole dollars rounded down. Checked: b/e equals the app's math and is never below the suggested bid.
+
+## 0.12 (2026-10-23): pick the card unless the read is sure
+
+Derek: "sometimes the wrong card is delivered... unless the result is an exact auto plus picture match, don't show
+the card with the NM / LP pricing; show the likely cards and I'll pick."
+- After a read (results marked "· auto" in #status), the small card prices a card straight away only when it is
+  sure: a strong exact match ("✓ auto", never wrong on desktop) or the text read and the picture agreeing ("auto +
+  picture", `.byboth`). Otherwise it shows "Which card? read <what was read>" and a sideways row of the likely
+  cards (photo, name, set #, NM price), best guess first in gold, ~3 visible. Tapping one prices it (and counts as
+  touching the results, so a late picture ranking never reorders under the finger); ≡ goes back to the choices.
+- Nothing is opened (no background TCGplayer read) until a card is picked. Typed searches work as before.

@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.11.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.12.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -485,6 +485,13 @@
     "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15}" +
     "#phonebar .pb small i{font-style:normal;color:var(--faint);margin-right:3px}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
+    "#phonebar .pk{padding:3px 0 2px}#phonebar .pkh{font-size:10.5px;color:var(--dim)}#phonebar .pkh b{color:var(--gold);font-size:12px;margin-right:4px}" +
+    "#phonebar .pkrow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:3px 0 1px;scroll-snap-type:x proximity}#phonebar .pkrow::-webkit-scrollbar{display:none}" +
+    "#phonebar .pki{flex:0 0 74px;width:74px;min-width:0;overflow:hidden;box-sizing:border-box;scroll-snap-align:start;display:flex;flex-direction:column;gap:1px;cursor:pointer;border:1.5px solid var(--line);border-radius:7px;padding:3px}" +
+    "#phonebar .pki.g{border-color:var(--gold)}#phonebar .pkim{display:block;width:100%;height:92px;border-radius:4px;overflow:hidden;background:var(--panel2)}" +
+    "#phonebar .pkim img{width:100%;height:100%;object-fit:contain;display:block}" +
+    "#phonebar .pki em{font-style:normal;font-size:10px;font-weight:700;line-height:1.15;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}" +
+    "#phonebar .pki small{font-size:9px;color:var(--dim);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#phonebar .pki .pkp{color:var(--gold)}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
     "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
@@ -531,7 +538,13 @@
   // reading, else the top result of a typed search (never the default list). The rows mirror that card's real
   // condition grid: the card is opened in the (hidden) results, and each bid button taps the grid's own button, so the
   // numbers, the cascade from verified prices, the lot label and the log are the same as in the full view.
-  let wrapEl = null, FLASH = null, CUR = -1, OPENED = null;
+  let wrapEl = null, FLASH = null, CUR = -1, OPENED = null, PICKED = false;
+  // A read is only priced straight away when it is sure (Derek, 2026-10-23: "sometimes the wrong card is delivered"):
+  // an exact strong match (✓ auto) or the text read and the picture agreeing (auto + picture). Otherwise the small card
+  // shows the likely cards to pick from, best guess first; picking one prices it (≡ goes back to the choices).
+  const fromRead = () => /·\s*auto\s*$/.test((($("#status") || {}).textContent || "").trim());
+  const sureCard = (c) => !!c && c.classList.contains("autosug") && (c.classList.contains("byboth") || !!c.querySelector(".autobadge.strong"));
+  const needPick = () => MODE === "card" && fromRead() && CUR < 0 && !PICKED && !sureCard($("#results .card.autosug"));
   function wrap() {
     if (wrapEl && wrapEl.isConnected) return wrapEl;
     const sr = $(".searchrow"); if (!sr) return null;
@@ -599,6 +612,7 @@
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phonebar");
     const tools = `<span class="st" data-t="search" title="search">&#128269;</span>` + (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "");
+    if (needPick() && cands().length) { paintPicker(el, tools); paintStat(); sizeSoon(); return; }
     const card = focusCard(), id = card && card.dataset.id, r = id && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === id) : null;
     if (!r) {
       const html = `<div class="pe"><div><b>No card yet</b><span>Tap the gold <b>read</b> bubble when a card is on screen, or search.</span></div><div class="ptools">${tools}</div></div>`;
@@ -634,6 +648,7 @@
           `<div class="ph">` +
             (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
             `<span class="tg">${live || (tag ? `<i>${esc({ "best guess": "guess", "picture": "pic", "auto + picture": "pic ✓" }[tag] || tag)}</i>` : "")}</span>` +
+            (PICKED || (fromRead() && !sureCard($("#results .card.autosug")) && MODE === "card") ? `<span class="st" data-t="choices" title="back to the likely cards">&#8801;</span>` : "") +
             `<span class="st" data-t="search" title="search">&#128269;</span>` +
             (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "") +
           `</div>` +
@@ -652,6 +667,26 @@
     }
     paintStat(); sizeSoon();
   }
+  function paintPicker(el, tools) {
+    if (OPENED && OPENED.isConnected && OPENED.classList.contains("open")) { const r0 = OPENED.querySelector(".row"); if (r0) r0.click(); } OPENED = null;
+    const list = cands(), g = list.findIndex((c) => c.classList.contains("autosug"));
+    const order = g > 0 ? [list[g], ...list.filter((_, i) => i !== g)] : list;   // the best guess first
+    const read = (($("#q") || {}).value || "").trim();
+    const items = order.slice(0, 10).map((c) => {
+      const r = typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === c.dataset.id) : null; if (!r) return "";
+      const img = typeof imgOf === "function" ? imgOf(r) : "", m = typeof bestMarket === "function" ? bestMarket(r) : 0;
+      return `<span class="pki${c.classList.contains("autosug") ? " g" : ""}" data-t="pick" data-id="${esc(r.id)}">` +
+        `<span class="pkim">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</span>` +
+        `<em>${esc(r.n)}</em><small>${esc(r.s)} #${esc(r.num)}</small><small class="pkp">${m > 0 ? money(m) : ""}</small></span>`;
+    }).join("");
+    const html = `<div class="pk"><div class="ph"><span class="tg pkh"><b>Which card?</b> read ${esc(read)}</span>${tools}</div><div class="pkrow">${items}</div></div>`;
+    if (el.innerHTML !== html) {
+      el.innerHTML = html; el.dataset.id = "";
+      el.querySelectorAll('[data-t="pick"]').forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); touched();
+        const i = cands().findIndex((c) => c.dataset.id === x.dataset.id); if (i >= 0) { CUR = i; PICKED = true; paintBar(); } }; });
+      const sx = el.querySelector('[data-t="search"]'); if (sx) sx.onclick = (e) => { e.preventDefault(); e.stopPropagation(); TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } };
+    }
+  }
   function wire(el, card) {
     const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(x); }; });
     on("open", () => { if (MODE !== "card") { setMode("card"); return; } OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
@@ -661,6 +696,7 @@
       if (b) b.click(); else setMode("list");
     });
     on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
+    on("choices", () => { touched(); CUR = -1; PICKED = false; paintBar(); });
     // focusable window first: Chromium holds focus events in an unfocused window, so the box would never take the keyboard
     on("search", () => { TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
     const list = cands(), i = list.indexOf(card), n = list.length;
@@ -719,7 +755,7 @@
   let barTimer = 0;
   const results = $("#results");
   const mo = new MutationObserver((recs) => {
-    if (recs.some((x) => x.type === "childList" && x.target === results)) { CUR = -1; OPENED = null; }   // new results: back to the best guess
+    if (recs.some((x) => x.type === "childList" && x.target === results)) { CUR = -1; OPENED = null; PICKED = false; }   // new results: back to the best guess / the picker
     clearTimeout(barTimer); barTimer = setTimeout(paintBar, 120);
   });
   if (results) mo.observe(results, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });

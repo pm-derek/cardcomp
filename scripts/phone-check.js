@@ -138,6 +138,20 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   });
   await page.waitForFunction(() => document.querySelectorAll("#results .card").length > 0, null, { timeout: 10000 });
   await page.waitForTimeout(500);
+  // not sure (a best guess, no picture agreement): the likely cards to pick from, no pricing yet
+  const pk = await page.evaluate(() => ({ items: document.querySelectorAll("#phonebar .pki").length, first: (document.querySelector("#phonebar .pki em") || {}).textContent, guess: !!document.querySelector("#phonebar .pki.g"), priced: !!document.querySelector("#phonebar .pb"), head: (document.querySelector("#phonebar .pkh") || {}).textContent }));
+  ok(pk.items > 1 && pk.guess && !pk.priced && /charizard/i.test(pk.first), `unsure read: ${pk.items} likely cards to pick, best guess first (${pk.first}), no pricing yet · "${(pk.head || "").trim()}"`);
+  await fit(); await page.screenshot({ path: path.join(OUT, "phone-picker.png") });
+  // a sure match (text and picture agree) goes straight to the priced card
+  const sure = await page.evaluate(() => new Promise((res) => { const g = document.querySelector("#results .card.autosug"); g.classList.add("byboth"); setTimeout(() => { const ok = !!document.querySelector("#phonebar .pb") && !document.querySelector("#phonebar .pki"); g.classList.remove("byboth"); setTimeout(() => res(ok), 300); }, 300); }));
+  ok(sure, "auto + picture agree: priced straight away");
+  // Derek picks the best guess: priced, with ≡ back to the choices
+  await page.evaluate(() => document.querySelector("#phonebar .pki.g").click()); await page.waitForTimeout(300);
+  const picked = await page.evaluate(() => ({ priced: !!document.querySelector("#phonebar .pb"), back: !!document.querySelector('#phonebar [data-t="choices"]') }));
+  ok(picked.priced && picked.back, "picked: priced, with ≡ back to the choices");
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="choices"]').click()); await page.waitForTimeout(200);
+  ok(await page.evaluate(() => document.querySelectorAll("#phonebar .pki").length > 1), "≡ shows the choices again");
+  await page.evaluate(() => document.querySelector("#phonebar .pki.g").click()); await page.waitForTimeout(300);
   const r2 = await page.evaluate(() => ({
     n: document.querySelectorAll("#results .card").length,
     first: (document.querySelector("#results .card .nm") || {}).textContent || "",
