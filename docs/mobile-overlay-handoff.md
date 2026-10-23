@@ -476,3 +476,13 @@ pills at a time and scroll sideways; the panel takes most of the width; bigger c
   at 250 px wide.
 - Native: the small card starts at 60% of the screen width (new pref `panelW2`, so the old full-width setting is not
   carried over); the full view (list / typing) widens to the whole width and returns to Derek's width and place.
+
+## 0.8 (2026-10-23): prices and alerts only; getting back to the small card
+
+Derek: too much text under the card ("I just need pricing and any alerts"), text can be smaller; after tapping 🔍 a
+few times he could not shrink the panel again.
+- The small card hides the lot strip (it is still read: stats, labels, log) and shows only its alerts in
+  `#phonealert`: "⚠ sharp / whale / rival buyer leads", "over your $X", "priced out: next bid $N" with its "bid $N"
+  button (taps the strip's own), and the late-tap note. Name 13 px, set line 10 px, status 10.5 px.
+- Back to the small card: a result tapped in the full view returns to the small card showing it; a touch on Whatnot
+  outside the panel (ACTION_OUTSIDE -> `__phone.outside`) returns from the full view, and from typing.

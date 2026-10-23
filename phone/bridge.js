@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.7.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.8.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 5;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -391,6 +391,17 @@
     paintBar(); sizeSoon();
   }
   P.setMode = setMode; P.mode = () => MODE;
+  // A touch on Whatnot outside the panel: the full view goes back to the small card (Derek: "couldn't shrink it").
+  let OUT_TO_CARD = false;   // typing when the outside touch came: the box blurs first, then this sends it to the small card
+  P.outside = function () { if (MODE === "list") setMode("card"); else if (MODE === "typing") OUT_TO_CARD = true; };
+  // A result tapped in the full view: back to the small card, showing that card (its row click opens it first).
+  document.addEventListener("click", (e) => {
+    if (MODE !== "list") return;
+    const row = e.target && e.target.closest && e.target.closest("#results .card .row");
+    if (!row || e.target.closest(".bids,.cpy,a,.pchip,button,input")) return;
+    const card = row.closest(".card");
+    setTimeout(() => { const i = cands().indexOf(card); if (i >= 0) { CUR = i; OPENED = null; } setMode("card"); }, 0);
+  });
   P.back = function () {   // Android Back inside the panel
     if (MODE === "typing") P.blur();
     else if (MODE === "list") setMode("card");
@@ -416,7 +427,8 @@
     setTimeout(() => {
       if (isField(document.activeElement)) return;
       try { A.focus(false); } catch (_) {}
-      if (MODE === "typing") setMode(($("#q") && $("#q").value.trim()) ? "list" : MODE_BEFORE_TYPING === "typing" ? "card" : MODE_BEFORE_TYPING);
+      if (MODE === "typing") setMode(OUT_TO_CARD ? "card" : ($("#q") && $("#q").value.trim()) ? "list" : MODE_BEFORE_TYPING === "typing" ? "card" : MODE_BEFORE_TYPING);
+      OUT_TO_CARD = false;
     }, 150);
   }, true);
   P.blur = function () { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) {} };
@@ -440,7 +452,10 @@
     "body.phone #automodes,body.phone #automodel,body.phone #gamesel,body.phone select{display:none!important}" +
     "body.phone #autoline{padding:2px 6px;font-size:11px;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}body.phone #autoline.full{-webkit-line-clamp:unset}" +
     // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
-    "body.ph-card .searchrow{padding-bottom:0!important}body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard):not(#lotstrip){display:none!important}" +
+    "body.ph-card .searchrow{padding-bottom:0!important}body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard){display:none!important}" +
+    "#phonealert{font-size:10.5px;line-height:1.3;color:var(--red);display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:1px 0}#phonealert:empty{display:none}" +
+    "#phonealert .na{color:var(--gold)}#phonealert button{font:inherit;font-size:11px;font-weight:700;color:var(--ink);background:rgba(255,107,107,.14);border:1px solid var(--red);border-radius:6px;padding:3px 8px}" +
+    "body:not(.ph-card) #phonealert{display:none}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
     "body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
     "#phonecard{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}" +
@@ -449,8 +464,8 @@
     "#phonebar .pimg img{width:100%;height:100%;object-fit:contain;display:block}" +
     "#phonebar .pmain{flex:1;min-width:0}" +
     "#phonebar .pn{cursor:pointer;line-height:1.15}" +
-    "#phonebar .pn b{display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    "#phonebar .pn span{display:block;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .pn b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    "#phonebar .pn span{display:block;font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     "#phonebar .ph{display:flex;align-items:center;gap:3px;height:28px;margin-top:2px}" +
     "#phonebar .tg{flex:1;min-width:0;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px}#phonebar .tg i{font-style:normal;margin-right:5px;color:var(--gold)}" +
     "#phonebar .tg i.ok{color:var(--green);font-weight:700}#phonebar .tg i.no{color:var(--faint);text-decoration:line-through}#phonebar .tg i.wt{color:var(--faint);animation:tgp 1s ease-in-out infinite alternate}@keyframes tgp{from{opacity:1}to{opacity:.35}}" +
@@ -468,7 +483,7 @@
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
     "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
-    "#phonestat{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
+    "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
   document.addEventListener("click", (e) => { const a = e.target && e.target.closest && e.target.closest("#autoline"); if (a && !e.target.closest("a,select,.modes,.rn")) { a.classList.toggle("full"); sizeSoon(); } });
@@ -484,7 +499,7 @@
     if (wrapEl && wrapEl.isConnected) return wrapEl;
     const sr = $(".searchrow"); if (!sr) return null;
     wrapEl = document.createElement("div"); wrapEl.id = "phonecard";
-    wrapEl.innerHTML = '<div id="phonebar"></div><div id="phonestat"></div>';
+    wrapEl.innerHTML = '<div id="phonebar"></div><div id="phonealert"></div><div id="phonestat"></div>';
     sr.insertBefore(wrapEl, sr.firstChild);
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
@@ -610,6 +625,30 @@
     on("prev", () => { touched(); CUR = (i - 1 + n) % n; paintBar(); });
     on("next", () => { touched(); CUR = (i + 1) % n; paintBar(); });
   }
+  // alerts from the lot strip, the only part of it the small card shows: a tagged buyer leading, over your max, priced
+  // out (with its "bid $N" button, which taps the strip's own), a late tap
+  function paintAlerts() {
+    const w = wrap(); if (!w) return;
+    const al = w.querySelector("#phonealert"), ls = $("#lotstrip");
+    const out = [];
+    if (ls && ls.style.display !== "none") {
+      for (const el of ls.querySelectorAll("span,div")) {
+        const t = (el.childElementCount ? "" : el.textContent || "").replace(/\s+/g, " ").trim();
+        if (/^⚠ /.test(t)) out.push(`<span class="na">${esc(t)}</span>`);
+        else if (/^over your \$/.test(t) || /^priced out/.test(t)) out.push(`<span>${esc(t)}</span>`);
+        else if (/^late tap/.test(t)) out.push(`<span class="na">late tap: counted for the card that just sold</span>`);
+      }
+      if (ls.querySelector(".lotnudge")) out.push(`<button data-t="nudge">${esc(ls.querySelector(".lotnudge").textContent.trim())}</button>`);
+    }
+    const html = [...new Set(out)].join("");
+    if (al.innerHTML !== html) {
+      al.innerHTML = html;
+      const b = al.querySelector('[data-t="nudge"]'); if (b) b.onclick = (e) => { e.preventDefault(); touched(); const n = $("#lotstrip .lotnudge"); if (n) n.click(); };
+      sizeSoon();
+    }
+  }
+  { const ls = $("#lotstrip"); if (ls) new MutationObserver(() => paintAlerts()).observe(ls, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] }); }
+
   // status line under the card: what was read and how sure ("read Ralts · reverse holo → 3 of 27, no number"), and the frame
   function paintStat() {
     const w = wrap(); if (!w) return;

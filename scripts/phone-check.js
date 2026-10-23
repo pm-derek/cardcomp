@@ -290,11 +290,16 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await feed(live(140, 2, "00:08", "onestop_collectables", 3));
   await page.waitForTimeout(200);
   const strip = await page.evaluate(() => { const el = document.querySelector("#lotstrip"); return { t: el ? el.textContent : "", shown: !!el && getComputedStyle(el).display !== "none" }; });
-  ok(strip.shown && /\$2/.test(strip.t) && /onestop_collec/.test(strip.t), "lot strip shows on the small card: " + strip.t.replace(/\s+/g, " ").trim().slice(0, 100));
+  ok(!strip.shown && /\$2/.test(strip.t) && /onestop_collec/.test(strip.t), "lot strip is read but hidden on the small card (prices and alerts only)");
   // Derek taps the NM bid of the card on screen while the lot runs (the compact card shows Charizard from the read)
   await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "charizard 4/102"; run("charizard 4/102"); window.__phone.setMode("card"); });
   await page.waitForTimeout(800);
   await page.evaluate(() => document.querySelector('#phonebar .pb[data-c="NM"]').click());
+  // the price passes the max Derek tapped: the small card says so
+  await feed(live(140, 999, "00:05", "onestop_collectables", 1000)); await page.waitForTimeout(300);
+  const al = await page.evaluate(() => (document.querySelector("#phonealert") || {}).textContent || "");
+  ok(/over your \$\d+/.test(al), "alert on the small card: " + al);
+  await page.waitForTimeout(2800);
   await feed(sheet(140, 5));
   await feed(live(140, 6, "00:01", "caydenarterbury", 7));
   await feed(sold(140, 6, "caydenarterbury"));
@@ -330,6 +335,18 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(1500);
   const c6 = (await calls()).slice(b6);
   ok(c6.some((x) => x.n === "http" && /tcgplayer/.test(x.a[1])) && c6.some((x) => x.n === "open"), "condition link: fast read through the app, browser only after it failed (" + c6.filter((x) => x.n === "http").length + " requests)");
+
+  console.log("7. getting back to the small card");
+  await page.evaluate(() => { window.__phone.setMode("list"); });
+  await page.evaluate(() => { const r = document.querySelectorAll("#results .card .row")[1]; r.querySelector(".nm").click(); });
+  await page.waitForTimeout(300);
+  const back = await page.evaluate(() => ({ mode: window.__phone.mode(), name: document.querySelector("#phonebar .pn b").textContent, second: (document.querySelectorAll("#results .card .nm")[1] || {}).textContent }));
+  ok(back.mode === "card" && back.second.startsWith(back.name), `a result tapped in the full view: small card showing it (${back.name})`);
+  await page.evaluate(() => { window.__phone.setMode("list"); window.__phone.outside(); });
+  ok(await page.evaluate(() => window.__phone.mode()) === "card", "a touch outside the panel: back to the small card");
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click()); await page.waitForTimeout(100);
+  await page.evaluate(() => { window.__phone.outside(); window.__phone.blur(); }); await page.waitForTimeout(300);
+  ok(await page.evaluate(() => window.__phone.mode()) === "card", "a touch outside while typing: back to the small card too");
 
   console.log("5. links");
   const b5 = (await calls()).length;

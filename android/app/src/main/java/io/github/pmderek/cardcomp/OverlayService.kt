@@ -264,7 +264,7 @@ class OverlayService : Service() {
     inner class BandLayout(ctx: Context) : LinearLayout(ctx) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
-                MotionEvent.ACTION_OUTSIDE -> { setFocusable(false, false); js("window.__phone&&window.__phone.blur&&window.__phone.blur()") }
+                MotionEvent.ACTION_OUTSIDE -> { setFocusable(false, false); js("window.__phone&&(window.__phone.blur&&window.__phone.blur(),window.__phone.outside&&window.__phone.outside())") }
             }
             return super.dispatchTouchEvent(ev)
         }
