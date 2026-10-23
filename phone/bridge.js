@@ -12,8 +12,8 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.8.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
-  const PHONE_API = 5;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
+  const VER = "0.9.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
   // ---------------------------------------------------------------- the reader (shared with the extension)
@@ -385,10 +385,11 @@
     if (m !== "card" && m !== "list" && m !== "typing") return;
     const changed = m !== MODE; MODE = m;
     document.body.classList.remove("ph-card", "ph-list", "ph-typing"); document.body.classList.add("ph-" + m);
-    if (changed || show) { try { A.layout(m); } catch (_) {} }
+    if (changed || show) { try { A.layout(m === "card" && show ? "card-show" : m); } catch (_) {} }   // "card" alone never unfolds a folded panel
     if (m === "card") window.scrollTo(0, 0);
     if (m === "list") setTimeout(() => { const o = $("#results .card.open"); if (o) o.scrollIntoView({ block: "start" }); }, 60);
-    paintBar(); sizeSoon();
+    try { paintBar(); } catch (e) { log("paintBar: " + e.message); }
+    lastH = 0; sizeSoon();   // always report the height after a mode change (the panel's size follows it)
   }
   P.setMode = setMode; P.mode = () => MODE;
   // A touch on Whatnot outside the panel: the full view goes back to the small card (Derek: "couldn't shrink it").
@@ -620,7 +621,8 @@
       if (b) b.click(); else setMode("list");
     });
     on("toggle", () => setMode(MODE === "card" ? "list" : "card"));
-    on("search", () => { TOUCH_FIELD_AT = Date.now(); setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
+    // focusable window first: Chromium holds focus events in an unfocused window, so the box would never take the keyboard
+    on("search", () => { TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } });
     const list = cands(), i = list.indexOf(card), n = list.length;
     on("prev", () => { touched(); CUR = (i - 1 + n) % n; paintBar(); });
     on("next", () => { touched(); CUR = (i + 1) % n; paintBar(); });

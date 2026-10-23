@@ -154,7 +154,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(/charizard/i.test(r2.q), "search box shows the reading: " + r2.q);
   ok(/\$\d/.test(r2.bid), "strip line has the bid: " + r2.bid.trim() + " · " + r2.bar.replace(/\s+/g, " ").trim().slice(0, 80));
   c = await calls();
-  ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card"), "after the read: compact card, panel shown");
+  ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
   ok(h2 > 100 && h2 < 150, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
@@ -236,6 +236,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(100);
   c = (await calls()).slice(b4);
   ok(c.some((x) => x.n === "focus" && x.a[0] === true), "focus(true) when the search box takes focus");
+  ok(c.findIndex((x) => x.n === "focus" && x.a[0] === true) < c.findIndex((x) => x.n === "layout" && x.a[0] === "list"), "🔍 makes the window focusable before it opens the full view");
   ok(c.some((x) => x.n === "layout" && x.a[0] === "typing"), "layout(typing)");
   await page.evaluate(() => document.querySelector("#q").blur());
   await page.waitForTimeout(300);

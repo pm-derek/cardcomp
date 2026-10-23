@@ -76,7 +76,7 @@ class OverlayService : Service() {
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
         /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
-        const val NATIVE_API = 5
+        const val NATIVE_API = 6
         /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
          *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
          *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
@@ -190,6 +190,7 @@ class OverlayService : Service() {
         val want = (cssPx * resources.displayMetrics.density).roundToInt() + GRIP
         val cap = (screenH * (if (typingNow) 0.50 else 0.62)).toInt()   // typing: the keyboard takes the lower ~40%
         lp.height = want.coerceIn(GRIP + dp(40), cap)
+        if (!wide) cardH = lp.height
         place()
     }
 
@@ -210,14 +211,27 @@ class OverlayService : Service() {
     private var wide = false
     private var userW = 0
     private var userX = 0
+    private var cardH = 0
     private fun widen(on: Boolean) {
         val lp = bandLp ?: return
         val b = band ?: return
         if (on == wide) return
         wide = on
         if (on) { userX = lp.x; userW = lp.width; lp.x = dp(8); lp.width = screenW - dp(16) }
-        else { lp.width = userW.coerceIn(dp(200), screenW); lp.x = userX.coerceIn(0, maxOf(0, screenW - lp.width)) }
+        else {
+            lp.width = userW.coerceIn(dp(200), screenW); lp.x = userX.coerceIn(0, maxOf(0, screenW - lp.width))
+            if (cardH > 0) lp.height = cardH   // the small card's last height at once; the page refines it (never stuck tall)
+            typingNow = false
+        }
+        collapseBtn?.text = if (on) "✕" else "–"   // full view: ✕ goes back to the small card; small card: – folds into the bubble
         if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
+        place()
+    }
+    /** back to the small card from anywhere: native first (works whatever the page is doing), then the page */
+    private fun toCard() {
+        setFocusable(false, false)
+        widen(false)
+        js("window.__phone&&(window.__phone.blur&&window.__phone.blur(),window.__phone.setMode&&window.__phone.setMode('card'))")
     }
 
     private fun setFocusable(want: Boolean, ime: Boolean) {
@@ -248,7 +262,9 @@ class OverlayService : Service() {
     /** collapsed = only the bubble; the panel comes back on the next read, a bubble long press, or its own button */
     private var collapsed = false
     private var appOpen = false
+    private var collapseBtn: TextView? = null
     private fun showPanel(show: Boolean) {
+        if (!show && wide) toCard()   // folded away from the full view: it comes back as the small card
         collapsed = !show
         applyVisibility()
     }
@@ -365,6 +381,7 @@ class OverlayService : Service() {
         grip.orientation = LinearLayout.HORIZONTAL
         grip.setBackgroundColor(Color.parseColor("#1b2026"))
         val collapse = gripText("–", 18f, "#8b97a5")
+        collapseBtn = collapse
         val dots = gripText("⠿ drag", 11f, "#5b6573")
         val resize = gripText("◢", 14f, "#8b97a5")
         grip.addView(collapse, LinearLayout.LayoutParams(dp(44), GRIP))
@@ -394,7 +411,7 @@ class OverlayService : Service() {
         lp.fitInsetsTypes = 0   // the drag clamps use the full display: let the window go there (nav bar strip included)
 
         dots.setOnTouchListener(dragListener(lp, root, onTap = {}, onLong = {}, save = { if (!wide) { prefs.panelX = lp.x; userX = lp.x }; prefs.panelY = lp.y; homeY = lp.y; typingNow = false }))
-        collapse.setOnClickListener { showPanel(false) }
+        collapse.setOnClickListener { if (wide) toCard() else showPanel(false) }
         resize.setOnTouchListener(widthListener(lp, root))
 
         wm.addView(root, lp)
@@ -493,6 +510,7 @@ class OverlayService : Service() {
         js("window.__phone&&window.__phone.blur&&window.__phone.blur()")   // the keyboard sits above every overlay: it would be in the frame
         setFocusable(false, false)
         flashBubble("…", 3000)
+        if (src == "bubble" && wide) toCard()
         main.postDelayed({ js("window.__phone&&window.__phone.readNow(" + JSONObject.quote(src) + ")") }, 120)
     }
 
@@ -660,7 +678,11 @@ class OverlayService : Service() {
         @JavascriptInterface fun open(url: String) { if (url.startsWith("https://")) main.post { openExternal(url) } }
         @JavascriptInterface fun focus(want: Boolean) { main.post { setFocusable(want, want) } }
         /** the page's mode changed (card, list, typing) or a read landed: the panel shows, collapsed or not */
-        @JavascriptInterface fun layout(s: String) { main.post { typing(s == "typing"); widen(s != "card"); showPanel(true) } }
+        @JavascriptInterface fun layout(s: String) { main.post {
+            val card = s.startsWith("card")
+            typing(s == "typing"); widen(!card)
+            if (!card || s == "card-show") showPanel(true)
+        } }
         @JavascriptInterface fun size(cssPx: Int) { main.post { setContentHeight(cssPx) } }
         @JavascriptInterface fun collapse() { main.post { showPanel(false) } }
         @JavascriptInterface fun toast(t: String) { this@OverlayService.toast(t) }

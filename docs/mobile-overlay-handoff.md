@@ -486,3 +486,17 @@ few times he could not shrink the panel again.
   button (taps the strip's own), and the late-tap note. Name 13 px, set line 10 px, status 10.5 px.
 - Back to the small card: a result tapped in the full view returns to the small card showing it; a touch on Whatnot
   outside the panel (ACTION_OUTSIDE -> `__phone.outside`) returns from the full view, and from typing.
+
+## 0.9 (2026-10-23): still stuck after 🔍
+
+Derek, on 0.8: still stuck after the magnifying glass. The headless check returned to the small card, so the stuck
+state was on the device. Three paths fixed:
+- The panel's top-left button is native: "✕" while the full view is open (back to the small card), "–" on the small
+  card (fold into the bubble). ✕ restores the small card's width and its last height natively (`cardH`), drops
+  focus and the keyboard, then tells the page; it works whatever state the page is in.
+- Folding with – from the full view resets to the small card, and `layout("card")` never unfolds a folded panel
+  (only "card-show", sent when a read lands, and the full view do). Before, the panel came back still in the full view.
+- 🔍 makes the window focusable before it focuses the search box (Chromium holds focus events in an unfocused window,
+  so the box could sit focused with no keyboard and no typing mode). setMode always reports the height afterwards and
+  survives a paint error.
+- NATIVE_API / PHONE_API 6.
