@@ -255,6 +255,22 @@ async function appPage(browser, base, blockRecog) {
     ok(a1 && a1.key === 777 && a1.n === 1 && a2 && a2.key === 777 && a2.n === 1, "picture match relays: the ack keeps the reading's key and n (side panel and CardComp tab)");
   }
 
+  // ---------- 4d. windows: a side panel keeps only its own window's lot, from the background relay (Derek 2026-10-23)
+  {
+    const vm = require("vm"), L = [], got = [];
+    vm.runInContext(fs.readFileSync(path.join(ROOT, "extension/panel.js"), "utf8"), vm.createContext({
+      chrome: { runtime: { onMessage: { addListener: (f) => L.push(f) }, sendMessage: () => {}, lastError: null }, windows: { getCurrent: (cb) => cb({ id: 1 }) },
+        tabs: { query: (q, cb) => cb([{ id: 9, windowId: 1 }]), onCreated: { addListener() {} }, onRemoved: { addListener() {} }, onAttached: { addListener() {} }, onDetached: { addListener() {} }, onUpdated: { addListener() {} } } },
+      window: { addEventListener() {} }, document: { getElementById: () => ({ contentWindow: { postMessage: (m) => got.push(m) }, addEventListener() {} }) } }));
+    const fire = (msg, sender) => L.forEach((f) => f(msg, sender || {}));
+    fire({ type: "cardcomp-lot", title: "other stream" }, { tab: { windowId: 2 } });            // straight from the other window's Whatnot page
+    fire({ type: "cardcomp-lot", title: "own direct" }, { tab: { windowId: 1 } });              // straight from this window's page (the relay brings it)
+    fire({ type: "cardcomp-lot", title: "other relayed", win: 2, primary: true });              // relayed, other window (main stream)
+    fire({ type: "cardcomp-lot", title: "own relayed", win: 1, primary: false });               // relayed, this window
+    fire({ type: "cardcomp-auto-watch", phase: "x", win: 2, primary: true }, { tab: { windowId: 2 } });
+    ok(got.length === 1 && got[0].title === "own relayed", "windows: the side panel keeps only its own window's lot, once (" + got.map((m) => m.title || m.type).join(", ") + ")");
+  }
+
   // ---------- 4c. fast TCGplayer read (extension/tcgfast.js, not part of the experiment): every condition from 4 requests
   {
     const calls = [], realFetch = global.fetch, J = (x) => ({ ok: true, json: async () => x });

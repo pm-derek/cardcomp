@@ -185,3 +185,5 @@ api.anthropic.com. Remove the whole experiment: `node scripts/strip-recog.js`.
 <!-- RECOG-END -->
 
 Log edits (0.8.1): changing only the condition of a logged lot (stats table chips, dashboard dropdown) keeps the rest of the record (max bid, tap time).
+
+Two windows (0.8.2): a side panel no longer shows the other window's lot (the Whatnot page's messages reached every panel directly).
