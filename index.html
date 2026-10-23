@@ -2876,11 +2876,15 @@ function renderPrices(host, data, prices, src){
     // steps UP from the recommended max (Derek, 2026-10-23: "a $15 card won't give $5 profit"; "relative to the max bid from
     // settings: I won't win by bidding lower, this is for bidding up"): round profits below what the recommended bid nets,
     // down to ~3% of this condition's market (never under $1), so a $15 card offers +$1 and a $285 one +$30 / 20 / 15 / 10
-    const opts=profitSteps(mkt, np-rec).map(d=>({d, b:Math.floor(np-d)})).filter(o=>o.b>=1 && o.b>=Math.floor(rec));
+    // Each button: the whole bid that still nets at least $d (the 1e-6 absorbs float specks: 17.00 - 1 must give $16, not
+    // $15), shown with the profit it really nets; only bids ABOVE what the grid already sends (Okidogi ex 2026-10-23: "+$1 ->
+    // $15" sat on the $15 recommended bid, which nets $2: same bid, wrong label).
+    const seen=new Set(), opts=profitSteps(mkt, np-rec).map(d=>{ const b=Math.floor(np-d+1e-6); return {d, b, p:np-b}; })
+      .filter(o=>o.b>=1 && o.b>rec && !seen.has(o.b) && seen.add(o.b));
     const sig=cond+"|"+mkt.toFixed(2)+"|"+opts.map(o=>o.b).join(",");
     if(goEl.dataset.sig!==sig){   // rebuild only when the prices change, so a tapped button keeps its "Whatnot $X" flash
       goEl.dataset.sig=sig;
-      goEl.innerHTML=opts.length?`<span style="color:var(--faint);font-size:10px">${cond} profit</span>`+opts.map(o=>`<button class="ovrgob" data-b="${o.b}" data-bid="${o.b}" data-cond="${cond}" data-mkt="${mkt.toFixed(2)}" title="send $${o.b}: nets $${o.d} if you list ${cond} at market ($${mkt.toFixed(2)})" style="background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;padding:8px 10px;min-height:36px">+$${o.d} → $${o.b}</button>`).join(""):"";
+      goEl.innerHTML=opts.length?`<span style="color:var(--faint);font-size:10px">${cond} profit</span>`+opts.map(o=>`<button class="ovrgob" data-b="${o.b}" data-bid="${o.b}" data-cond="${cond}" data-mkt="${mkt.toFixed(2)}" title="send $${o.b}: nets $${o.p.toFixed(2)} if you list ${cond} at market ($${mkt.toFixed(2)})" style="background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;padding:8px 10px;min-height:36px">+$${o.p.toFixed(2)} → $${o.b}</button>`).join(""):"";
       goEl.querySelectorAll(".ovrgob").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ovrIn.dataset.cond=b.dataset.cond; copyAmt(b.dataset.b, b); });
     }
     goEl.style.display=opts.length?"flex":"none";
