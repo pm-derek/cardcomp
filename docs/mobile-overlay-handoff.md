@@ -531,3 +531,14 @@ the card with the NM / LP pricing; show the likely cards and I'll pick."
   cards (photo, name, set #, NM price), best guess first in gold, ~3 visible. Tapping one prices it (and counts as
   touching the results, so a late picture ranking never reorders under the finger); ≡ goes back to the choices.
 - Nothing is opened (no background TCGplayer read) until a card is picked. Typed searches work as before.
+
+## 0.12.1 (2026-10-23): phone wins on the desktop tracker
+
+Derek: wins on mobile showed as "no card" in the browser stats (rudeboi75404). Both devices log the same lot with their
+own timestamps, so the log held two rows per lot (desktop: no card; phone: the card). 11 of tonight's 17 phone rows had a
+desktop twin. `store.js` `mergeRows` and the app's `storeLotRows` now fold rows from different devices with the same
+seller, title, final and winner within 2 min (richer row kept, the other fills card / recog / max). The app re-reads the
+last 2 days of the log 90 s after each lot, so phone wins reach an open desktop within ~3 min. The phone reader also
+dropped a repeat of the lot that just sold (#79 logged twice, 18 s apart, after the sold screen flickered back to a
+timer). Tested on tonight's real log: 77 rows -> 67, wins with a card 15 -> 17; phone-check adds the flicker case.
+Desktop needs index.html on main and the unpacked extension's store.js updated; the phone bundles store.js.

@@ -2012,15 +2012,24 @@ const LOTS_KEY="cardcomp_lots";
 // Stats live in this browser, the full log in the private GitHub repo. On load (extension present) pull the last
 // 120 days of the log back in, so the side panel, a CardComp tab and a second computer all show the same lots,
 // and lots restored in the repo by hand show up here.
-let LOTS_SYNCED=false;
-function syncLots(){ if(LOTS_SYNCED) return; LOTS_SYNCED=true; extPost({type:"cardcomp-log-read", since:Date.now()-120*86400000}); }
+let LOTS_SYNCED=false, LOTS_SINCE=0, RESYNC_T=null;
+function syncLots(since){   // no since: the full 120 days, once per load; since: a refresh of the last days (the other device's lots)
+  if(!since){ if(LOTS_SYNCED) return; LOTS_SYNCED=true; }
+  LOTS_SINCE=since||0;
+  extPost({type:"cardcomp-log-read", since:since||Date.now()-120*86400000});
+}
+// The phone app and this browser can watch the same stream: each logs the lot, the log merges them (store.js
+// mergeRows). Re-read the last two days ~90 s after a lot ends (both devices flush within ~60 s), so a card tapped on
+// the phone shows on this browser's win during the stream, not only after a reload.
+function resyncSoon(){ if(!WN_EXT) return; clearTimeout(RESYNC_T); RESYNC_T=setTimeout(()=>syncLots(Date.now()-2*86400000), 90000); }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-read-ack" || !lotFromExt(e)) return;
-  if(!d.ok || !Array.isArray(d.rows)){ LOTS_SYNCED=false; return; }
-  try{   // the log is the record: replace this browser's rows with it, keeping only local lots newer than the log (not flushed yet)
+  const since=LOTS_SINCE; LOTS_SINCE=0;
+  if(!d.ok || !Array.isArray(d.rows)){ if(!since) LOTS_SYNCED=false; return; }
+  try{   // the log is the record: replace this browser's rows with it (from `since` on, for a refresh), keeping local lots newer than the log (not flushed yet)
     const logRows=d.rows.filter(r=>r && r.at && !r.empty).map(lotRow), newest=logRows.reduce((m,r)=>Math.max(m,r.at),0);
-    const local=loadLots().filter(r=>r.at>newest);
-    localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(logRows.concat(local));
+    const local=loadLots().filter(r=>r.at>newest || (since && r.at<since));
+    localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(local.filter(r=>r.at<since).concat(logRows, local.filter(r=>r.at>newest)));
   }catch(_){ }
   try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
   paintLot(); if(LOTSTATS_OPEN) paintLotStats(); if(DASH.on) paintDash();
@@ -2033,7 +2042,8 @@ function lotRow(rec){
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null,
-      id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null };   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
+      id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
+      t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"" };   // t / src: the same lot from the phone and this browser is one lot
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2042,16 +2052,21 @@ function storeLotRows(add){   // merge rows into this browser's stats by lot key
   const cut=Date.now()-120*86400000;
   let rows=loadLots().filter(r=>r.at>=cut);
   const at=new Map(rows.map((r,i)=>[r.k,i]));
+  // the same lot logged by the phone and this browser (own timestamps each): same seller, title, final, winner within 2 min
+  const across=(a,b)=>a.t && a.t===b.t && (a.src||"")!==(b.src||"") && a.s===b.s && a.f===b.f && (a.w||"")===(b.w||"") && Math.abs(a.at-b.at)<120000;
   for(const row of add){
     if(row.at<cut) continue;
-    const i=row.k!=null ? at.get(row.k) : undefined;
-    if(i==null){ at.set(row.k, rows.length); rows.push(row); } else if(!rows[i].n && row.n) rows[i]=row;
+    let i=row.k!=null ? at.get(row.k) : undefined;
+    if(i==null){ const j=rows.findIndex(r=>across(r,row)); if(j>=0) i=j; }
+    if(i==null){ at.set(row.k, rows.length); rows.push(row); }
+    else if(!rows[i].n && row.n){ const o=rows[i]; rows[i]=Object.assign({}, row, { me:o.me||row.me, b:row.b!=null?row.b:o.b, pm:row.pm||o.pm, sh:row.sh!=null?row.sh:o.sh }); at.set(row.k, i); }
   }
   rows.sort((a,b)=>a.at-b.at);
   localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
 }
 function recordLotStat(rec){
   try{ storeLotRows([lotRow(rec)]); }catch(_){ }
+  resyncSoon();
   try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
   if(DASH.on) paintDash();

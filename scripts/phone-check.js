@@ -346,6 +346,13 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.evaluate(() => { window.__mode = "manual"; });
   ok(g1 === g0 && g2 === g1 + 1, `auto read: none in manual mode, exactly one per lot in auto mode (${g0} -> ${g1} -> ${g2})`);
 
+  // a sold screen that flickers back to a timer restarts the same lot; it must not log twice (rudeboi75404 #79, 2026-10-23)
+  await feed(live(144, 3, "00:02", "x_bidder", 4)); await feed(sold(144, 3, "x_bidder"));
+  await feed(live(144, 3, "00:12", "", 4)); await feed(sold(144, 3, "x_bidder")); await feed(live(145, 2, "00:10", "", 3));
+  await page.waitForTimeout(200);
+  const g144 = await page.evaluate(() => window.__lots.filter((r) => !r.empty && r.title === "Card on screen #144").length);
+  ok(g144 === 1, `same lot after a flicker of the sold screen: logged once (${g144})`);
+
   // condition link: fast read tried through the app first; the browser opens only because it failed here
   const b6 = (await calls()).length;
   await page.evaluate(() => { window.postMessage({ type: "cardcomp-tcg-fast", req: 1, pid: "42382", printing: "Holofoil", cond: "LP" }, location.origin); window.postMessage({ type: "cardcomp-open-bg", url: "https://www.tcgplayer.com/product/42382?Printing=Holofoil&Condition=Lightly+Played" }, location.origin); });

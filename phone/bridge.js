@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.12.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.12.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -217,10 +217,14 @@
   // ---- extension/whatnot.js lotTick / endLot, input swapped (keep in step with that file)
   let lotLast = "", lot = null, lotLastState = null;
   const sendApp = (m) => toApp(m);
+  let prevEnd = null;
   function endLot(st) {
     if (!lot || lot.ended) return;
     lot.ended = true;
-    if (st.cur == null && st.bids == null) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }
+    // a sold screen that flickers can restart the same lot; with no bid seen since and the same price, it is that lot again
+    const ghost = prevEnd && prevEnd.title === lot.title && prevEnd.final === st.cur && !lot.hist.length && lot.startedAt - prevEnd.at < 60000;
+    if ((st.cur == null && st.bids == null) || ghost) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }
+    prevEnd = { title: lot.title, final: st.cur, at: Date.now() };
     sendApp({ type: "cardcomp-lot-end", rec: {
       v: 3, src: "phone", title: lot.title, sub: st.sub || lot.sub, sellerCond: st.cond || lot.cond, start: lot.start, final: st.cur, bids: st.bids,
       winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),

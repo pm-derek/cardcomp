@@ -162,11 +162,34 @@ async function logFile(api, hdr) {
 // are set once in whatnot.js), and the copy that knows the card wins.
 const lotKey = (r) => r && r.startedAt != null && r.at != null ? `${r.seller || ""}|${r.startedAt}|${r.at}` : null;
 const richness = (r) => (r.card ? 10 : 0) + (r.card && r.card.label === "tap" ? 5 : 0) + ((r.bidsSent || []).length ? 2 : 0);
+// The same lot logged by the phone app and a desktop browser watching the same stream (2026-10-23, rudeboi75404:
+// every lot twice, the desktop row "no card", the phone row with the card Derek tapped). Each device stamps its own
+// startedAt / at, so the key above never matches: same seller, title, final and winner within 2 minutes, from two
+// different sources, is one lot. The kept row is the richer one, filled in from the other (card, bids, history).
+const devOf = (r) => (r && r.src === "phone" ? "phone" : "desktop");
+function sameLotAcross(a, b) {
+  return !!a && !!b && devOf(a) !== devOf(b) && !!a.seller && a.seller === b.seller && (a.title || "") === (b.title || "") &&
+    a.final === b.final && (a.winner || "") === (b.winner || "") && Math.abs((a.at || 0) - (b.at || 0)) < 120000;
+}
+function mergeAcross(a, b) {
+  const keep = richness(b) > richness(a) ? b : a, other = keep === a ? b : a, out = Object.assign({}, keep);
+  for (const f of ["card", "recog", "placedMax", "ship", "viewers", "giveaway", "sub", "sellerCond"]) if (out[f] == null && other[f] != null) out[f] = other[f];
+  if (out.bids == null && other.bids != null) out.bids = other.bids;
+  if (!(out.bidsSent || []).length && (other.bidsSent || []).length) out.bidsSent = other.bidsSent;
+  if ((other.hist || []).length > (out.hist || []).length) { out.hist = other.hist; out.leaders = other.leaders; }
+  out.me = !!(a.me || b.me); out.iLed = !!(a.iLed || b.iLed);
+  out.seenBy = [...new Set([devOf(a), devOf(b), ...(a.seenBy || []), ...(b.seenBy || [])])];
+  return out;
+}
 function mergeRows(rows) {
   const out = [], at = new Map();
   for (const r of rows) {
     const k = lotKey(r);
-    if (k == null || !at.has(k)) { if (k != null) at.set(k, out.length); out.push(r); continue; }
+    if (k == null || !at.has(k)) {
+      const j = out.findIndex((o) => sameLotAcross(o, r));   // the other device's row of this lot
+      if (j >= 0) { const m = mergeAcross(out[j], r); at.set(lotKey(m), j); if (k != null) at.set(k, j); out[j] = m; continue; }
+      if (k != null) at.set(k, out.length); out.push(r); continue;
+    }
     { const o = out[at.get(k)]; if (!r.recog && o.recog) r.recog = o.recog; else if (r.recog && !o.recog) o.recog = r.recog; }   // RECOG keep the auto reading whichever CardComp copy logged it, removed by scripts/strip-recog.js
     const i = at.get(k); if (richness(r) > richness(out[i])) out[i] = r;
   }
