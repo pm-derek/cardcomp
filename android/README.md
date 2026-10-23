@@ -20,8 +20,8 @@ bid fill. Personal, sideloaded build; no Play Store.
 
 ## Install (once)
 
-1. Download the APK from the Actions run (artifact) or the `phone-latest` release, open it, allow installing from
-   this source.
+1. On the phone, open https://github.com/pm-derek/cardcomp/releases/download/phone-latest/cardcomp-phone.apk
+   (every build replaces it), open the download, allow installing from this source.
 2. Open CardComp: button 1 (display over other apps), 2 (notifications), 3 (accessibility: CardComp screen reader).
    On a sideloaded app Android greys the accessibility switch out until App info > menu > Allow restricted settings.
 3. Paste the Anthropic API key, Save keys.
