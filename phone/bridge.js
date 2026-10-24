@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.12.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.13.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -479,6 +479,11 @@
     "#phonebar .st{flex:none;border:1px solid var(--line);border-radius:7px;width:26px;height:26px;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--ink)}" +
     "#phonebar .st.on{color:var(--gold);border-color:var(--gold)}" +
     "#phonebar .sn{flex:none;font-size:10px;color:var(--faint);min-width:22px;text-align:center}" +
+    // printing chips (Holo / Reverse / Poké Ball...): one tap reprices the pills; gold = the printing the pills show
+    "#phonebar .pp{display:flex;gap:4px;margin-top:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}#phonebar .pp::-webkit-scrollbar{display:none}" +
+    "#phonebar .pq{flex:none;font-size:10px;line-height:1;padding:3px 6px;border:1px solid var(--line);border-radius:11px;color:var(--dim);white-space:nowrap;cursor:pointer}" +
+    "#phonebar .pq i{font-style:normal;color:var(--faint);margin-left:3px}#phonebar .pq.on{border-color:var(--gold);color:var(--gold);background:rgba(245,179,1,.10)}#phonebar .pq.on i{color:var(--gold)}" +
+    "#phonebar .pq.rd{border-style:dashed}" +
     "#phonebar .pmiss{font-size:10.5px;color:var(--red);line-height:1.2;margin:1px 0}" +
     // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
     "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
@@ -588,6 +593,16 @@
     if (card && !card.classList.contains("open")) { const r = card.querySelector(".row"); if (r) { r.click(); OPENED = card; } }
   }
   const SHOW = ["NM", "LP", "MP", "HP", "DMG"];
+  const USER_PRINT = {};   // card id -> printing Derek picked on the small card
+  let READ_PRINT = null;   // {id, k, done}: the printing the last reading named for its suggested card
+  const shortPrint = (k) => { const s = typeof prettyPrinting === "function" ? prettyPrinting(k) : k;
+    return s.replace(/^Reverse Holo$/i, "Reverse").replace(/^Normal$/i, "Non-holo").replace(/Unlimited/g, "Unl").replace(/Shadowless/g, "Shdl").replace(/\s*Pattern$/i, "").replace(/Pok[eé] Ball/i, "Poké Ball").replace(/(Ball) Holo$/, "$1"); };
+  // wrap the matcher once (automatch.js loads before this file): remember the printing its finish read names
+  if (typeof window.autoMatch === "function" && !window.autoMatch.__ph) {
+    const am = window.autoMatch;
+    window.autoMatch = function (read, ctx) { const m = am(read, ctx); try { if (m && m.suggestion && m.printing && (!READ_PRINT || READ_PRINT.id !== m.suggestion || READ_PRINT.k !== m.printing)) READ_PRINT = { id: m.suggestion, k: m.printing, done: false }; } catch (_) {} return m; };
+    window.autoMatch.__ph = true;
+  }
   // break-even: the most you can pay and not lose money (fees, shipping and your list markup, 0% margin): the app's own
   // bidForMargin at 0, what the desktop tiles call "b/e". Whole dollars, rounded down like every bid.
   const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? Math.floor(bidForMargin(mkt, 0)) : 0; return v >= 1 ? "$" + v : "–"; } catch (_) { return "–"; } };
@@ -628,7 +643,17 @@
     const grid = card.querySelector(".condgrid");
     const btns = grid ? Array.from(grid.querySelectorAll(".bd.cpy[data-cond]")) : [];
     if (grid) autoFast(card);
+    const pks = Array.from(card.querySelectorAll(".pchips .pchip"));
+    // the read saw the finish (holo, reverse, Poké Ball...): start on that printing, once per reading, never over Derek's own tap
+    if (READ_PRINT && READ_PRINT.id === r.id && !READ_PRINT.done && pks.length > 1) {
+      READ_PRINT.done = true;
+      const want = pks.find((c) => c.dataset.k === READ_PRINT.k);
+      if (want && !want.classList.contains("on") && USER_PRINT[r.id] == null) want.click();
+    }
     const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
+    const readK = READ_PRINT && READ_PRINT.id === r.id ? READ_PRINT.k : "";
+    const pchips = pks.length > 1 ? `<div class="pp">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0;
+      return `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}"${c.dataset.k === readK ? ' title="the printing the read saw"' : ""}>${esc(shortPrint(c.dataset.k))}<i>${v > 0 ? money(v) : ""}</i></span>`; }).join("") + `</div>` : "";
     let rows;
     if (btns.length) {
       const whole = (t) => { const v = Math.floor(parseFloat(String(t).replace(/[^0-9.]/g, "")) || 0); return v >= 1 ? "$" + v : "<$1"; };   // what copyAmt copies
@@ -648,7 +673,7 @@
       `<div class="pc">` +
         `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
-          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing ? " · " + esc(printing) : ""}</span></div>` +
+          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` + pchips +
           `<div class="ph">` +
             (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
             `<span class="tg">${live || (tag ? `<i>${esc({ "best guess": "guess", "picture": "pic", "auto + picture": "pic ✓" }[tag] || tag)}</i>` : "")}</span>` +
@@ -668,6 +693,8 @@
       const pr0 = el.querySelector(".prow"), sx = pr0 ? pr0.scrollLeft : 0, same = el.dataset.id === r.id;
       el.innerHTML = html; el.dataset.id = r.id; wire(el, card);
       const pr1 = el.querySelector(".prow"); if (pr1 && same) pr1.scrollLeft = sx;
+      const pp = el.querySelector(".pp"), pon = pp && pp.querySelector(".pq.on");   // the chosen printing stays in sight
+      if (pon && (pon.offsetLeft + pon.offsetWidth > pp.scrollLeft + pp.clientWidth || pon.offsetLeft < pp.scrollLeft)) pp.scrollLeft = Math.max(0, pon.offsetLeft - pp.offsetLeft - 4);
     }
     paintStat(); sizeSoon();
   }
@@ -694,6 +721,11 @@
   function wire(el, card) {
     const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(x); }; });
     on("open", () => { if (MODE !== "card") { setMode("card"); return; } OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
+    on("print", (x) => {   // the printing chip: picks that printing in the open card; the grid, pills and fast read follow
+      touched();
+      const c = card && Array.from(card.querySelectorAll(".pchips .pchip")).find((p) => p.dataset.k === x.dataset.k);
+      if (c) { USER_PRINT[card.dataset.id] = x.dataset.k; c.click(); paintBar(); }
+    });
     on("bid", (x) => {
       touched();
       const b = card && card.querySelector(`.condgrid .bd.cpy[data-cond="${x.dataset.c}"]`);

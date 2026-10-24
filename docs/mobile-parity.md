@@ -14,6 +14,7 @@ not worth it).
 | Search, abbreviations, sounds-like, set chips, JP / EN | done | Same app page. |
 | Condition grid, cascade, verified prices, bid math, speed margin, profit buttons, your-bid box | done | In the full view (tap the card name). |
 | Max bid per condition at a glance | done | The small card: NM / LP / MP / HP / DMG pills, two at a time, swipe sideways. |
+| Pick the printing (Holo / Reverse / Poké Ball / 1st Ed) | done | Phone: chips on the small card, one tap; a read that saw the finish starts on it. |
 | "No such card" | done | Phone only: "no card #X in the catalog (likely under $1.50)". |
 | Read the card on stream (read now) | done | Gold bubble. |
 | Zoomed re-read, picture match | done | Same code as desktop. |

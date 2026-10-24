@@ -540,3 +540,13 @@ last 2 days of the log 90 s after each lot, so phone wins reach an open desktop 
 dropped a repeat of the lot that just sold (#79 logged twice, 18 s apart, after the sold screen flickered back to a
 timer). Tested on tonight's real log: 77 rows -> 67, wins with a card 15 -> 17; phone-check adds the flicker case.
 Desktop needs index.html on main and the unpacked extension's store.js updated; the phone bundles store.js.
+
+## 0.13 (2026-10-23): printing chips on the small card
+
+Derek: "How do you select printing like reverse Holo and Holo? Need an easy flow." The small card priced whatever
+printing the open card picked (the most expensive one) and switching meant the full view. Now a card with several
+printings shows a row of chips under the set line ("Master Ball $30.13 · Poké Ball $2.85 · Reverse $0.49 · Holo $0.31",
+NM market each): one tap picks it in the open card, so the pills, the fast read, the bid and the logged printing all
+follow. When a read names the finish (automatch.js `finishKey`: reverse, holo, Poké Ball, Master Ball, non-holo), the
+card starts on that printing and its chip has a dashed edge; a chip Derek tapped is never overridden. Only cards with
+2+ printings get the row (161 px tall at 250 px wide with it). Bridge 0.13.0, no APK change (the live bridge loads).
