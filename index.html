@@ -258,6 +258,8 @@
       <label>HP<input data-c="HP" type="number" value="0.55"></label>
       <label>DMG<input data-c="DMG" type="number" value="0.40"></label>
     </div>
+    <h4 style="margin-top:13px">Chinese copy prices on the phone</h4>
+    <label style="display:block;font-size:12px;color:var(--dim)">proxy address (the extension does this on desktop)<input id="cfg-zhproxy" type="text" placeholder="https://cardcomp-tcg.yourname.workers.dev" style="width:100%"></label>
   </div>
   <div class="searchrow" style="position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0;margin:0 0 4px;flex-direction:column;gap:8px">
     <div id="lotstrip" style="display:none;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.35;padding:6px 9px;border-radius:7px;background:var(--panel2);border-left:4px solid var(--gold)"></div>
@@ -1784,7 +1786,8 @@ function cardSnap(r, cond, printing, rowMkt, name){
 let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
 function sendToWhatnot(s, el, show, labelOnly){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
-  try{
+  const nolabel=!!(el && el.dataset && el.dataset.nolabel);   // Chinese copy bid: not the English card at its English market, so the lot is not labeled
+  if(!nolabel) try{
     const ds=(el&&el.dataset)||{};
     if(ds.keep && LAST_TAP){   // strip nudge ("bid $15"): same card as the max it raises
       LAST_TAP=Object.assign(cardFields(LAST_TAP), { bid:+s, at:Date.now() }); name=LAST_TAP.n||"";
@@ -1856,6 +1859,177 @@ document.addEventListener("click", e=>{
   if(pid){ FAST_REQ={req:Date.now(), pid, printing:u.searchParams.get("Printing")||"", cond:cc}; extPost(Object.assign({type:"cardcomp-tcg-fast"}, FAST_REQ)); }
   liveNote(`reading ${pid?"every condition":cond?decodeURIComponent(cond):"price"} on TCGplayer…`);
 }, true);
+/* ---------- Chinese copies (Derek, 2026-10-28: "lowest listed with Chinese in the title"; then "check English and JP
+   listings, average of the 3 lowest unless there's a big difference, work on mobile") ----------
+   TCGplayer has no Chinese Pokemon catalog: sellers list Chinese copies on the English or Japanese product, mostly as
+   photo listings titled "... Chinese ...". zhLookup reads the 50 cheapest listings (any language) of up to 8 English +
+   Japanese products, asks again for the Chinese languages / photo listings when the first page's counts show any, and
+   keeps listings whose title, description or language says Chinese. zhSummary averages the 3 cheapest, leaving out any
+   more than 1.5x away from their middle one. Transport (tcgPost): the extension on desktop; on the phone the proxy
+   address from settings (tools/tcg-proxy-worker.js), else a direct request (works only if TCGplayer allows this site). */
+const ZH_RX=/chinese|中文|简体|簡體|繁体|繁體|\b[st]?-?chn\b|\bcn\b|\b[st]-?chinese/i, ZH_FAR=1.5;
+const ZH_WAIT=new Map(), ZH_CACHE=new Map(); let ZH_SEQ=0;
+function tcgPost(url, body){
+  if(WN_EXT) return new Promise((res, rej)=>{
+    const req=(++ZH_SEQ)+"-"+Date.now(), t=setTimeout(()=>{ ZH_WAIT.delete(req); rej(new Error("no reply from the extension (reload it at chrome://extensions, needs 0.9.3)")); }, 9000);
+    ZH_WAIT.set(req, d=>{ clearTimeout(t); d.ok ? res(d.j) : rej(new Error(d.err||"failed")); });
+    extPost({type:"cardcomp-tcg-post", req, url, body});
+  });
+  const px=(($("#cfg-zhproxy")||{}).value||"").trim();
+  const go=(u, b)=>{ const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(), 8000);
+    return fetch(u, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(b), signal:ctl.signal})
+      .then(r=>{ if(!r.ok) throw new Error(new URL(u).host+" "+r.status); return r.json(); })
+      .catch(e=>{ throw e.name==="AbortError" ? new Error(new URL(u).host+" timed out") : e; })
+      .finally(()=>clearTimeout(t)); };
+  if(px) return go(px, {url, body});
+  return go(url, body).catch(e=>{ throw e.name==="TypeError" ? new Error("this browser can't reach TCGplayer directly: add the proxy address in settings") : e; });
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-tcg-post-ack") return;
+  const f=ZH_WAIT.get(d.req); if(f){ ZH_WAIT.delete(d.req); f(d); }
+});
+const tcgListOf=j=>Array.isArray(j)?j : j&&Array.isArray(j.data)?j.data : j&&Array.isArray(j.results)?(j.results[0]&&Array.isArray(j.results[0].results)?j.results[0].results:j.results) : [];
+function tcgAggsOf(j){
+  const r=j&&Array.isArray(j.results)&&j.results[0], a=(r&&r.aggregations)||(j&&j.aggregations)||{};
+  const vals=k=>(Array.isArray(a[k])?a[k]:[]).map(x=>({v:String(x.value!=null?x.value:x.key!=null?x.key:x.name||""), n:+(x.count!=null?x.count:x.docCount)||0}));
+  return {lang:vals("language"), type:vals("listingType")};
+}
+async function zhLookup(cands){
+  const t0=Date.now(), out={ok:true, hits:[], sold:[], checked:0, errs:[], dbg:[], ids:[]};
+  cands=(cands||[]).filter(c=>c && /^\d+$/.test(String(c.pid||""))).slice(0,8);
+  out.ids=cands.map(c=>c.id);
+  const body=term=>({filters:{term:Object.assign({sellerStatus:"Live", channelId:0}, term), range:{quantity:{gte:1}}, exclude:{channelExclusion:0}},
+    from:0, size:50, sort:{field:"price+shipping", order:"asc"}, context:{shippingCountry:"US", cart:{}}, aggregations:["listingType","language"]});
+  await Promise.all(cands.map(async c=>{
+    const pid=String(c.pid), url=`https://mp-search-api.tcgplayer.com/v1/product/${pid}/listings`, rows=[], d={pid, id:c.id};
+    // recent sales of the product, any language / printing, newest first: pages of 25 until 3 Chinese sales or 100 seen
+    const salesP=(async()=>{ let seen=0, n=0, keys=null;
+      for(let off=0; off<100 && n<3; off+=25){
+        const j=await tcgPost(`https://mpapi.tcgplayer.com/v2/product/${pid}/latestsales`, {conditions:[], languages:[], variants:[], listingType:"All", limit:25, offset:off});
+        const rs=tcgListOf(j); if(!keys && rs[0]) keys=Object.keys(rs[0]).slice(0,30); seen+=rs.length;
+        for(const x of rs){
+          const title=x.title||x.listingTitle||x.customListingTitle||"", text=[title, x.language, x.languageAbbreviation, x.customData&&x.customData.title].filter(Boolean).join(" ");
+          const pr=+x.purchasePrice, at=Date.parse(x.orderDate||x.date||"");
+          if(!(pr>0) || !ZH_RX.test(text)) continue;
+          n++; out.sold.push({id:c.id, pid, p:pr, ship:+x.shippingPrice||0, at:at>0?at:0, cond:x.condition||"", title:String(title||x.language||"").slice(0,140)});
+        }
+        if(rs.length<25) break;
+      }
+      Object.assign(d, {sales:seen, salesZh:n, saleKeys:keys}); return "sales"; })();
+    salesP.catch(()=>{});   // read below with allSettled; no unhandled-rejection noise if it fails first
+    try{
+      const j=await tcgPost(url, body({})), ag=tcgAggsOf(j);
+      rows.push(...tcgListOf(j));
+      Object.assign(d, {rows:rows.length, lang:ag.lang, type:ag.type, keys:rows[0]?Object.keys(rows[0]).slice(0,40):[]});
+      const more=[], zl=ag.lang.filter(x=>ZH_RX.test(x.v) && x.n>0).map(x=>x.v);
+      if(zl.length) more.push(tcgPost(url, body({language:zl})));
+      if(ag.type.some(x=>/custom/i.test(x.v) && x.n>0)) more.push(tcgPost(url, body({listingType:["custom"]})));
+      for(const r of await Promise.allSettled(more.concat(salesP))){ if(r.status==="rejected") out.errs.push(pid+": "+r.reason.message); else if(r.value!=="sales") rows.push(...tcgListOf(r.value)); }
+      out.checked++;
+    }catch(e){ out.errs.push(pid+": "+e.message); const r=(await Promise.allSettled([salesP]))[0]; if(r.status==="rejected") out.errs.push(pid+" sales: "+r.reason.message); else out.checked++; }
+    const seen=new Set(); let n=0;
+    for(const x of rows){
+      const k=x.listingId||x.customListingId||JSON.stringify([x.sellerKey, x.price, x.condition]); if(seen.has(k)) continue; seen.add(k);
+      const cd=x.customData||{}, title=cd.title||x.title||x.listingTitle||"";
+      const text=[title, cd.description, x.description, x.language, x.languageAbbreviation].filter(Boolean).join(" ");
+      const p=+x.price; if(!(p>0) || !ZH_RX.test(text)) continue;
+      n++; out.hits.push({id:c.id, pid, p, ship:+x.shippingPrice||0, cond:x.condition||"", lang:x.language||"", title:String(title||x.language||"").slice(0,140), seller:x.sellerName||""});
+    }
+    d.zh=n; out.dbg.push(d);
+  }));
+  out.hits.sort((a,b)=>a.p-b.p);
+  out.sold.sort((a,b)=>b.at-a.at);
+  if(cands.length && !out.checked) out.ok=false;
+  out.ms=Date.now()-t0;
+  return out;
+}
+// 3 prices averaged (listings: the 3 cheapest; sales: the 3 newest); any more than 1.5x from their middle one is left
+// out (2 prices: the cheaper is the middle)
+function zhSummary(hits){
+  const ps=(hits||[]).map(h=>h.p).slice(0,3); if(!ps.length) return null;
+  const srt=ps.slice().sort((a,b)=>a-b);
+  const mid=srt.length===3?srt[1]:srt[0], used=ps.filter(p=>p<=mid*ZH_FAR && p>=mid/ZH_FAR);
+  return {est:used.reduce((a,b)=>a+b,0)/used.length, used, all:ps, out:ps.filter(p=>!used.includes(p))};
+}
+// Candidates: the lead card(s), then the other language's twin (same name in the matching set: EN_TO_JP_NAMES /
+// EN_TO_JP, same rarity tier first), then extras (a reading's other printings), then same name and tier anywhere. Max 8.
+const zhBase=n=>String(n||"").toLowerCase().replace(/\s+\d+\s+\d+\s*$/,"").replace(/\s+-\s+.*$/,"").replace(/\s+/g," ").trim();
+const zhTier=r=>{ r=String(r||"").toLowerCase();
+  return /special (illustration|art)|\bsar\b|\bsir\b/.test(r)?"sar" : /illustration rare|art rare|\bar\b|\bir\b|character/.test(r)?"ar" :
+    /hyper|ultra|secret|\bur\b|\bhr\b|\bsr\b|gold/.test(r)?"ur" : /double|\brr\b/.test(r)?"rr" : "x"; };
+function zhTwinSet(a, b){
+  const en=(a.lang||"en")==="en"?a:b, jp=en===a?b:a; if((en.lang||"en")!=="en" || jp.lang!=="jp") return false;
+  const k=String(en.s||"").toLowerCase(), jn=EN_TO_JP_NAMES[k], jc=EN_TO_JP[k];
+  return !!((jn && jn.includes(jp.s)) || (jc && jc.includes(String(jp.c||"").toLowerCase())));
+}
+function zhCands(lead, extra){
+  const leads=[].concat(lead||[]).filter(Boolean), out=[], seen=new Set();
+  const add=c=>{ if(c && c.pid && !c.sealed && (c.game||"pkmn")==="pkmn" && !seen.has(c.id)){ seen.add(c.id); out.push(c); } };
+  leads.forEach(add);
+  const top=leads[0]; if(!top) return out;
+  const b=zhBase(top.n), tier=zhTier(top.r);
+  const same=CARDS.filter(x=>(x.game||"pkmn")==="pkmn" && !x.sealed && x.pid && zhBase(x.n)===b);
+  const twins=same.filter(x=>(x.lang||"en")!==(top.lang||"en") && zhTwinSet(top, x));
+  twins.filter(x=>zhTier(x.r)===tier).forEach(add);
+  (extra||[]).forEach(add);
+  twins.forEach(add);
+  same.filter(x=>zhTier(x.r)===tier).forEach(add);
+  return out.slice(0,8);
+}
+const zhMoney=v=>"$"+(+v).toFixed(2);
+// One block for the open card and the auto line. Sales first (what Chinese copies actually went for): the 3 newest
+// Chinese sales averaged; the bid uses them when the newest is under 90 days old, else the listings estimate.
+const ZH_SOLD_DAYS=90;
+function zhPick(res){
+  const sold=zhSummary(res.sold), list=zhSummary(res.hits), fresh=res.sold.length && Date.now()-res.sold[0].at < ZH_SOLD_DAYS*864e5;
+  return {sold, list, use: sold && fresh ? "sold" : list ? "listed" : sold ? "sold" : null};
+}
+function zhHTML(res, opt){
+  opt=opt||{};
+  const dbg=' <a class="zhdbg" style="color:var(--blue);cursor:pointer">copy debug</a>';
+  if(!res.ok) return `<span style="color:var(--red)">Chinese price: ${escH((res.errs||[])[0]||"failed")}</span>`+dbg;
+  if(!res.hits.length && !res.sold.length) return `<span style="color:var(--faint)">no TCGplayer listing or recent sale says Chinese (${res.checked} product${res.checked===1?"":"s"} checked, English + Japanese)</span>`+dbg;
+  const pk=zhPick(res), mf=getNum("tgtmargin",10)/100, est=(pk.use==="sold"?pk.sold:pk.list).est, np=netProceeds(listSale(est)), b=wholeBid(bidForMargin(est, mf), np);
+  const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
+  const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `avg of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
+  const left=s=>s.out.length?` <span style="color:var(--faint)">(${s.out.map(zhMoney).join(", ")} left out, too far off)</span>`:"";
+  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button>`:"";
+  const line=(k, s, lab, list)=>{ const on=pk.use===k;
+    return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
+  if(opt.compact){   // the auto line sits in the sticky header: one line
+    const s=pk.use==="sold"?pk.sold:pk.list, list=pk.use==="sold"?res.sold.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "):s.all.map(zhMoney).join(" · ");
+    return line(pk.use, s, pk.use==="sold"?"latest sales":"lowest", list).replace(/<\/div>$/, ` <span style="color:var(--faint)">· ${res.sold.length} sold · ${res.hits.length} listed</span></div>`); }
+  let h="";
+  if(pk.sold){ const s=pk.sold;
+    h+=line("sold", s, s.all.length===1?"sale":"latest sales", res.sold.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "));
+    if(pk.use!=="sold") h+=`<div style="color:var(--faint)">newest sale ${day(res.sold[0].at)}, over ${ZH_SOLD_DAYS} days ago: bid from the listings</div>`; }
+  else h+=`<div style="color:var(--faint)">no Chinese sale in the recent sales of these products</div>`;
+  if(pk.list) h+=line("listed", pk.list, pk.list.all.length===1?"listing":"lowest", pk.list.all.map(zhMoney).join(" · "));
+  else h+=`<div style="color:var(--faint)">no listing says Chinese right now</div>`;
+  const prods=new Set(res.hits.concat(res.sold).map(x=>x.pid)).size;
+  h+=`<div style="color:var(--faint)">${res.sold.length} sold · ${res.hits.length} listed · on ${prods} of ${res.checked} products (English + Japanese) · listings are asks</div>`;
+  const name=c=>{ const x=BY_ID.get(c); return x ? `${escH(x.s)}${x.lang==="jp"?" JP":""} #${escH(x.num)}` : ""; };
+  const row=(x, sold)=>`<div style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sold?"sold ":""}<a href="https://www.tcgplayer.com/product/${escH(x.pid)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none">${zhMoney(x.p)}</a>${sold?" "+day(x.at):x.ship?` +${zhMoney(x.ship)}`:""} ${escH(x.cond)} · ${escH(x.title)} <span style="color:var(--faint)">· ${name(x.id)}</span></div>`;
+  const n=opt.rows!=null?opt.rows:3;
+  return h + res.sold.slice(0,n).map(x=>row(x,true)).join("") + res.hits.slice(0,n).map(x=>row(x,false)).join("");
+}
+// wire a zhHTML block: bid button copies / sends without labeling the lot as the English card, copy debug
+function zhWire(el, res){
+  el.querySelectorAll(".zhbid").forEach(x=>x.onclick=e=>{ e.stopPropagation(); copyAmt(x.dataset.bid, x); });
+  el.querySelectorAll(".zhdbg").forEach(x=>x.onclick=e=>{ e.stopPropagation(); const t=JSON.stringify({errs:res.errs, dbg:res.dbg, hits:res.hits.slice(0,6), sold:res.sold.slice(0,6), ms:res.ms}, null, 1);
+    try{ navigator.clipboard.writeText(t).then(()=>x.textContent="copied", ()=>copyFallback(t, ()=>x.textContent="copied")); }catch(_){ copyFallback(t, ()=>x.textContent="copied"); } });
+}
+// open card: "中 Chinese price" (works on the phone: no extension needed with the proxy set)
+async function zhForCard(card, el){
+  const hit=ZH_CACHE.get(card.id);
+  if(hit && Date.now()-hit.at<10*60e3){ el.innerHTML=zhHTML(hit.res); zhWire(el, hit.res); return; }
+  const cands=zhCands(card);
+  el.innerHTML=`<span style="color:var(--faint)">checking ${cands.length} TCGplayer product${cands.length===1?"":"s"} (English + Japanese) for Chinese listings…</span>`;
+  const res=await zhLookup(cands);
+  ZH_CACHE.set(card.id, {res, at:Date.now()});
+  if(el.isConnected){ el.innerHTML=zhHTML(res); zhWire(el, res); }
+}
+window.zhLookup=zhLookup; window.zhCands=zhCands; window.zhHTML=zhHTML; window.zhWire=zhWire; window.zhSummary=zhSummary; window.zhPick=zhPick;
 // Fast read reply: apply every condition that came back; on failure the page read (already loading) takes over.
 let FAST_REQ=null, FAST_DEBUG="";
 const FAST_AT={};   // live key -> when a fast read landed; page reads of that key are ignored for 2 min
@@ -2892,8 +3066,11 @@ function renderPrices(host, data, prices, src){
     <div class="ovrgo" style="display:none;flex-wrap:wrap;align-items:center;gap:6px;margin:-3px 0 9px"></div>
     <div class="condgrid"></div>
     <div class="livenote" style="display:none;font-size:11px;color:var(--gold);margin-top:7px"></div>
-    <div class="tcglink" style="margin:9px 0 2px"></div>`;
+    <div class="tcglink" style="margin:9px 0 2px"></div>
+    ${card && (card.game||"pkmn")==="pkmn" ? `<div class="zhrow" style="margin:6px 0 2px;font-size:12px;line-height:1.5"><button class="zhbtn" title="cheapest TCGplayer listings that say Chinese, on this card's English and Japanese products" style="background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);cursor:pointer;font:inherit;font-size:12px;padding:7px 10px">中 Chinese copy price</button><div class="zhout"></div></div>` : ""}`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
+  const zhB=host.querySelector(".zhbtn"); if(zhB){ const zo=host.querySelector(".zhout"); zhB.onclick=(e)=>{ e.stopPropagation(); zhB.style.display="none"; zhForCard(card, zo); };
+    const hit=ZH_CACHE.get(card.id); if(hit && Date.now()-hit.at<10*60e3){ zhB.style.display="none"; zo.innerHTML=zhHTML(hit.res); zhWire(zo, hit.res); } }
   // your bid: follows the last bid tapped (copyAmt fills it), −1 / +1 step it, Enter or send puts it into Whatnot / clipboard
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
   const ovrSend=()=>{ if(!(parseFloat(ovrIn.value)>0)) return; copyAmt(ovrIn.value, ovrBtn); };

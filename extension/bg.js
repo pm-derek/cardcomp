@@ -56,6 +56,7 @@ const winOf = (msg, sender) => (sender && sender.tab ? sender.tab.windowId : msg
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg) return;
+  if (msg.type === "cardcomp-tcg-post") { tcgPostRelay(msg).then(reply); return true; }   // CardComp's own TCGplayer listings request (Chinese copy prices)
   if (msg.type === "cardcomp-tcg-fast") {   // condition market / cheapest listing / recent sales straight from TCGplayer's data services
     tcgFast(msg).then((r) => {
       r.ok = Object.values(r.conds || {}).some((c) => c.market > 0);   // any condition priced: the tapped one may have no sales yet

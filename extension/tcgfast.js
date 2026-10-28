@@ -73,49 +73,11 @@ async function tcgFast(q) {
   out.ms = Date.now() - t0;
   return out;
 }
-// Chinese card on stream (Derek, 2026-10-28: "detect that it's Chinese, then find the lowest listed that has Chinese in
-// its title"). TCGplayer has no Chinese Pokemon catalog; sellers put Chinese copies on the English product as listings
-// with photos, the title saying "Chinese". For each English printing the reading could be (q.cands: [{id, pid}], up to 8),
-// read the cheapest listings in any language, and when the first page shows other languages or photo listings, ask for
-// those too. A listing counts when its title / description / language says Chinese. Undocumented fields: the reply
-// carries what each product returned (counts, languages, listing types, field names) so the first live run can be checked.
-const ZH_RX = /chinese|中文|简体|簡體|繁体|繁體|\b[st]?-?chn\b|\bcn\b|\bs-?chinese|\bt-?chinese/i;
-const tcgAggs = (j) => { const r = j && Array.isArray(j.results) && j.results[0]; const a = (r && r.aggregations) || (j && j.aggregations) || {};
-  const vals = (k) => (Array.isArray(a[k]) ? a[k] : []).map((x) => ({ v: String(x.value != null ? x.value : x.key != null ? x.key : x.name || ""), n: +(x.count != null ? x.count : x.docCount) || 0 }));
-  return { lang: vals("language"), type: vals("listingType") }; };
-async function tcgChinese(q) {
-  const t0 = Date.now(), out = { ok: true, hits: [], checked: 0, errs: [], dbg: [] };
-  const cands = (q.cands || []).filter((c) => /^\d+$/.test(String(c.pid || ""))).slice(0, 8);
-  const body = (term) => ({ filters: { term: Object.assign({ sellerStatus: "Live", channelId: 0 }, term), range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } },
-    from: 0, size: 50, sort: { field: "price+shipping", order: "asc" }, context: { shippingCountry: "US", cart: {} }, aggregations: ["listingType", "language"] });
-  await Promise.all(cands.map(async (c) => {
-    const url = `https://mp-search-api.tcgplayer.com/v1/product/${c.pid}/listings`, rows = [], d = { pid: c.pid };
-    try {
-      const j = await tcgJson(url, body({})), ag = tcgAggs(j);
-      rows.push(...tcgList(j));
-      d.rows = rows.length; d.lang = ag.lang; d.type = ag.type; d.keys = rows[0] ? Object.keys(rows[0]).slice(0, 40) : [];
-      const zhLang = ag.lang.filter((x) => ZH_RX.test(x.v) && x.n > 0).map((x) => x.v);
-      const more = [];
-      if (zhLang.length) more.push(tcgJson(url, body({ language: zhLang })));
-      if (ag.type.some((x) => /custom/i.test(x.v) && x.n > 0)) more.push(tcgJson(url, body({ listingType: ["custom"] })));
-      for (const r of await Promise.allSettled(more)) { if (r.status === "fulfilled") rows.push(...tcgList(r.value)); else out.errs.push(c.pid + ": " + r.reason.message); }
-      out.checked++;
-    } catch (e) { out.errs.push(c.pid + ": " + e.message); }
-    const seen = new Set();
-    for (const x of rows) {
-      const k = x.listingId || x.customListingId || JSON.stringify([x.sellerKey, x.price, x.condition]); if (seen.has(k)) continue; seen.add(k);
-      const cd = x.customData || {}, title = cd.title || x.title || x.listingTitle || "";
-      const text = [title, cd.description, x.description, x.language, x.languageAbbreviation].filter(Boolean).join(" ");
-      const p = +x.price; if (!(p > 0) || !ZH_RX.test(text)) continue;
-      out.hits.push({ id: c.id, pid: String(c.pid), p, ship: +x.shippingPrice || 0, cond: x.condition || "", lang: x.language || "", title: String(title || x.language || "").slice(0, 140),
-        seller: x.sellerName || "", photo: !!(cd.title || /custom/i.test(x.listingType || "")), key: cd.linkId || x.customListingKey || "" });
-    }
-    d.zh = out.hits.filter((h) => h.pid === String(c.pid)).length;
-    out.dbg.push(d);
-  }));
-  out.hits.sort((a, b) => a.p - b.p);
-  if (cands.length && !out.checked) out.ok = false;
-  out.ms = Date.now() - t0;
-  return out;
+// Relay for CardComp's own TCGplayer requests (Chinese copy prices, index.html zhLookup): the page cannot call
+// TCGplayer's data services itself (cross-site), the extension can. Only the listings search and the latest sales of one product.
+const TCG_POST_OK = /^https:\/\/(mp-search-api\.tcgplayer\.com\/v1\/product\/\d+\/listings|mpapi\.tcgplayer\.com\/v2\/product\/\d+\/latestsales)$/;
+async function tcgPostRelay(msg) {
+  if (!TCG_POST_OK.test(String(msg.url || ""))) return { ok: false, err: "not a TCGplayer listings address" };
+  try { return { ok: true, j: await tcgJson(msg.url, msg.body || {}) }; } catch (e) { return { ok: false, err: e.message }; }
 }
-if (typeof module !== "undefined" && module.exports) module.exports = { tcgFast, tcgChinese };
+if (typeof module !== "undefined" && module.exports) module.exports = { tcgFast, tcgPostRelay };

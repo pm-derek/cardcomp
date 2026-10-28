@@ -55,7 +55,7 @@
     el.innerHTML = `<span class="modes" id="automodes">${modes.map(([m, l, t]) => `<span data-m="${m}" class="${STATE.mode === m ? "on" : ""}" title="${t}">${l}</span>`).join("")}</span>${STATE.on ? sel : ""}<span id="automsg">${msg}</span>${w}`;
     el.querySelectorAll("#automodes span").forEach((b) => b.onclick = () => { if (b.dataset.m !== STATE.mode) post({ type: "cardcomp-auto-config", mode: b.dataset.m }); });
     paintRead();
-    const cp = $("#zhdbg"); if (cp) cp.onclick = () => { try { navigator.clipboard.writeText(ZHDBG); cp.textContent = "copied"; } catch (_) {} };
+    const zb = $("#autoline .zhauto"); if (zb && ZH_SHOWN && typeof window.zhWire === "function") window.zhWire(zb, ZH_SHOWN);
     const ms = $("#automodel"); if (ms) ms.onchange = () => post({ type: "cardcomp-auto-config", model: ms.value });
     const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); const a = Object.values(AUTO).find((x) => x.best && x.best.m === SHOW.m); if (a) zhBadges(a.zh); };
   }
@@ -232,7 +232,7 @@
     if (!touched) fill(m, r);
     a.filledAt = touched ? 0 : Date.now(); a.pic = null;
     askPic(d, m, a);
-    askZh(d, m, a);
+    askZh(d, m, a, ctxOf(d));
     if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "") + (a.picAsk && a.picAsk.key === d.key && !a.pic ? ' &middot; <span class="wt" id="picwait">' + picWaitTxt() + '</span>' : "");
@@ -262,49 +262,42 @@
     }, 12000);
   }
   // Chinese card (Derek, 2026-10-28: "detect that it's Chinese, then find the lowest listed that has Chinese in its
-  // title"). The extension reads TCGplayer's listings of the English printings the reading could be (the printed number
-  // first: Traditional Chinese follows the Japanese numbering, so it only orders) and returns the listings that say
-  // Chinese. The line shows the cheapest and what the bid would be at that price; results get a "CN $X" badge.
-  let ZHDBG = "";
+  // title"; then "check English and JP listings, average of the 3 lowest"). index.html zhLookup reads the listings of the
+  // printings the reading could be: the Japanese card with the number read first (Traditional Chinese follows the
+  // Japanese numbering), then the English one, their twins, the other printings. The line shows the estimate and a bid;
+  // results get a "CN $X" badge on the printings where a Chinese listing was found.
   const dn = (x) => String(x || "").replace(/^0+/, "");
-  function askZh(d, m, a) {
-    if (m.kind !== "foreign" || m.foreign !== "Chinese") return;
-    const num = dn((d.read || {}).number), pool = (m.pool || m.cards).filter((c) => c.pid && !c.sealed);
-    const cands = pool.filter((c) => num && dn(c.num) === num).concat(pool.filter((c) => !(num && dn(c.num) === num))).slice(0, 8);
+  function askZh(d, m, a, ctx) {
+    if (m.kind !== "foreign" || m.foreign !== "Chinese" || typeof window.zhLookup !== "function") return;
+    const r = d.read || {}, num = dn(r.number);
+    let jp = { cards: [] }; try { jp = window.autoMatch(Object.assign({}, r, { language: "jp" }), Object.assign({ noSwap: true }, ctx)); } catch (_) {}
+    const hasNum = (c) => num && dn(c.num) === num, en = m.pool || m.cards, jpc = jp.pool || jp.cards || [];
+    const leads = [jpc.find(hasNum), en.find(hasNum)].filter(Boolean);
+    const extra = jpc.filter(hasNum).concat(en.filter(hasNum), en, jpc);
+    const cands = window.zhCands(leads.length ? leads : en.slice(0, 1), extra);
     if (!cands.length) return;
     const ask = a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
-    post({ type: "cardcomp-auto-zh", key: d.key, cands: cands.map((c) => ({ id: c.id, pid: c.pid })) });
-    setTimeout(() => { if (a.zhAsk === ask && !a.zh) onZh({ key: d.key, ok: false, errs: ["no reply from the extension in 15 s (reload it at chrome://extensions, needs 0.9.3)"] }); }, 15000);
+    window.zhLookup(cands).then((res) => { if (a.zhAsk === ask) onZh(d.key, res); });
   }
-  const money = (v) => "$" + (+v).toFixed(2);
   function zhBadges(z) {
     if (!z || !z.hits) return;
     const lo = new Map(); for (const h of z.hits) if (!lo.has(h.id)) lo.set(h.id, h.p);   // hits come cheapest first
     for (const [id, p] of lo) {
       const nm = document.querySelector(`#results .card[data-id="${CSS.escape(id)}"] .nm`);
-      if (nm && !nm.querySelector(".autobadge.zh")) nm.insertAdjacentHTML("beforeend", `<span class="autobadge zh" title="cheapest TCGplayer listing that says Chinese">CN ${money(p)}</span>`);
+      if (nm && !nm.querySelector(".autobadge.zh")) nm.insertAdjacentHTML("beforeend", `<span class="autobadge zh" title="cheapest TCGplayer listing on this product that says Chinese">CN $${(+p).toFixed(2)}</span>`);
     }
   }
-  function zhTxt(z, m) {
-    const dbg = ' <a id="zhdbg" title="copy what TCGplayer returned, to paste back">copy debug</a>';
-    if (!z.ok) return `<span class="bad">Chinese listings: ${esc((z.errs || [])[0] || "failed")}</span>` + dbg;
-    if (!z.hits.length) return `<span class="wt">no TCGplayer listing says Chinese (${z.checked} printing${z.checked === 1 ? "" : "s"} checked)</span>` + dbg;
-    const h = z.hits[0], c = (m.pool || m.cards).find((x) => x.id === h.id);
-    let bid = "";
-    try { const mf = getNum("tgtmargin", 10) / 100, np = netProceeds(listSale(h.p)), b = wholeBid(bidForMargin(h.p, mf), np); if (b >= 1) bid = ` &middot; bid at that price <b>$${b}</b>`; } catch (_) {}
-    const tip = z.hits.slice(0, 6).map((x) => `${money(x.p)}${x.ship ? " +" + money(x.ship) + " ship" : ""} ${x.cond} ${x.title}${x.seller ? " (" + x.seller + ")" : ""}`).join("\n");
-    return `<span class="gold">Chinese listed <a href="https://www.tcgplayer.com/product/${esc(h.pid)}" target="_blank" rel="noopener" title="${esc(tip)}">${money(h.p)}</a></span> ${esc(h.cond)}` +
-      (h.ship ? ` +${money(h.ship)} ship` : "") + (c ? ` &middot; on ${esc(c.n)} (${esc(c.s)})` : "") + ` &middot; ${z.hits.length} listed` + bid +
-      ` <span class="wt">(a listing, not a sale)</span>`;
-  }
-  function onZh(d) {
-    const ak = ADOPT[d.key] || d.key, a = AUTO[ak];
-    if (!a || !a.best || !a.zhAsk || a.zhAsk.key !== d.key) return;
-    a.zh = { ok: !!d.ok, hits: d.hits || [], checked: d.checked || 0, errs: d.errs || [], dbg: d.dbg || [], ms: d.ms || 0 };
-    zhBadges(a.zh);
+  let ZH_SHOWN = null;
+  const zhLog = (z) => { if (!z || !z.ok) return null; const s = window.zhSummary(z.hits);
+    return { n: z.hits.length, est: s ? +s.est.toFixed(2) : null, low: s ? s.all : [], id: (z.hits[0] || {}).id || null, checked: z.checked, ids: z.ids }; };
+  function onZh(key, res) {
+    const ak = ADOPT[key] || key, a = AUTO[ak];
+    if (!a || !a.best) return;
+    a.zh = res;
+    zhBadges(res);
     const bd = a.best.d; if ((bd.capAt || bd.key) < LATEST) return;
-    MSG = describe(a.best.m, a.best.r, bd) + " &middot; " + zhTxt(a.zh, a.best.m);
-    ZHDBG = JSON.stringify({ zh: a.zh, read: a.best.r }, null, 1);
+    ZH_SHOWN = res;
+    MSG = describe(a.best.m, a.best.r, bd) + '<div class="zhauto" style="margin-top:3px">' + window.zhHTML(res, { compact: true }) + "</div>";
     paint();
   }
   // picture match needs extension 0.7+ (state carries the version from then on)
@@ -365,7 +358,7 @@
         read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
         kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
         sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id),
-        pic: AUTO[key].pic || null, zh: AUTO[key].zh && AUTO[key].zh.ok ? { n: AUTO[key].zh.hits.length, p: (AUTO[key].zh.hits[0] || {}).p || null, id: (AUTO[key].zh.hits[0] || {}).id || null, checked: AUTO[key].zh.checked } : null, cs: b.d.cs || null, alt: AUTO[key].alt || null };   // alt: the side-by-side reading that was not shown
+        pic: AUTO[key].pic || null, zh: zhLog(AUTO[key].zh), cs: b.d.cs || null, alt: AUTO[key].alt || null };   // alt: the side-by-side reading that was not shown
     } catch (_) {}
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });

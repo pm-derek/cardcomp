@@ -704,17 +704,59 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, status: document.querySelector("#status").textContent, color: document.querySelector("#status").style.color, badge: !!document.querySelector("#results .autobadge"), n: document.querySelectorAll("#results .card").length }));
   ok(/Chinese card/.test(st.line) && /Chinese card/.test(st.status) && /red/.test(st.color) && !st.badge && st.n > 0, "Chinese card: red warning, English printings listed for reference, nothing marked as the card");
-  // Chinese card: the extension is asked for the cheapest listing that says Chinese on those English printings
-  const zq = (await posted()).filter((m) => m.type === "cardcomp-auto-zh").pop();
-  ok(zq && zq.cands.length > 0 && zq.cands.length <= 8 && zq.cands.every((c) => c.id && /^\d+$/.test(String(c.pid))), "Chinese card: asks the extension for Chinese listings on " + (zq ? zq.cands.length : 0) + " English printings");
-  const zc = zq && zq.cands[1] || zq.cands[0];
-  await send({ type: "cardcomp-auto-zh-ack", key: zq.key, ok: true, checked: zq.cands.length, errs: [], dbg: [], hits: [{ id: zc.id, pid: String(zc.pid), p: 14.5, ship: 1.31, cond: "Near Mint", title: "Pikachu ex SIR Chinese Simplified", seller: "zz" }, { id: zc.id, pid: String(zc.pid), p: 19, ship: 0, cond: "Lightly Played", title: "S-Chinese Pikachu", seller: "yy" }] });
-  await ap.waitForTimeout(200);
-  st = await ap.evaluate((id) => ({ line: document.querySelector("#autoline").textContent, badge: (document.querySelector(`#results .card[data-id="${id}"] .autobadge.zh`) || {}).textContent, others: document.querySelectorAll("#results .autobadge").length }), zc.id);
-  ok(/Chinese listed \$14\.50 Near Mint \+\$1\.31 ship/.test(st.line) && /2 listed/.test(st.line) && /bid at that price \$\d+/.test(st.line) && st.badge === "CN $14.50" && st.others === 1, "Chinese listings: cheapest shown with its bid (" + st.line.replace(/\s+/g, " ").slice(-110) + "), CN badge on that printing only");
+  // Chinese card: the app reads TCGplayer listings of the Japanese + English printings (through the extension, mocked
+  // here) and shows the average of the 3 cheapest that say Chinese, leaving out one far off
+  await ap.evaluate(() => { window.__tcgPosts = []; window.addEventListener("message", (e) => {
+    const d = e.data; if (!d || d.type !== "cardcomp-tcg-post") return; window.__tcgPosts.push(d);
+    const pid = d.url.match(/product\/(\d+)/)[1], ack = (j) => setTimeout(() => window.postMessage({ type: "cardcomp-tcg-post-ack", req: d.req, ok: true, j }, location.origin), 20);
+    if (/latestsales/.test(d.url)) {   // newest first; English sales mixed in, one Chinese sale far off
+      const ago = (n) => new Date(Date.now() - n * 864e5).toISOString();
+      const data = pid !== window.__zhPid ? [{ purchasePrice: 60, orderDate: ago(1), condition: "Near Mint", language: "English", title: "" }] :
+        [{ purchasePrice: 61, orderDate: ago(0), condition: "Near Mint", language: "English", title: "" }, { purchasePrice: 12, orderDate: ago(1), condition: "Near Mint", language: "English", title: "Pikachu ex Chinese SAR" },
+         { purchasePrice: 13, orderDate: ago(5), condition: "Lightly Played", language: "English", title: "CHN Pikachu ex" }, { purchasePrice: 40, orderDate: ago(9), condition: "Near Mint", language: "English", title: "Chinese Pikachu ex PSA" }];
+      ack({ data }); return;
+    }
+    const t = d.body.filters.term;
+    const aggs = { language: [{ value: "English", count: 40 }], listingType: [{ value: "standard", count: 38 }, { value: "custom", count: 2 }] };
+    let rows = [{ listingId: pid + "s", price: 50, condition: "Near Mint", language: "English", listingType: "standard" }];
+    if (t.listingType && pid === window.__zhPid) rows = [{ listingId: "c1", price: 14, condition: "Near Mint", listingType: "custom", customData: { title: "Pikachu ex SAR Chinese" }, sellerName: "a" },
+      { listingId: "c2", price: 15, shippingPrice: 1.31, condition: "Near Mint", listingType: "custom", customData: { title: "S-Chinese Pikachu ex" }, sellerName: "b" },
+      { listingId: "c3", price: 9, condition: "Near Mint", listingType: "custom", customData: { title: "Pikachu ex Japanese" } }];
+    if (t.listingType && pid === window.__zhPid2) rows = [{ listingId: "c4", price: 4, condition: "Damaged", listingType: "custom", customData: { title: "Chinese Pikachu ex damaged" } }];
+    ack({ results: [{ aggregations: aggs, results: rows }] });
+  }); });
+  await ap.waitForTimeout(100);
+  const zcands = await ap.evaluate(() => zhCands(CARDS.find((c) => c.lang === "jp" && /^Pikachu ex 132 106$/.test(c.n)), CARDS.filter((c) => c.n === "Pikachu ex" && c.num === "238")).map((c) => c.id + " " + (c.lang || "en") + " " + c.s));
+  ok(/^jp:/.test(zcands[0]) && zcands.some((x) => /Surging Sparks/.test(x)), "Chinese candidates: the Japanese card, then its English twin (" + zcands.slice(0, 3).join(" | ") + ")");
+  await ap.evaluate(() => { window.__zhPid = String(CARDS.find((c) => c.lang === "jp" && c.n === "Pikachu ex 132 106").pid); window.__zhPid2 = String(CARDS.find((c) => c.id === "sv8-238").pid); });
+  await lotEnd();
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "132", total: "106", language: "zh", rarity: "Special Art Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
+  await ap.waitForTimeout(600);
+  const zp = await ap.evaluate(() => window.__tcgPosts.filter((d) => !/latestsales/.test(d.url)).map((d) => d.url.match(/product\/(\d+)/)[1] + (d.body.filters.term.listingType ? "c" : d.body.filters.term.language ? "l" : "")));
+  const zs = await ap.evaluate(() => window.__tcgPosts.filter((d) => /latestsales/.test(d.url)).length);
+  st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, badges: [...document.querySelectorAll("#results .autobadge.zh")].map((b) => b.textContent), bid: (document.querySelector("#autoline .zhbid") || {}).textContent }));
+  const zpid = await ap.evaluate(() => window.__zhPid);
+  ok(zp[0] === zpid && zp.length > 2 && zp.length <= 16, "Chinese card: Japanese #132/106 checked first, then the rest (" + zp.slice(0, 6).join(",") + ")");
+  ok(zs >= zp.filter((x) => /^\d+$/.test(x)).length && /Chinese sold ≈ \$12\.50/.test(st.line) && /avg of 2 of the 3 latest sales/.test(st.line) && /\$40\.00 left out, too far off/.test(st.line) && /bid \$\d+/.test(st.bid || "") && /3 sold · 3 listed/.test(st.line),
+    "auto line: Chinese sold average of the 3 newest without the far one, bid from it (" + st.line.replace(/\s+/g, " ").slice(-150) + ")");
   await ap.screenshot({ path: path.join(OUT, "recog-app-zh.png") });
-  await send({ type: "cardcomp-auto-zh-ack", key: zq.key, ok: true, checked: 3, errs: [], dbg: [{ pid: "1", rows: 50 }], hits: [] }); await ap.waitForTimeout(150);
-  ok(/no TCGplayer listing says Chinese \(3 printings checked\) copy debug/.test(await ap.textContent("#autoline")), "no Chinese listing: says so, with copy debug");
+  // the bid sends without labeling the lot as the English card
+  const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
+  await ap.click("#autoline .zhbid"); await ap.waitForTimeout(150);
+  ok(await ap.evaluate((t0) => JSON.stringify(LAST_TAP) === t0, tap0) && (await posted()).length >= 0, "Chinese bid: sent without labeling the lot as the English card");
+  // open card (phone path too): the button runs the same lookup
+  await ap.evaluate(() => { if (LANG !== "en") setLang("en", true); });
+  await ap.fill("#q", "pikachu ex 238/191"); await ap.waitForTimeout(500);
+  await ap.click('#results .card[data-id="sv8-238"]'); await ap.waitForTimeout(400);
+  await ap.click('#results .card[data-id="sv8-238"] .zhbtn'); await ap.waitForTimeout(600);
+  st = await ap.evaluate(() => (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "");
+  ok(/Chinese sold ≈ \$12\.50/.test(st) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st) && /\$4\.00 left out/.test(st) && !/\$9\.00/.test(st) && /3 sold · 3 listed · on 2 of/.test(st), "open card: '中 Chinese copy price' checks the English card and its Japanese twin (" + st.replace(/\s+/g, " ").slice(0, 260) + ")");
+  await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card.png") });
+  await ap.setViewportSize({ width: 380, height: 800 }); await ap.waitForTimeout(200);
+  await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8-238"] .zhout').scrollIntoView({ block: "end" })); await ap.waitForTimeout(100);
+  await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card-380.png") });
+  await ap.setViewportSize({ width: 660, height: 900 });
+  await ap.fill("#q", "pikachu ex"); await ap.evaluate(() => window.scrollTo(0, 0)); await ap.waitForTimeout(1700); await lotEnd();
   // read now button and watcher status on the line
   await send({ type: "cardcomp-auto-watch", phase: "watching", why: "waiting for the card to hold still", mean: 9, peak: 60 }); await ap.waitForTimeout(150);
   ok(/waiting for the card to hold still/.test(await ap.textContent("#autoline")), "watcher status shown on the auto line");
