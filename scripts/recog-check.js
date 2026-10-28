@@ -704,6 +704,17 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(250);
   st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, status: document.querySelector("#status").textContent, color: document.querySelector("#status").style.color, badge: !!document.querySelector("#results .autobadge"), n: document.querySelectorAll("#results .card").length }));
   ok(/Chinese card/.test(st.line) && /Chinese card/.test(st.status) && /red/.test(st.color) && !st.badge && st.n > 0, "Chinese card: red warning, English printings listed for reference, nothing marked as the card");
+  // Chinese card: the extension is asked for the cheapest listing that says Chinese on those English printings
+  const zq = (await posted()).filter((m) => m.type === "cardcomp-auto-zh").pop();
+  ok(zq && zq.cands.length > 0 && zq.cands.length <= 8 && zq.cands.every((c) => c.id && /^\d+$/.test(String(c.pid))), "Chinese card: asks the extension for Chinese listings on " + (zq ? zq.cands.length : 0) + " English printings");
+  const zc = zq && zq.cands[1] || zq.cands[0];
+  await send({ type: "cardcomp-auto-zh-ack", key: zq.key, ok: true, checked: zq.cands.length, errs: [], dbg: [], hits: [{ id: zc.id, pid: String(zc.pid), p: 14.5, ship: 1.31, cond: "Near Mint", title: "Pikachu ex SIR Chinese Simplified", seller: "zz" }, { id: zc.id, pid: String(zc.pid), p: 19, ship: 0, cond: "Lightly Played", title: "S-Chinese Pikachu", seller: "yy" }] });
+  await ap.waitForTimeout(200);
+  st = await ap.evaluate((id) => ({ line: document.querySelector("#autoline").textContent, badge: (document.querySelector(`#results .card[data-id="${id}"] .autobadge.zh`) || {}).textContent, others: document.querySelectorAll("#results .autobadge").length }), zc.id);
+  ok(/Chinese listed \$14\.50 Near Mint \+\$1\.31 ship/.test(st.line) && /2 listed/.test(st.line) && /bid at that price \$\d+/.test(st.line) && st.badge === "CN $14.50" && st.others === 1, "Chinese listings: cheapest shown with its bid (" + st.line.replace(/\s+/g, " ").slice(-110) + "), CN badge on that printing only");
+  await ap.screenshot({ path: path.join(OUT, "recog-app-zh.png") });
+  await send({ type: "cardcomp-auto-zh-ack", key: zq.key, ok: true, checked: 3, errs: [], dbg: [{ pid: "1", rows: 50 }], hits: [] }); await ap.waitForTimeout(150);
+  ok(/no TCGplayer listing says Chinese \(3 printings checked\) copy debug/.test(await ap.textContent("#autoline")), "no Chinese listing: says so, with copy debug");
   // read now button and watcher status on the line
   await send({ type: "cardcomp-auto-watch", phase: "watching", why: "waiting for the card to hold still", mean: 9, peak: 60 }); await ap.waitForTimeout(150);
   ok(/waiting for the card to hold still/.test(await ap.textContent("#autoline")), "watcher status shown on the auto line");

@@ -4,6 +4,7 @@ window.addEventListener("message", (e) => {
   if (e.source !== window || e.origin !== location.origin) return;
   const d = e.data;
   if (d && /^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }   // RECOG app -> extension
+  if (d && d.type === "cardcomp-auto-zh") { try { chrome.runtime.sendMessage(d, (r) => window.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, errs: [chrome.runtime.lastError.message] } : r, { type: "cardcomp-auto-zh-ack", key: d.key }), location.origin)); } catch (_) {} return; }   // RECOG Chinese listings
   if (d && d.type === "cardcomp-auto-img") { try { chrome.runtime.sendMessage(d, (r) => window.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r, { type: "cardcomp-auto-img-ack", key: d.key, n: d.n }), location.origin)); } catch (_) {} return; }   // RECOG picture match (the reading's key / n win)
   if (d && d.type === "cardcomp-tcg-fast") { try { chrome.runtime.sendMessage(d, (r) => window.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, errs: [chrome.runtime.lastError.message] } : r, { type: "cardcomp-tcg-fast-ack", req: d.req }), location.origin)); } catch (_) {} return; }
   if (d && (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg")) { try { chrome.runtime.sendMessage(d, () => chrome.runtime.lastError); } catch (_) {} return; }

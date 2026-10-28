@@ -289,6 +289,18 @@ is empty or fails, the other fills (`fallback`). The log row carries `recog.src`
 lots (before the picture match, which only runs on the shown one). Undocumented for us until a live call: the exact
 Pokemon `setName` / `number` format; `recog.cs` keeps the raw reply so the mapping can be checked from the log.
 Extension 0.9.0 (host api.cardsight.ai). The key stays in chrome.storage.local, never in the repo or chat.
+Chinese listings (Derek, 2026-10-28: "detect that it's Chinese, then find the lowest listed that has Chinese in its title"):
+TCGplayer has no Chinese Pokemon catalog, so sellers list Chinese copies on the English product (photo listings titled
+"... Chinese ..."). A reading of kind `foreign` / Chinese sends up to 8 English printings of the name (printed number
+first) as `cardcomp-auto-zh`; `tcgChinese` in `extension/tcgfast.js` reads each product's 50 cheapest listings in any
+language, and asks again for the Chinese languages or the photo listings when the first page's counts show any. A listing
+counts when its title / description / language matches `ZH_RX` (Chinese, 中文, 简体, 繁體, CHN, CN, S-Chinese). The auto line
+shows the cheapest ("Chinese listed $14.50 Near Mint +$1.31 ship · on Pikachu ex (30th Celebration) · 2 listed · bid at
+that price $11", "a listing, not a sale"; hover lists the 6 cheapest with titles and sellers), results get a red "CN $X"
+badge, the log row's reading carries `zh {n, p, id, checked}`. No bid chip on purpose: a tap would label the lot as the
+English card at its English market. Listing field names are unverified (cloud sandbox cannot reach TCGplayer): "copy
+debug" on the line gives what each product returned (row count, language / listing type counts, field names).
+Extension 0.9.3. Section 6 of the check script covers it with a mocked reply.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

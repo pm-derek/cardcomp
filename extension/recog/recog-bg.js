@@ -372,6 +372,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "recog-adopt") {   // a card read before the timer started, picture unchanged: it is this lot's reading
     recogAdopt(msg, sender.tab); reply({ ok: true }); return;
   }
+  if (msg.type === "cardcomp-auto-zh") { tcgChinese(msg).then(reply, (e) => reply({ ok: false, errs: [e.message] })); return true; }   // Chinese card: cheapest listing that says Chinese (tcgfast.js)
   if (msg.type === "cardcomp-auto-img") { picRank(msg).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // picture match for a reading
   if (msg.type === "cardcomp-auto-watch") { if (sender.tab) recogToApp(msg, sender.tab); return; }   // watcher status -> CardComp
   if (msg.type === "cardcomp-auto-read") {   // read the stream in the asking CardComp's window
