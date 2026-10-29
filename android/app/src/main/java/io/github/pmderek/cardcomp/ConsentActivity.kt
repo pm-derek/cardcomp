@@ -3,9 +3,7 @@ package io.github.pmderek.cardcomp
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 
@@ -14,15 +12,15 @@ import android.widget.Toast
  * because scanning stops working when I switch screens"). Android ends a capture on its own at times (most of all a
  * "single app" capture when that app's screen changes); the bubble then reads "start", and a tap opens this invisible
  * screen: the system dialog only, then the capture starts again in the running overlay and the read goes ahead.
- * Android 14+: the dialog asks for the whole screen, so switching apps cannot end it.
+ * The dialog is Android's usual one: pick "A single app" and Whatnot, as in the setup screen.
  */
 class ConsentActivity : Activity() {
     companion object {
         const val EXTRA_READ = "read"
         fun captureIntent(ctx: Context): Intent {
-            val mgr = ctx.getSystemService(MediaProjectionManager::class.java)
-            return if (Build.VERSION.SDK_INT >= 34) mgr.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-            else mgr.createScreenCaptureIntent()
+            // the user's choice, not forced to the entire screen (Derek, 2026-10-29: in split screen the whole screen
+            // would put the other app in the frame and shrink the card; "A single app" (Whatnot) reads well)
+            return ctx.getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent()
         }
     }
 

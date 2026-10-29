@@ -664,6 +664,7 @@ class OverlayService : Service() {
         /** one frame of the screen -> window.__phone.frame(req, dataUrl, w, h), or frameFail(req, why) */
         @JavascriptInterface fun grab(req: String): String {
             val c = capture ?: run { main.post { askCapture(false) }; return "screen capture is off: allow it in the dialog, then read again" }
+            if (!c.contentVisible) return "Whatnot is not on screen (the capture is set to Whatnot only): bring it up, then read"
             val q = JSONObject.quote(req)
             main.post {
                 // a whole-screen capture would include the panel and bubble: hide them for the frame (~0.2 s blink).
@@ -673,7 +674,7 @@ class OverlayService : Service() {
                     band?.alpha = 1f; bubble?.alpha = 1f
                     if (bmp == null) {
                         // two empty grabs in a row: the capture is alive in name only (its app gone): treat it as ended
-                        if (++noFrames >= 2 && capture === c) { c.release(); capture = null; captureLost("screen capture stopped giving pictures: tap start on the bubble") }
+                        if (c.contentVisible && ++noFrames >= 2 && capture === c) { c.release(); capture = null; captureLost("screen capture stopped giving pictures: tap start on the bubble") }
                         js("window.__phone.frameFail($q,'no frame from the screen capture: tap start on the bubble if it says so')")
                     }
                     else Thread {

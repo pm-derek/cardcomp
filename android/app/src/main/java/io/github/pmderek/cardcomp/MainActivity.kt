@@ -199,7 +199,7 @@ class MainActivity : Activity() {
         if (!Settings.canDrawOverlays(this)) { toast("allow display over other apps first (Setup 1)"); return }
         if (prefs.anthropicKey.isEmpty()) toast("no API key yet: reads will fail until you add one")
         @Suppress("DEPRECATION")
-        startActivityForResult(ConsentActivity.captureIntent(this), 7)   // whole screen on Android 14+: switching apps cannot end it
+        startActivityForResult(ConsentActivity.captureIntent(this), 7)
     }
 
     @Deprecated("Deprecated in Java")
