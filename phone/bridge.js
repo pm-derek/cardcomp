@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.5";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.6";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -575,6 +575,8 @@
     "#phonealert .pzh span{flex:1;min-width:0}#phonealert .pzh button{flex:none;font-size:14px;color:#000;background:var(--gold);border-color:var(--gold);padding:6px 10px}" +
     "#phonebar .zl{font-size:11px;line-height:1.3;color:var(--ink);margin-top:3px}#phonebar .zl small{color:var(--dim);font-size:10px}#phonebar .zl.on b{color:var(--gold)}" +
     "#phonebar .zhb{font:inherit;font-size:16px;font-weight:800;color:#000;background:var(--gold);border:0;border-radius:8px;padding:7px 14px}#phonebar .zl .bad{color:var(--red)}" +
+    "#phonealert .pwarn{flex:1 1 100%;background:#c0392b;color:#fff;font-weight:800;font-size:13px;line-height:1.3;border-radius:8px;padding:8px 10px;margin:3px 0;animation:phsh .3s 3}" +
+    "#phonestat .okn{color:var(--gold)}" +
     "#phonealert .na{color:var(--gold)}#phonealert button{font:inherit;font-size:11px;font-weight:700;color:var(--ink);background:rgba(255,107,107,.14);border:1px solid var(--red);border-radius:6px;padding:3px 8px}" +
     "body:not(.ph-card) #phonealert{display:none}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
@@ -979,6 +981,7 @@
       const zb = zh.querySelector(".zhbid"), txt = (zh.textContent || "").replace(zb ? zb.textContent : "", "").replace(/\s+/g, " ").trim();
       out.push(`<div class="pzh"><span>中 ${esc(txt)}</span>${zb ? `<button data-t="zhbid">${esc(zb.textContent.trim())}</button>` : ""}</div>`);
     } else if (am && /chinese/i.test(am.textContent || "") && typeof window.zhLookup === "function" && fromRead()) out.push(`<div class="pzh"><span>中 Chinese card: checking Chinese copy prices on TCGplayer…</span></div>`);
+    if (WARN && WARN.until > Date.now()) out.unshift(`<div class="pwarn">${esc(WARN.txt)}</div>`);
     const html = [...new Set(out)].join("");
     if (al.innerHTML !== html) {
       al.innerHTML = html;
@@ -1002,19 +1005,25 @@
     if (MODE === "card" && !/^(reading|no card)/i.test(t) && !(b00 && b00.textContent.trim() === (am.textContent || "").trim())) t = "";
     const b0 = am && am.querySelector(".bad"), bad = b0 && b0.textContent.trim() === am.textContent.trim();   // red only when the whole line is an error
     let html = t ? (bad ? `<span class="bad">${esc(t)}</span>` : esc(t)) + (P.lastFrame ? ' · <a class="fr" href="#">frame</a>' : "") : "";
-    if (NOTE && NOTE.until > Date.now()) html = `<span class="bad">${esc(NOTE.txt)}</span>`;
+    if (NOTE && NOTE.until > Date.now()) html = NOTE.ok ? `<span class="okn">${esc(NOTE.txt)}</span>` : `<span class="bad">${esc(NOTE.txt)}</span>`;
     if (st.innerHTML !== html) st.innerHTML = html;   // only on change: this runs from a body observer
   }
   // the Custom sheet result from the app: {ok} entered (Derek presses Submit), {why:"under", min}, {why:"sold"}, or why it could not
-  let NOTE = null;   // {txt, until}: a short message on the small card (why the Custom fill did not happen)
+  let NOTE = null;
+  let WARN = null;   // {txt, until}: a big red warning on the small card (Max Bid off: nothing entered)   // {txt, until}: a short message on the small card (why the Custom fill did not happen)
   P.bidAck = function (r) {
     r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r);
-    if (!r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) { NOTE = { txt: "Custom box: " + r.why + " (bid copied, paste it)", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
+    // Max bids only (Derek, 2026-10-29): the app switches Whatnot's Max Bid on; when it could not, it entered nothing and
+    // the small card says so loudly, so an exact bid is never placed by accident
+    if (!r.ok && r.why === "exact") { WARN = { txt: "⚠ Max Bid is OFF in Whatnot. Nothing entered: turn Max Bid on, then tap the bid again.", until: Date.now() + 20000 }; paintAlerts(); sizeSoon(); setTimeout(() => { paintAlerts(); sizeSoon(); }, 20100); }
+    else if (r.ok && r.maxOn) { WARN = null; paintAlerts(); NOTE = { txt: "Max Bid was off in Whatnot: switched it on. Check, then Submit.", until: Date.now() + 8000, ok: true }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 8100); }
+    else if (r.ok) { WARN = null; paintAlerts(); }
+    if (!r.ok && r.why && !/^(copied|under|sold|exact)$/.test(r.why)) { NOTE = { txt: "Custom box: " + r.why + " (bid copied, paste it)", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
     // the app switches the sheet's Max Bid on (Derek: max bids only); if it could not, Submit would place an exact bid
     if (r.ok && r.exact) { NOTE = { txt: "Max Bid is still OFF in Whatnot: switch it on before Submit, or it places an exact bid of the full amount.", until: Date.now() + 12000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 12100); }
   };
   function flashBid(r) {
-    const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";
+    const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : r && r.why === "exact" ? "max off!" : "copied ✓";
     if (r && !r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) log("custom fill: " + r.why);
     FLASH = { txt, cond: (typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.cond) || "NM", until: Date.now() + 2500 }; paintBar(); setTimeout(paintBar, 2600);
   }

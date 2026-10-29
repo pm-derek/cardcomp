@@ -344,9 +344,13 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
     `read saved (the previous read is saved when the next starts): ${jl.u ? jl.u.split("/contents/")[1] : "none"} (read ${je.read && je.read.name}, match ${je.match && je.match.kind}, ${JSON.stringify(je).length} bytes, no picture)`);
   await page.evaluate(() => { window.Android.key = window.__keyOrig; });
 
-  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: true, how: "typed", exact: true }); }); await page.waitForTimeout(200);
-  const ex = await page.evaluate(() => (document.querySelector("#phonestat") || {}).textContent || "");
-  ok(/Max Bid is still OFF/.test(ex), "Max Bid could not be switched on (\"Submit Exact Bid\"): the small card warns: " + ex);
+  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: false, why: "exact" }); }); await page.waitForTimeout(250);
+  const ex = await page.evaluate(() => ({ warn: (document.querySelector("#phonealert .pwarn") || {}).textContent || "", bg: (() => { const w = document.querySelector("#phonealert .pwarn"); return w ? getComputedStyle(w).backgroundColor : ""; })() }));
+  ok(/Max Bid is OFF in Whatnot\. Nothing entered/.test(ex.warn) && /192, 57, 43/.test(ex.bg), "Max Bid off and could not be switched: nothing entered, big red warning: " + ex.warn);
+  await page.screenshot({ path: path.join(OUT, "phone-maxoff.png") });
+  await page.evaluate(() => window.__phone.bidAck({ ok: true, how: "typed", maxOn: true })); await page.waitForTimeout(250);
+  const mo = await page.evaluate(() => ({ warn: !!document.querySelector("#phonealert .pwarn"), st: (document.querySelector("#phonestat") || {}).textContent || "" }));
+  ok(!mo.warn && /switched it on/.test(mo.st), "Max Bid switched on by the app: the warning goes, a gold note says so: " + mo.st);
 
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;

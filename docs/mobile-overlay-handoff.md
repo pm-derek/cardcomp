@@ -624,3 +624,8 @@ Derek: "the button for minimizing the overlay when it's expanded is hard to find
 view the panel's top bar is now 40 dp tall (26 on the small card) and its left button is a gold "▾ shrink" pill
 (112 dp wide, `styleCollapse`); on the small card it stays the plain – that folds the panel into the bubble. Also:
 PR #91 (English / Japanese Chinese prices apart) was closed unmerged; Derek prefers the pooled price.
+Max Bid signal (Derek, 2026-10-29: he set Exact by hand, tapped a bid and "nothing happened... we shouldn't put in the
+price for me to accidentally bid incorrectly; give me a signal"): when the switch cannot be turned on, the fill now
+enters nothing (`no("exact")`) and the small card shows a big red "⚠ Max Bid is OFF in Whatnot. Nothing entered" banner
+for 20 s (`WARN` in `#phonealert`); when the app switched it on itself, a gold note says so. His test ran on the old APK
+(the dump says "live screen not in front"), so the switch itself still waits for the first run on the new APK.
