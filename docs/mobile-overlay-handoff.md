@@ -568,3 +568,13 @@ card starts on that printing and its chip has a dashed edge; a chip Derek tapped
   Whatnot's own window is searched (split screen once matched Chrome's "Customize and control" as Custom) and live
   means its bid row or sheet is on screen. Replayed on every failed dump: 19 now open Custom, 9 are sold lots (enter
   nothing, as before), 2 had the sheet opening late (now waits up to 1 s). Needs the new APK.
+
+## 0.14.1 (2026-10-29): faster reads
+
+Derek: "search is taking 5s each". 71 phone reads in the log: the model call median 2.8 s (p90 5.0 s, all Sonnet),
+the picture match median 0.8 s (p90 2.7 s; downloading up to 80 photos, median 15 usable), the capture ~0.3 s, and
+0.14's dim kept the card hidden until all of it was done. Now the likely cards are usable at the partial reading
+(name and number streamed, ~1 s before the full reply; the bar says "found X, checking the rest"), the photos of every
+printing of that name start downloading at the partial (in-flight downloads shared with the picture match), and the
+frame is decoded for the match while the model reads. Haiku stays an option on the setup screen (1-2.7 s) but it
+invents collector numbers on 720p streams, so Sonnet stays the default. phone-check 3c covers it.

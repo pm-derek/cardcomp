@@ -184,8 +184,8 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
-  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = Math.floor(bidForMargin(m, 0)); return x.be === "$" + be && be >= +x.bid.slice(1); }), rows);
-  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0), and never below the suggested bid");
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForMargin(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
+  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
   ok(gridNM && rows[0].bid === "$" + gridNM, "NM pill sends what the full grid's NM sends: $" + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
@@ -256,6 +256,26 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(sel === 0, "no visible <select> (an overlay WebView crashes on dropdowns)");
 
 
+  console.log("3c. speed: likely cards at the partial reading, photos fetched while the model finishes");
+  await page.evaluate(() => {   // a streamed reply: name and number at 300 ms, the rest at 1.5 s
+    window.__rr = window.recogRead;
+    window.recogRead = (img, mk, key, onPartial) => new Promise((res) => {
+      setTimeout(() => onPartial && onPartial({ name: "Pikachu", number: "58", total: "102", language: "en" }, 300), 300);
+      setTimeout(() => res({ read: { card_visible: true, name: "Pikachu", number: "58", total: "102", language: "en", rarity: "Common", finish: "", set: "Base", confidence: 0.9, box: [] }, ms: 1500, model: "claude-sonnet-5-5", cost: 0 }), 1500);
+    });
+  });
+  const img0 = (await calls()).filter((x) => x.n === "img").length;
+  await page.evaluate(() => window.__phone.readNow("bubble"));
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { const cv = document.createElement("canvas"); cv.width = 64; cv.height = 96; cv.getContext("2d").fillRect(0, 0, 64, 96); window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 720, 1560); });
+  await page.waitForTimeout(800);
+  const sp = await page.evaluate(() => ({ cls: document.querySelector("#phonecard").className, bar: document.querySelector("#phoneread").textContent, dim: getComputedStyle(document.querySelector("#phonebar")).opacity, imgs: window.__calls.filter((x) => x.n === "img").length }));
+  ok(/partial/.test(sp.cls) && +sp.dim === 1 && /found Pikachu 58\/102, checking the rest/.test(sp.bar) && sp.imgs > img0, `at the partial reading the card is usable and photos are downloading (${sp.imgs - img0} so far, bar: ${sp.bar})`);
+  await page.waitForTimeout(1500);
+  const sf = await page.evaluate(() => ({ bar: document.querySelector("#phoneread").className, cls: document.querySelector("#phonecard").className }));
+  ok(!sf.bar && !/reading/.test(sf.cls), "full reply: bar gone");
+  await page.evaluate(() => { window.recogRead = window.__rr; });
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box
@@ -314,6 +334,14 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const st1 = await page.evaluate(([i, w, h]) => window.__phone.readLotPhone(i, w, h), [live(140, 2, "00:08", "onestop_collectables", 3), W, H]);
   ok(st1.title === "Card on screen #140" && st1.cur === 2 && st1.timer === "00:08" && st1.lead === "onestop_collectables" && st1.next === 3 && st1.seller === "domvault_card" && st1.viewers === 39 && st1.ship === 0.38 && st1.cond === "NM",
     "live lot read: " + JSON.stringify({ title: st1.title, cur: st1.cur, timer: st1.timer, lead: st1.lead, next: st1.next, seller: st1.seller, viewers: st1.viewers, ship: st1.ship, cond: st1.cond }));
+  // chat minimized (Derek's screenshot, gamecitytcg 2026-10-28): no chat box, the leader line sits right above the title
+  const mini = [T("gamecitytcg", 158, 95, 370, 142), T("5.0", 208, 168, 256, 213), T("57", 873, 145, 911, 184),
+    T("mexicanjocker is winning!", 101, 1845, 640, 1895), T("$1 Start Singles #183", 259, 1920, 677, 1973), T("New • Card", 259, 1990, 447, 2030),
+    T("$0.78 Shipping + Taxes", 259, 2050, 650, 2095), T("$2", 983, 1920, 1035, 1973), T("00:00", 936, 1990, 1035, 2035),
+    T("Custom", 160, 2160, 330, 2210, 1), T("Bid $3", 590, 2160, 740, 2210, 1)];
+  const stm = await page.evaluate(([i, w, h]) => window.__phone.readLotPhone(i, w, h), [mini, W, H]);
+  ok(stm.title === "$1 Start Singles #183" && stm.cur === 2 && stm.lead === "mexicanjocker" && stm.next === 3 && stm.ship === 0.78 && stm.timer === "00:00" && stm.seller === "gamecitytcg" && stm.cond === "NM",
+    "chat minimized: lot still read: " + JSON.stringify({ title: stm.title, cur: stm.cur, lead: stm.lead, next: stm.next, ship: stm.ship, timer: stm.timer, seller: stm.seller, cond: stm.cond }));
   await feed(live(140, 2, "00:08", "onestop_collectables", 3));
   await page.waitForTimeout(200);
   const strip = await page.evaluate(() => { const el = document.querySelector("#lotstrip"); return { t: el ? el.textContent : "", shown: !!el && getComputedStyle(el).display !== "none" }; });
@@ -374,7 +402,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "sylveon 040/131"; run("sylveon 040/131"); window.__phone.setMode("card"); });
   await page.waitForTimeout(900);
   const pc0 = await page.evaluate(() => ({ chips: Array.from(document.querySelectorAll("#phonebar .pq")).map((x) => x.textContent), on: (document.querySelector("#phonebar .pq.on") || {}).textContent || "", name: (document.querySelector("#phonebar .pn b") || {}).textContent }));
-  ok(pc0.name === "Sylveon" && pc0.chips.length === 4 && pc0.chips.some((t) => /^Reverse/.test(t)) && pc0.chips.some((t) => /^Master Ball/.test(t)), "small card shows every printing as a chip: " + pc0.chips.join(" | ") + " (on: " + pc0.on + ")");
+  ok(pc0.name === "Sylveon" && pc0.chips.length === 4 && pc0.chips.some((t) => /^Reverse/.test(t)) && pc0.chips.some((t) => /^Master/.test(t)), "small card shows every printing as a chip: " + pc0.chips.join(" | ") + " (on: " + pc0.on + ")");
   // a reading that saw a reverse holo starts the card on Reverse
   await page.evaluate(() => { document.querySelector("#q").value = ""; run(""); });
   await page.waitForTimeout(200);

@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.14.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.14.3";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -59,6 +59,7 @@
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phoneread"), on = readBusy();
     w.classList.toggle("reading", on);
+    w.classList.toggle("partial", on && READING.phase === "partial");   // likely cards are listed: usable while the rest streams
     if (!on) { if (READING) READING = null; el.className = ""; el.innerHTML = ""; clearInterval(readTick); readTick = 0; sizeSoon(); return; }
     const secs = ((Date.now() - READING.at) / 1000).toFixed(1);
     const txt = READING.phase === "partial" && READING.what ? `found ${READING.what}, checking the rest` : READING.phase === "model" ? "reading the card" : "taking the picture";
@@ -88,17 +89,19 @@
 
   async function runRead(img, w, h, p) {
     P.lastFrame = img;   // "frame" on the status line shows what was read
-    FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), { img, box: null, at: Date.now() });   // the picture match ranks this frame (box once the reply names it)
+    const fr0 = { img, box: null, at: Date.now() };
+    FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), fr0);   // the picture match ranks this frame (box once the reply names it)
     for (const [k, f] of FRAMES) if (Date.now() - f.at > 5 * 60e3) FRAMES.delete(k);
     const c = cfg(), modelKey = c.model || "sonnet", key = p.at;   // keyed by press time, like the extension's read now
     const auto = p.src === "auto", lk = auto && lot ? lot.startedAt : key;   // an automatic read belongs to its lot (auto-ui keys readings by lot)
     const head = { type: "cardcomp-auto", key: lk, n: 1, capAt: key, title: auto && lot ? lot.title : "", seller: auto ? SELLER : "", pre: false, manual: !auto };
     if (!(await loadReader())) { toApp(Object.assign(head, { error: "reader not loaded (extension/recog/recog-read.js)" })); return; }
+    if (typeof IM !== "undefined" && !fr0.pxP) fr0.pxP = IM.load(img).then((px) => (fr0.px = px), () => null);   // decode the frame for the picture match while the model reads
     let apiKey = ""; try { apiKey = A.key("anthropic") || ""; } catch (_) {}
     if (!apiKey) { toApp(Object.assign(head, { error: "no API key: add it in the CardComp app" })); return; }
     const short = Math.min(w || 0, h || 0);
     const res = await recogRead(img, modelKey, apiKey, (read, ms) => {
-      if (read && read.name) readState(true, "partial", read.name + (read.number ? " " + read.number + (read.total ? "/" + read.total : "") : ""));
+      if (read && read.name) { readState(true, "partial", read.name + (read.number ? " " + read.number + (read.total ? "/" + read.total : "") : "")); warmPhotos(read); }
       toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short }));
     });
     if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(lk)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
@@ -319,20 +322,41 @@
   P.img = function (req, data) { const f = IMGQ[req]; delete IMGQ[req]; if (f) f(data || ""); };
   const photo = (url) => new Promise((res) => { const r = "i" + (++IMGN); IMGQ[r] = res; try { A.img(url, r); } catch (_) { delete IMGQ[r]; res(""); } setTimeout(() => { if (IMGQ[r]) { delete IMGQ[r]; res(""); } }, 15000); });
   const TEMPS = new Map();   // photo url -> normalized cells, or null when there is no usable photo
-  async function cells(url) {
-    if (TEMPS.has(url)) return TEMPS.get(url);
-    let t = null;
-    const data = await photo(url);
-    if (data) { try { t = IM.normalize(IM.cardCells(await IM.load(data, 300))); } catch (_) { t = null; } }
-    if (TEMPS.size > 3000) TEMPS.clear();
-    TEMPS.set(url, t); return t;
+  const INFLIGHT = new Map();   // photo url -> promise: a download already running (started at the partial reading) is shared
+  function cells(url) {
+    if (TEMPS.has(url)) return Promise.resolve(TEMPS.get(url));
+    if (INFLIGHT.has(url)) return INFLIGHT.get(url);
+    const p = (async () => {
+      let t = null;
+      const data = await photo(url);
+      if (typeof IM === "undefined") { INFLIGHT.delete(url); return null; }   // matcher not loaded yet: do not remember "no photo"
+      if (data) { try { t = IM.normalize(IM.cardCells(await IM.load(data, 300))); } catch (_) { t = null; } }
+      if (TEMPS.size > 3000) TEMPS.clear();
+      TEMPS.set(url, t); INFLIGHT.delete(url); return t;
+    })();
+    INFLIGHT.set(url, p); return p;
+  }
+  // Speed (Derek, 2026-10-29: "search is taking 5s each"): the picture match waited for the full reply, then downloaded
+  // up to 80 photos (median 0.8 s, p90 2.7 s on the phone). The partial reading already names the card, so the photos
+  // of every printing of that name start downloading then, while the model finishes.
+  const picUrlOf = (c) => c && c.pid ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.pid}_200w.jpg` : (typeof imgOf === "function" && c ? imgOf(c) : "");
+  let WARMED = "";
+  function warmPhotos(read) {
+    try {
+      const k = (read.name || "") + "|" + (read.language || read.lang || ""); if (!read.name || k === WARMED || typeof window.autoMatch !== "function") return;
+      WARMED = k;
+      const m = window.autoMatch(Object.assign({}, read, { finish: "" }), {});
+      if (!m || m.kind === "foreign" || m.kind === "none") return;
+      const urls = (m.pool || m.cards || []).slice(0, 80).map(picUrlOf).filter((u) => /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(u));
+      (async () => { for (let i = 0; i < urls.length; i += 8) await Promise.all(urls.slice(i, i + 8).map(cells)); })();
+    } catch (_) {}
   }
   async function picRank(msg) {
     if (typeof IM === "undefined") return { ok: false, why: "no picture matcher", cands: 0 };
     const f = FRAMES.get(String(msg.key));
     if (!f) return { ok: false, why: "frame gone", cands: 0 };
     const t0 = Date.now();
-    if (!f.px) f.px = await IM.load(f.img);
+    if (!f.px) f.px = await (f.pxP || IM.load(f.img));
     const cands = (msg.cands || []).slice(0, 80).filter((c) => c && c.id && /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u || ""));
     const got = [];
     for (let i = 0; i < cands.length; i += 8) got.push(...await Promise.all(cands.slice(i, i + 8).map(async (c) => ({ id: c.id, t: await cells(c.u) }))));
@@ -519,16 +543,17 @@
     "#phonebar .pp{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:4px;margin:2px 0 1px}" +
     "#phonebar .pq{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;height:29px;border:1.5px solid var(--line);border-radius:8px;color:var(--ink);cursor:pointer;line-height:1.1;padding:0 2px}" +
     "#phonebar .pq b{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}#phonebar .pq i{font-style:normal;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}" +
+    "#phonebar .pp.n4 .pq b{font-size:10px;letter-spacing:-.2px}#phonebar .pp.n4 .pq i{font-size:9.5px}" +
     "#phonebar .pq.on{background:var(--gold);border-color:var(--gold);color:#000}#phonebar .pq.on i{color:#000}" +
     "#phonebar .pq.rd:not(.on){border-style:dashed;border-color:var(--gold)}" +
     "#phonebar .pmiss{font-size:10.5px;color:var(--red);line-height:1.2;margin:1px 0}" +
     // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
     "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
     "#phonebar .prow::-webkit-scrollbar{display:none}" +
-    "#phonebar .pb{flex:0 0 44%;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:58px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
+    "#phonebar .pb{flex:0 0 44%;min-width:0;overflow:hidden;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:58px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
     "#phonebar .pb em{font-style:normal;font-size:10px;font-weight:700}" +
     "#phonebar .pb b{font-size:17px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
-    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15}" +
+    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis}" +
     "#phonebar .pb small i{font-style:normal;color:var(--faint);margin-right:3px}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pk{padding:3px 0 2px}#phonebar .pkh{font-size:10.5px;color:var(--dim)}#phonebar .pkh b{color:var(--gold);font-size:12px;margin-right:4px}" +
@@ -545,7 +570,7 @@
     "#phoneread b{overflow:hidden;text-overflow:ellipsis}#phoneread .sec{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700}#phoneread .still{font-weight:700;color:#7a1010}" +
     "#phoneread .sp{flex:none;width:11px;height:11px;border:2px solid #000;border-right-color:transparent;border-radius:50%;animation:phsp .7s linear infinite}@keyframes phsp{to{transform:rotate(360deg)}}" +
     "#phoneread.still{animation:phsh .3s 2}@keyframes phsh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}" +
-    "#phonecard.reading #phonebar{opacity:.3;pointer-events:none;filter:grayscale(.6)}#phonecard.reading #phonealert{opacity:.4}" +
+    "#phonecard.reading:not(.partial) #phonebar{opacity:.35;filter:grayscale(.6)}#phonecard.reading:not(.partial) #phonealert{opacity:.4}" +
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
@@ -603,6 +628,12 @@
     wrapEl = document.createElement("div"); wrapEl.id = "phonecard";
     wrapEl.innerHTML = '<div id="phoneread"></div><div id="phonebar"></div><div id="phonealert"></div><div id="phonestat"></div>';
     sr.insertBefore(wrapEl, sr.firstChild);
+    // a tap on the dimmed card while a read runs is not lost silently (Derek, 2026-10-29: "failed 5x in a row" with no
+    // taps logged): the bar shakes and says still reading; the old card's bid is not sent
+    wrapEl.addEventListener("click", (e) => {
+      if (!wrapEl.classList.contains("reading") || wrapEl.classList.contains("partial") || !e.target.closest("#phonebar")) return;
+      e.preventDefault(); e.stopPropagation(); P.stillReading();
+    }, true);
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
       setMode("list");
@@ -670,8 +701,9 @@
     window.autoMatch.__ph = true;
   }
   // break-even: the most you can pay and not lose money (fees, shipping and your list markup, 0% margin): the app's own
-  // bidForMargin at 0, what the desktop tiles call "b/e". Whole dollars, rounded down like every bid.
-  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? Math.floor(bidForMargin(mkt, 0)) : 0; return v >= 1 ? "$" + v : "–"; } catch (_) { return "–"; } };
+  // bidForMargin at 0, what the desktop tiles call "b/e". Shown with cents.
+  // with cents (Derek, 2026-10-29: "b/e needs to show cents"): it is a ceiling to judge against, not a bid to send
+  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? bidForMargin(mkt, 0) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
   // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
   // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
   // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card
@@ -719,9 +751,9 @@
     const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
     const readK = READ_PRINT && READ_PRINT.id === r.id ? READ_PRINT.k : "";
     const labs = printLabels(pks.map((c) => c.dataset.k));
-    const pchips = pks.length > 1 ? `<div class="pp">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0; return { c, v, l: labs[c.dataset.k] }; })
+    const pchips = pks.length > 1 ? `<div class="pp${pks.length >= 4 ? " n4" : ""}" style="grid-template-columns:repeat(${Math.min(pks.length, 4)},minmax(0,1fr))">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0; return { c, v, l: labs[c.dataset.k] }; })
       .sort((a, b) => a.l.rank - b.l.rank || b.v - a.v).map(({ c, v, l }) =>
-      `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}" title="${esc(typeof prettyPrinting === "function" ? prettyPrinting(c.dataset.k) : c.dataset.k)}${c.dataset.k === readK ? " (the printing the read saw)" : ""}"><b>${esc(l.t)}</b><i>${v > 0 ? money(v).replace(/\.\d\d$/, (x) => (v >= 10 ? "" : x)) : "–"}</i></span>`).join("") + `</div>` : "";
+      `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}" title="${esc(typeof prettyPrinting === "function" ? prettyPrinting(c.dataset.k) : c.dataset.k)}${c.dataset.k === readK ? " (the printing the read saw)" : ""}"><b>${esc(pks.length >= 4 && l.t === "Master Ball" ? "Master" : l.t)}</b><i>${v > 0 ? money(v).replace(/\.\d\d$/, (x) => (v >= 10 ? "" : x)) : "–"}</i></span>`).join("") + `</div>` : "";
     let rows;
     if (btns.length) {
       const whole = (t) => { const v = Math.floor(parseFloat(String(t).replace(/[^0-9.]/g, "")) || 0); return v >= 1 ? "$" + v : "<$1"; };   // what copyAmt copies
