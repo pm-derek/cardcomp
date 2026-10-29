@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.14.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.14.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -59,6 +59,7 @@
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phoneread"), on = readBusy();
     w.classList.toggle("reading", on);
+    w.classList.toggle("partial", on && READING.phase === "partial");   // likely cards are listed: usable while the rest streams
     if (!on) { if (READING) READING = null; el.className = ""; el.innerHTML = ""; clearInterval(readTick); readTick = 0; sizeSoon(); return; }
     const secs = ((Date.now() - READING.at) / 1000).toFixed(1);
     const txt = READING.phase === "partial" && READING.what ? `found ${READING.what}, checking the rest` : READING.phase === "model" ? "reading the card" : "taking the picture";
@@ -88,17 +89,19 @@
 
   async function runRead(img, w, h, p) {
     P.lastFrame = img;   // "frame" on the status line shows what was read
-    FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), { img, box: null, at: Date.now() });   // the picture match ranks this frame (box once the reply names it)
+    const fr0 = { img, box: null, at: Date.now() };
+    FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), fr0);   // the picture match ranks this frame (box once the reply names it)
     for (const [k, f] of FRAMES) if (Date.now() - f.at > 5 * 60e3) FRAMES.delete(k);
     const c = cfg(), modelKey = c.model || "sonnet", key = p.at;   // keyed by press time, like the extension's read now
     const auto = p.src === "auto", lk = auto && lot ? lot.startedAt : key;   // an automatic read belongs to its lot (auto-ui keys readings by lot)
     const head = { type: "cardcomp-auto", key: lk, n: 1, capAt: key, title: auto && lot ? lot.title : "", seller: auto ? SELLER : "", pre: false, manual: !auto };
     if (!(await loadReader())) { toApp(Object.assign(head, { error: "reader not loaded (extension/recog/recog-read.js)" })); return; }
+    if (typeof IM !== "undefined" && !fr0.pxP) fr0.pxP = IM.load(img).then((px) => (fr0.px = px), () => null);   // decode the frame for the picture match while the model reads
     let apiKey = ""; try { apiKey = A.key("anthropic") || ""; } catch (_) {}
     if (!apiKey) { toApp(Object.assign(head, { error: "no API key: add it in the CardComp app" })); return; }
     const short = Math.min(w || 0, h || 0);
     const res = await recogRead(img, modelKey, apiKey, (read, ms) => {
-      if (read && read.name) readState(true, "partial", read.name + (read.number ? " " + read.number + (read.total ? "/" + read.total : "") : ""));
+      if (read && read.name) { readState(true, "partial", read.name + (read.number ? " " + read.number + (read.total ? "/" + read.total : "") : "")); warmPhotos(read); }
       toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short }));
     });
     if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(lk)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
@@ -319,20 +322,41 @@
   P.img = function (req, data) { const f = IMGQ[req]; delete IMGQ[req]; if (f) f(data || ""); };
   const photo = (url) => new Promise((res) => { const r = "i" + (++IMGN); IMGQ[r] = res; try { A.img(url, r); } catch (_) { delete IMGQ[r]; res(""); } setTimeout(() => { if (IMGQ[r]) { delete IMGQ[r]; res(""); } }, 15000); });
   const TEMPS = new Map();   // photo url -> normalized cells, or null when there is no usable photo
-  async function cells(url) {
-    if (TEMPS.has(url)) return TEMPS.get(url);
-    let t = null;
-    const data = await photo(url);
-    if (data) { try { t = IM.normalize(IM.cardCells(await IM.load(data, 300))); } catch (_) { t = null; } }
-    if (TEMPS.size > 3000) TEMPS.clear();
-    TEMPS.set(url, t); return t;
+  const INFLIGHT = new Map();   // photo url -> promise: a download already running (started at the partial reading) is shared
+  function cells(url) {
+    if (TEMPS.has(url)) return Promise.resolve(TEMPS.get(url));
+    if (INFLIGHT.has(url)) return INFLIGHT.get(url);
+    const p = (async () => {
+      let t = null;
+      const data = await photo(url);
+      if (typeof IM === "undefined") { INFLIGHT.delete(url); return null; }   // matcher not loaded yet: do not remember "no photo"
+      if (data) { try { t = IM.normalize(IM.cardCells(await IM.load(data, 300))); } catch (_) { t = null; } }
+      if (TEMPS.size > 3000) TEMPS.clear();
+      TEMPS.set(url, t); INFLIGHT.delete(url); return t;
+    })();
+    INFLIGHT.set(url, p); return p;
+  }
+  // Speed (Derek, 2026-10-29: "search is taking 5s each"): the picture match waited for the full reply, then downloaded
+  // up to 80 photos (median 0.8 s, p90 2.7 s on the phone). The partial reading already names the card, so the photos
+  // of every printing of that name start downloading then, while the model finishes.
+  const picUrlOf = (c) => c && c.pid ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.pid}_200w.jpg` : (typeof imgOf === "function" && c ? imgOf(c) : "");
+  let WARMED = "";
+  function warmPhotos(read) {
+    try {
+      const k = (read.name || "") + "|" + (read.language || read.lang || ""); if (!read.name || k === WARMED || typeof window.autoMatch !== "function") return;
+      WARMED = k;
+      const m = window.autoMatch(Object.assign({}, read, { finish: "" }), {});
+      if (!m || m.kind === "foreign" || m.kind === "none") return;
+      const urls = (m.pool || m.cards || []).slice(0, 80).map(picUrlOf).filter((u) => /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(u));
+      (async () => { for (let i = 0; i < urls.length; i += 8) await Promise.all(urls.slice(i, i + 8).map(cells)); })();
+    } catch (_) {}
   }
   async function picRank(msg) {
     if (typeof IM === "undefined") return { ok: false, why: "no picture matcher", cands: 0 };
     const f = FRAMES.get(String(msg.key));
     if (!f) return { ok: false, why: "frame gone", cands: 0 };
     const t0 = Date.now();
-    if (!f.px) f.px = await IM.load(f.img);
+    if (!f.px) f.px = await (f.pxP || IM.load(f.img));
     const cands = (msg.cands || []).slice(0, 80).filter((c) => c && c.id && /^https:\/\/(tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io)\//.test(c.u || ""));
     const got = [];
     for (let i = 0; i < cands.length; i += 8) got.push(...await Promise.all(cands.slice(i, i + 8).map(async (c) => ({ id: c.id, t: await cells(c.u) }))));
@@ -545,7 +569,7 @@
     "#phoneread b{overflow:hidden;text-overflow:ellipsis}#phoneread .sec{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700}#phoneread .still{font-weight:700;color:#7a1010}" +
     "#phoneread .sp{flex:none;width:11px;height:11px;border:2px solid #000;border-right-color:transparent;border-radius:50%;animation:phsp .7s linear infinite}@keyframes phsp{to{transform:rotate(360deg)}}" +
     "#phoneread.still{animation:phsh .3s 2}@keyframes phsh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}" +
-    "#phonecard.reading #phonebar{opacity:.3;pointer-events:none;filter:grayscale(.6)}#phonecard.reading #phonealert{opacity:.4}" +
+    "#phonecard.reading:not(.partial) #phonebar{opacity:.3;pointer-events:none;filter:grayscale(.6)}#phonecard.reading:not(.partial) #phonealert{opacity:.4}" +
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");

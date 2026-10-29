@@ -256,6 +256,26 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(sel === 0, "no visible <select> (an overlay WebView crashes on dropdowns)");
 
 
+  console.log("3c. speed: likely cards at the partial reading, photos fetched while the model finishes");
+  await page.evaluate(() => {   // a streamed reply: name and number at 300 ms, the rest at 1.5 s
+    window.__rr = window.recogRead;
+    window.recogRead = (img, mk, key, onPartial) => new Promise((res) => {
+      setTimeout(() => onPartial && onPartial({ name: "Pikachu", number: "58", total: "102", language: "en" }, 300), 300);
+      setTimeout(() => res({ read: { card_visible: true, name: "Pikachu", number: "58", total: "102", language: "en", rarity: "Common", finish: "", set: "Base", confidence: 0.9, box: [] }, ms: 1500, model: "claude-sonnet-5-5", cost: 0 }), 1500);
+    });
+  });
+  const img0 = (await calls()).filter((x) => x.n === "img").length;
+  await page.evaluate(() => window.__phone.readNow("bubble"));
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { const cv = document.createElement("canvas"); cv.width = 64; cv.height = 96; cv.getContext("2d").fillRect(0, 0, 64, 96); window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 720, 1560); });
+  await page.waitForTimeout(800);
+  const sp = await page.evaluate(() => ({ cls: document.querySelector("#phonecard").className, bar: document.querySelector("#phoneread").textContent, dim: getComputedStyle(document.querySelector("#phonebar")).opacity, imgs: window.__calls.filter((x) => x.n === "img").length }));
+  ok(/partial/.test(sp.cls) && +sp.dim === 1 && /found Pikachu 58\/102, checking the rest/.test(sp.bar) && sp.imgs > img0, `at the partial reading the card is usable and photos are downloading (${sp.imgs - img0} so far, bar: ${sp.bar})`);
+  await page.waitForTimeout(1500);
+  const sf = await page.evaluate(() => ({ bar: document.querySelector("#phoneread").className, cls: document.querySelector("#phonecard").className }));
+  ok(!sf.bar && !/reading/.test(sf.cls), "full reply: bar gone");
+  await page.evaluate(() => { window.recogRead = window.__rr; });
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box
