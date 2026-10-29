@@ -276,6 +276,27 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(!sf.bar && !/reading/.test(sf.cls), "full reply: bar gone");
   await page.evaluate(() => { window.recogRead = window.__rr; });
 
+  console.log("3d. Chinese copy price on the phone: TCGplayer requests through the app, price + bid on the small card");
+  const zr = await page.evaluate(() => new Promise((res) => {
+    const h = (e) => { if (e.data && e.data.type === "cardcomp-tcg-post-ack" && e.data.req === "zt1") { window.removeEventListener("message", h); res(e.data); } };
+    window.addEventListener("message", h);
+    window.postMessage({ type: "cardcomp-tcg-post", req: "zt1", url: "https://mp-search-api.tcgplayer.com/v1/product/42382/listings", body: { size: 50 } }, location.origin);
+    setTimeout(() => res({ timeout: true }), 5000);
+  }));
+  const zc = (await calls()).filter((x) => x.n === "http" && /42382\/listings/.test(x.a[1] || "")).length;
+  ok(!zr.timeout && zr.req === "zt1" && zc === 1, `listings request went through the app and was answered (here TCGplayer is unreachable: ${zr.err || "data"})`);
+  await page.evaluate(() => {
+    window.__zhClicked = 0; window.__phone.setMode("card");
+    let am = document.querySelector("#automsg");
+    if (!am) { const al = document.querySelector("#autoline") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "autoline" })); am = al.appendChild(Object.assign(document.createElement("span"), { id: "automsg" })); }
+    am.insertAdjacentHTML("beforeend", '<div class="zhauto"><div><b>Chinese sold ≈ $12.50</b> <span>avg of the 3 latest sales: $12 · $13 · $12.50</span> <button class="zhbid" data-bid="9">bid $9</button></div></div>');
+    am.querySelector(".zhbid").addEventListener("click", () => window.__zhClicked++);
+  });
+  await page.waitForTimeout(300);
+  const zb = await page.evaluate(() => { const b = document.querySelector('#phonealert [data-t="zhbid"]'); const t = (document.querySelector("#phonealert .pzh") || {}).textContent || ""; if (b) b.click(); return { t, has: !!b, clicked: window.__zhClicked }; });
+  ok(zb.has && /Chinese sold ≈ \$12\.50/.test(zb.t) && zb.clicked === 1, "small card shows the Chinese price and its bid button sends it: " + zb.t);
+  await page.evaluate(() => { const z = document.querySelector("#automsg .zhauto"); if (z) z.remove(); });
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box

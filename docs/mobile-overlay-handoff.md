@@ -578,3 +578,14 @@ the picture match median 0.8 s (p90 2.7 s; downloading up to 80 photos, median 1
 printing of that name start downloading at the partial (in-flight downloads shared with the picture match), and the
 frame is decoded for the match while the model reads. Haiku stays an option on the setup screen (1-2.7 s) but it
 invents collector numbers on 720p streams, so Sonnet stays the default. phone-check 3c covers it.
+
+## 0.15 (2026-10-29): Chinese copy prices on the phone, update dialog
+
+- PR #85 (Chinese copy price: sold and listed averages of TCGplayer listings / sales that say Chinese, on the EN and
+  JP products) merged in with current main. In the phone app it needs no Cloudflare proxy: the bridge answers
+  `cardcomp-tcg-post` through `Android.http` (listings / latest sales of one product only). A Chinese read shows
+  "中 Chinese sold ≈ $X ... [bid $N]" on the small card (`.pzh`, mirrored from the auto line's `.zhauto`; the bid button
+  clicks the original, so the lot is not labeled as the English card), and "checking Chinese copy prices" while it runs.
+- In-app update: Derek's "update cancelled" (Android 17, One UI) with no dialog. The installer's confirm screen was started
+  from the broadcast receiver; it now starts from the CardComp screen when it is in front, and the cancel message says to
+  install from the browser if no dialog appeared.
