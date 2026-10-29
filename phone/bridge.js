@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.14.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.14.3";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -543,16 +543,17 @@
     "#phonebar .pp{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:4px;margin:2px 0 1px}" +
     "#phonebar .pq{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;height:29px;border:1.5px solid var(--line);border-radius:8px;color:var(--ink);cursor:pointer;line-height:1.1;padding:0 2px}" +
     "#phonebar .pq b{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}#phonebar .pq i{font-style:normal;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}" +
+    "#phonebar .pp.n4 .pq b{font-size:10px;letter-spacing:-.2px}#phonebar .pp.n4 .pq i{font-size:9.5px}" +
     "#phonebar .pq.on{background:var(--gold);border-color:var(--gold);color:#000}#phonebar .pq.on i{color:#000}" +
     "#phonebar .pq.rd:not(.on){border-style:dashed;border-color:var(--gold)}" +
     "#phonebar .pmiss{font-size:10.5px;color:var(--red);line-height:1.2;margin:1px 0}" +
     // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
     "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
     "#phonebar .prow::-webkit-scrollbar{display:none}" +
-    "#phonebar .pb{flex:0 0 44%;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:58px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
+    "#phonebar .pb{flex:0 0 44%;min-width:0;overflow:hidden;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;justify-content:center;height:58px;border:1.5px solid var(--gold);border-radius:8px;background:rgba(245,179,1,.10);line-height:1.05}" +
     "#phonebar .pb em{font-style:normal;font-size:10px;font-weight:700}" +
     "#phonebar .pb b{font-size:17px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
-    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15}" +
+    "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis}" +
     "#phonebar .pb small i{font-style:normal;color:var(--faint);margin-right:3px}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pk{padding:3px 0 2px}#phonebar .pkh{font-size:10.5px;color:var(--dim)}#phonebar .pkh b{color:var(--gold);font-size:12px;margin-right:4px}" +
@@ -569,7 +570,7 @@
     "#phoneread b{overflow:hidden;text-overflow:ellipsis}#phoneread .sec{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700}#phoneread .still{font-weight:700;color:#7a1010}" +
     "#phoneread .sp{flex:none;width:11px;height:11px;border:2px solid #000;border-right-color:transparent;border-radius:50%;animation:phsp .7s linear infinite}@keyframes phsp{to{transform:rotate(360deg)}}" +
     "#phoneread.still{animation:phsh .3s 2}@keyframes phsh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}" +
-    "#phonecard.reading:not(.partial) #phonebar{opacity:.3;pointer-events:none;filter:grayscale(.6)}#phonecard.reading:not(.partial) #phonealert{opacity:.4}" +
+    "#phonecard.reading:not(.partial) #phonebar{opacity:.35;filter:grayscale(.6)}#phonecard.reading:not(.partial) #phonealert{opacity:.4}" +
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
@@ -627,6 +628,12 @@
     wrapEl = document.createElement("div"); wrapEl.id = "phonecard";
     wrapEl.innerHTML = '<div id="phoneread"></div><div id="phonebar"></div><div id="phonealert"></div><div id="phonestat"></div>';
     sr.insertBefore(wrapEl, sr.firstChild);
+    // a tap on the dimmed card while a read runs is not lost silently (Derek, 2026-10-29: "failed 5x in a row" with no
+    // taps logged): the bar shakes and says still reading; the old card's bid is not sent
+    wrapEl.addEventListener("click", (e) => {
+      if (!wrapEl.classList.contains("reading") || wrapEl.classList.contains("partial") || !e.target.closest("#phonebar")) return;
+      e.preventDefault(); e.stopPropagation(); P.stillReading();
+    }, true);
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
       setMode("list");
@@ -694,8 +701,9 @@
     window.autoMatch.__ph = true;
   }
   // break-even: the most you can pay and not lose money (fees, shipping and your list markup, 0% margin): the app's own
-  // bidForMargin at 0, what the desktop tiles call "b/e". Whole dollars, rounded down like every bid.
-  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? Math.floor(bidForMargin(mkt, 0)) : 0; return v >= 1 ? "$" + v : "–"; } catch (_) { return "–"; } };
+  // bidForMargin at 0, what the desktop tiles call "b/e". Shown with cents.
+  // with cents (Derek, 2026-10-29: "b/e needs to show cents"): it is a ceiling to judge against, not a bid to send
+  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? bidForMargin(mkt, 0) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
   // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
   // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
   // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card
@@ -743,9 +751,9 @@
     const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
     const readK = READ_PRINT && READ_PRINT.id === r.id ? READ_PRINT.k : "";
     const labs = printLabels(pks.map((c) => c.dataset.k));
-    const pchips = pks.length > 1 ? `<div class="pp">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0; return { c, v, l: labs[c.dataset.k] }; })
+    const pchips = pks.length > 1 ? `<div class="pp${pks.length >= 4 ? " n4" : ""}" style="grid-template-columns:repeat(${Math.min(pks.length, 4)},minmax(0,1fr))">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0; return { c, v, l: labs[c.dataset.k] }; })
       .sort((a, b) => a.l.rank - b.l.rank || b.v - a.v).map(({ c, v, l }) =>
-      `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}" title="${esc(typeof prettyPrinting === "function" ? prettyPrinting(c.dataset.k) : c.dataset.k)}${c.dataset.k === readK ? " (the printing the read saw)" : ""}"><b>${esc(l.t)}</b><i>${v > 0 ? money(v).replace(/\.\d\d$/, (x) => (v >= 10 ? "" : x)) : "–"}</i></span>`).join("") + `</div>` : "";
+      `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}" title="${esc(typeof prettyPrinting === "function" ? prettyPrinting(c.dataset.k) : c.dataset.k)}${c.dataset.k === readK ? " (the printing the read saw)" : ""}"><b>${esc(pks.length >= 4 && l.t === "Master Ball" ? "Master" : l.t)}</b><i>${v > 0 ? money(v).replace(/\.\d\d$/, (x) => (v >= 10 ? "" : x)) : "–"}</i></span>`).join("") + `</div>` : "";
     let rows;
     if (btns.length) {
       const whole = (t) => { const v = Math.floor(parseFloat(String(t).replace(/[^0-9.]/g, "")) || 0); return v >= 1 ? "$" + v : "<$1"; };   // what copyAmt copies
