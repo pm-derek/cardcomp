@@ -589,3 +589,13 @@ invents collector numbers on 720p streams, so Sonnet stays the default. phone-ch
 - In-app update: Derek's "update cancelled" (Android 17, One UI) with no dialog. The installer's confirm screen was started
   from the broadcast receiver; it now starts from the CardComp screen when it is in front, and the cancel message says to
   install from the browser if no dialog appeared.
+
+## 0.15.1 (2026-10-29): Chinese price per card
+
+Derek: "it's not showing me which card it is calculating against; nest the Chinese part in each card art and I select
+the correct card." A Chinese read now turns the small card into a picker of every product the lookup checked (the card
+read, its JP / EN twin, other printings), each with its art and its own Chinese price (sold average, else listed
+average, "no CN", or "checking…" while it runs), priced ones first. A tap shows that card: its 3 latest Chinese sales,
+cheapest Chinese listings and a bid from them (sent with `data-nolabel`); ≡ goes back. auto-ui publishes the lookup as
+`window.ZH_LAST` (+ a `cardcomp-zh` event); a new read or typing a search leaves the view. The one-line aggregate stays
+on desktop.

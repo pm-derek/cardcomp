@@ -297,6 +297,30 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(zb.has && /Chinese sold ≈ \$12\.50/.test(zb.t) && zb.clicked === 1, "small card shows the Chinese price and its bid button sends it: " + zb.t);
   await page.evaluate(() => { const z = document.querySelector("#automsg .zhauto"); if (z) z.remove(); });
 
+  // a Chinese read: each candidate card with its own Chinese price, pick the right art, then its bid
+  const zids = await page.evaluate(() => CARDS.filter((c) => /^sylveon/i.test(c.n) && c.px).slice(0, 3).map((c) => c.id));
+  await page.evaluate((ids) => {
+    const now = Date.now();
+    window.ZH_LAST = { key: 1, at: now, ids, res: { ok: true, ids, checked: ids.length, errs: [], dbg: [],
+      hits: [{ id: ids[1], pid: 1, p: 14, title: "Sylveon Chinese" }, { id: ids[1], pid: 1, p: 15, title: "S-Chinese" }],
+      sold: [{ id: ids[1], pid: 1, p: 12, at: now - 864e5 }, { id: ids[1], pid: 1, p: 13, at: now - 2 * 864e5 }, { id: ids[1], pid: 1, p: 12.5, at: now - 3 * 864e5 }] } };
+    window.__phone.setMode("card"); window.dispatchEvent(new Event("cardcomp-zh"));
+  }, zids);
+  await page.waitForTimeout(300);
+  const zp = await page.evaluate(() => Array.from(document.querySelectorAll('#phonebar [data-t="zhpick"]')).map((x) => ({ id: x.dataset.id, t: x.textContent, img: !!x.querySelector("img") })));
+  ok(zp.length === zids.length && zp[0].id === zids[1] && /CN sold \$12\.50/.test(zp[0].t) && zp.every((x) => x.img) && /no CN/.test(zp[1].t), "Chinese read: every card with its art and its own Chinese price, priced ones first: " + zp.map((x) => x.t).join(" | "));
+  await page.screenshot({ path: path.join(OUT, "phone-zh-pick.png") });
+  const nb0 = (await calls()).filter((x) => x.n === "bid").length;
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="zhpick"]').click());
+  await page.waitForTimeout(200);
+  const zv = await page.evaluate(() => ({ t: document.querySelector("#phonebar").textContent, bid: (document.querySelector('#phonebar [data-t="zhbid"]') || {}).dataset }));
+  await page.screenshot({ path: path.join(OUT, "phone-zh-card.png") });
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="zhbid"]').click());
+  await page.waitForTimeout(300);
+  const nb = (await calls()).filter((x) => x.n === "bid");
+  ok(/sold ≈ \$12\.50/.test(zv.t) && /listed ≈ \$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `tap the card: its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
+  await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box

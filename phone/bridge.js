@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -48,6 +48,7 @@
   let STILL = 0;        // until when the bar says "still reading"
   const readBusy = () => !!READING && Date.now() - READING.at < 25000;
   function readState(on, phase, what) {
+    if (on && !READING) window.ZH_LAST = null;   // a new read: the last Chinese card's view goes
     if (on) READING = Object.assign(READING || { at: Date.now() }, { phase: phase || "frame" }, what ? { what } : {});
     else READING = null;
     try { if (typeof A.reading === "function") A.reading(!!on); } catch (_) {}
@@ -531,6 +532,8 @@
     "#phonealert{font-size:10.5px;line-height:1.3;color:var(--red);display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:1px 0}#phonealert:empty{display:none}" +
     "#phonealert .pzh{flex:1 1 100%;display:flex;align-items:center;gap:6px;color:var(--ink);font-size:11px;border:1px solid var(--red);border-radius:7px;padding:4px 6px;margin:2px 0}" +
     "#phonealert .pzh span{flex:1;min-width:0}#phonealert .pzh button{flex:none;font-size:14px;color:#000;background:var(--gold);border-color:var(--gold);padding:6px 10px}" +
+    "#phonebar .zl{font-size:11px;line-height:1.3;color:var(--ink);margin-top:3px}#phonebar .zl small{color:var(--dim);font-size:10px}#phonebar .zl.on b{color:var(--gold)}" +
+    "#phonebar .zhb{font:inherit;font-size:16px;font-weight:800;color:#000;background:var(--gold);border:0;border-radius:8px;padding:7px 14px}#phonebar .pki .pkp.no{color:var(--faint)}" +
     "#phonealert .na{color:var(--gold)}#phonealert button{font:inherit;font-size:11px;font-weight:700;color:var(--ink);background:rgba(255,107,107,.14);border:1px solid var(--red);border-radius:6px;padding:3px 8px}" +
     "body:not(.ph-card) #phonealert{display:none}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
@@ -739,6 +742,7 @@
     const w = wrap(); if (!w) return;
     const el = w.querySelector("#phonebar");
     const tools = `<span class="st" data-t="search" title="search">&#128269;</span>` + (MODE !== "card" ? `<span class="st on" data-t="toggle" title="back to the small card">&#9652;</span>` : "");
+    if (MODE === "card" && zhActive()) { paintZh(el, tools); paintStat(); sizeSoon(); return; }
     if (needPick() && cands().length) { paintPicker(el, tools); paintStat(); sizeSoon(); return; }
     const card = focusCard(), id = card && card.dataset.id, r = id && typeof CARDS !== "undefined" ? CARDS.find((x) => x.id === id) : null;
     if (!r) {
@@ -808,6 +812,64 @@
     }
     paintStat(); sizeSoon();
   }
+  // ---- Chinese card read (Derek, 2026-10-29: "it's not showing me which card it is calculating against; nest the Chinese
+  // price in each card art and I select the right one"): every product the lookup checked, with its picture and its own
+  // Chinese price (sold average, else listed average); a tap shows that card's sales, listings and bid. The bid is sent
+  // like the Chinese line's (data-nolabel: the lot is not labeled as the English card at its English price).
+  let ZH_PICK = null, ZH_KEY = null;
+  const zhActive = () => { const Z = window.ZH_LAST; return !!Z && Date.now() - Z.at < 15 * 60e3; };
+  const zhById = (id) => (typeof BY_ID !== "undefined" && BY_ID.get && BY_ID.get(id)) || (typeof CARDS !== "undefined" ? CARDS.find((c) => c.id === id) : null);
+  function zhOne(res, id) {
+    const r = { ok: true, hits: res.hits.filter((h) => h.id === id), sold: res.sold.filter((x) => x.id === id) };
+    const pk = typeof zhPick === "function" ? zhPick(r) : null;
+    const est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0;
+    return { r, pk, est };
+  }
+  const zm = (v) => (typeof zhMoney === "function" ? zhMoney(v) : money(v));
+  function zhBidOf(est) {
+    try { const mf = (typeof getNum === "function" ? getNum("tgtmargin", 10) : 10) / 100, np = netProceeds(listSale(est)), b = wholeBid(bidForMargin(est, mf), np); return b >= 1 ? b : 0; } catch (_) { return 0; }
+  }
+  function paintZh(el, tools) {
+    const Z = window.ZH_LAST;
+    if (Z.key !== ZH_KEY) { ZH_KEY = Z.key; ZH_PICK = null; }
+    const res = Z.res, ids = ((res && res.ids) || Z.ids || []).filter((id) => zhById(id));
+    const day = (t) => (t ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
+    let html;
+    if (ZH_PICK && res) {
+      const c = zhById(ZH_PICK), o = zhOne(res, ZH_PICK), img = c && typeof imgOf === "function" ? imgOf(c) : "", b = o.est ? zhBidOf(o.est) : 0;
+      const soldL = o.pk && o.pk.sold ? `<div class="zl${o.pk.use === "sold" ? " on" : ""}"><b>sold ≈ ${zm(o.pk.sold.est)}</b> <small>${o.r.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese sale in the recent sales</small></div>`;
+      const listL = o.pk && o.pk.list ? `<div class="zl${o.pk.use === "listed" ? " on" : ""}"><b>listed ≈ ${zm(o.pk.list.est)}</b> <small>${o.pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese listing right now</small></div>`;
+      html = `<div class="pc"><div class="pimg" data-t="zhback">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
+        `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
+        `<div class="ph"><span class="st" data-t="zhback" title="back to the cards">&#8801;</span><span class="tg">${o.r.sold.length} sold · ${o.r.hits.length} listed</span>${tools}</div>` +
+        soldL + listL +
+        (b ? `<div class="zl"><button class="zhb" data-t="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zm(o.est)} from the ${o.pk.use === "sold" ? "sales" : "listings"}">bid $${b}</button> <small>from ${zm(o.est)} ${o.pk.use}</small></div>` : `<div class="zl"><small>nothing Chinese on this card: ≡ for the others</small></div>`) +
+        `</div></div>`;
+    } else {
+      const rows = ids.map((id, i) => { const o = res ? zhOne(res, id) : null; return { id, i, o, n: o ? o.r.sold.length * 2 + o.r.hits.length : 0 }; });
+      if (res) rows.sort((a, b) => b.n - a.n || a.i - b.i);
+      const withN = rows.filter((x) => x.n > 0).length;
+      const items = rows.slice(0, 8).map(({ id, o }) => {
+        const c = zhById(id), img = typeof imgOf === "function" ? imgOf(c) : "";
+        const pr = !res ? "checking…" : o.est ? `CN ${o.pk.use} ${zm(o.est)}` : "no CN";
+        return `<span class="pki${o && o.est ? " g" : ""}" data-t="zhpick" data-id="${esc(id)}"><span class="pkim">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</span>` +
+          `<em>${esc(c.n)}</em><small>${esc(c.s)} #${esc(c.num)}${(c.lang || "en") === "jp" ? " JP" : ""}</small><small class="pkp${o && o.est ? "" : " no"}">${esc(pr)}</small></span>`;
+      }).join("");
+      const head = !res ? "checking Chinese prices on these cards…" : !res.ok ? "Chinese price lookup failed" : withN ? `${withN} of ${rows.length} with Chinese sales / listings` : "no Chinese sale or listing on any of these";
+      html = `<div class="pk"><div class="ph"><span class="tg pkh"><b>中 Which card?</b> ${esc(head)}</span>${tools}</div><div class="pkrow">${items}</div></div>`;
+    }
+    if (el.innerHTML !== html) {
+      el.innerHTML = html; el.dataset.id = "";
+      const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); touched(); f(x); }; });
+      on("zhpick", (x) => { ZH_PICK = x.dataset.id; paintBar(); });
+      on("zhback", () => { ZH_PICK = null; paintBar(); });
+      on("zhbid", (x) => { if (typeof copyAmt === "function") copyAmt(x.dataset.bid, x); });
+      const sx = el.querySelector('[data-t="search"]'); if (sx) sx.onclick = (e) => { e.preventDefault(); e.stopPropagation(); window.ZH_LAST = null; TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } };
+    }
+  }
+  window.addEventListener("cardcomp-zh", () => { paintBar(); paintAlerts(); });
+  document.addEventListener("input", (e) => { if (e.target && e.target.id === "q" && window.ZH_LAST) { window.ZH_LAST = null; } }, true);   // typing a search leaves the Chinese view
+
   function paintPicker(el, tools) {
     if (OPENED && OPENED.isConnected && OPENED.classList.contains("open")) { const r0 = OPENED.querySelector(".row"); if (r0) r0.click(); } OPENED = null;
     const list = cands(), g = list.findIndex((c) => c.classList.contains("autosug"));
@@ -866,7 +928,8 @@
     }
     // Chinese card read: the Chinese copy price from the auto line (sold / listed average) with its bid, on the small card
     const am = $("#automsg"), zh = am && am.querySelector(".zhauto");
-    if (zh) {
+    if (window.ZH_LAST) { /* the small card shows each candidate with its own Chinese price (paintZh) */ }
+    else if (zh) {
       const zb = zh.querySelector(".zhbid"), txt = (zh.textContent || "").replace(zb ? zb.textContent : "", "").replace(/\s+/g, " ").trim();
       out.push(`<div class="pzh"><span>中 ${esc(txt)}</span>${zb ? `<button data-t="zhbid">${esc(zb.textContent.trim())}</button>` : ""}</div>`);
     } else if (am && /chinese/i.test(am.textContent || "") && typeof window.zhLookup === "function" && fromRead()) out.push(`<div class="pzh"><span>中 Chinese card: checking Chinese copy prices on TCGplayer…</span></div>`);

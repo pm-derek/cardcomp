@@ -277,6 +277,8 @@
     const cands = window.zhCands(leads.length ? leads : en.slice(0, 1), extra);
     if (!cands.length) return;
     const ask = a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
+    // the phone app shows each candidate card with its own Chinese price (phone/bridge.js reads this): pending first
+    window.ZH_LAST = { key: d.key, at: Date.now(), ids: cands.map((c) => c.id), res: null }; window.dispatchEvent(new Event("cardcomp-zh"));
     window.zhLookup(cands).then((res) => { if (a.zhAsk === ask) onZh(d.key, res); });
   }
   function zhBadges(z) {
@@ -295,6 +297,7 @@
     if (!a || !a.best) return;
     a.zh = res;
     zhBadges(res);
+    if (window.ZH_LAST && window.ZH_LAST.key === key) { window.ZH_LAST = { key, at: Date.now(), ids: res.ids || window.ZH_LAST.ids, res }; window.dispatchEvent(new Event("cardcomp-zh")); }
     const bd = a.best.d; if ((bd.capAt || bd.key) < LATEST) return;
     ZH_SHOWN = res;
     MSG = describe(a.best.m, a.best.r, bd) + '<div class="zhauto" style="margin-top:3px">' + window.zhHTML(res, { compact: true }) + "</div>";
