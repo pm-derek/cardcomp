@@ -168,7 +168,7 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
   newest sales, the 3 cheapest listings), any more than 1.5x (`ZH_FAR`) from their middle one left out and named. The
   bid ("bid $9", `wholeBid` at the target margin) uses the sales when the newest is under 90 days old, else the
   listings; it copies / sends with `data-nolabel`, so the lot is not labeled as the English card at its English market.
-  Rows under it: the 3 newest sales and 3 cheapest listings with titles and products. Transport (`tcgPost`): the
+  Rows under it: the 3 newest sales and 3 cheapest listings with titles and products. Break-even beside the bid (Derek, 2026-10-29: "same UI, so I can see breakeven and work out my profit"): desktop "bid $9 b/e $10.03"; the phone's picked card shows the Chinese bids as the condition pills (`zhPills` in bridge.js: 中 SOLD / 中 LISTED, each bid / mkt / b/e, the one the price uses first and solid, the other dashed and tappable too), above one line each of the prices they come from. Transport (`tcgPost`): the
   extension on desktop (`cardcomp-tcg-post`, relay `tcgPostRelay` in tcgfast.js, only those two TCGplayer addresses;
   extension 0.9.3); in the phone app the bridge relays it through the app (`cardcomp-tcg-post` -> `Android.http`, same two addresses; no proxy needed) and the small card shows the price line with its bid (`.pzh` in `#phonealert`, mirrored from `#automsg .zhauto`); in a plain phone browser the proxy address in settings ("Chinese copy prices on the phone", a Cloudflare Worker,
   `tools/tcg-proxy-worker.js`, setup steps at its top), else a direct request, which works only if TCGplayer allows

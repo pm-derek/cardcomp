@@ -652,3 +652,10 @@ Canvas, no assets): dark glass disc with a gold ring, a card-shaped viewfinder (
 label. READ: resting scan line. READING: the scan line sweeps the viewfinder, a gold comet circles the ring, a ping on
 start (replaces the shrink pulse). START (capture off): red, a play mark, the ring breathes. A copied bid flashes large
 with "COPIED". Pressing squishes it to 90% with an overshoot back. It animates only while something moves.
+
+## Chinese bids with break-even (2026-10-29, bridge 0.15.8)
+
+Derek: "Chinese bids should follow the same UI where I can see breakeven, so I can work out my profit at the suggested
+bid". The picked Chinese card now shows two pills like the condition pills: 中 SOLD and 中 LISTED, each with the bid,
+mkt (the averaged Chinese price) and b/e. The one the price uses comes first and is solid; the other is dashed and can
+be tapped too. Above them, one line each of the sales / listings they come from. Desktop: "b/e $X" beside the bid.

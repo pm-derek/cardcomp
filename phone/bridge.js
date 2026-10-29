@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.7";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.8";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -618,6 +618,8 @@
     "#phonebar .pb b{font-size:17px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}" +
     "#phonebar .pb small{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis}" +
     "#phonebar .pb small i{font-style:normal;color:var(--faint);margin-right:3px}" +
+    "#phonebar .zl.z1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}" +
+    "#phonebar .prow.zp .pb em{color:var(--gold)}#phonebar .prow.zp .pb.alt{border-style:dashed;background:none}#phonebar .prow.zp .pb.alt em,#phonebar .prow.zp .pb.alt b{color:var(--dim)}" +
     "#phonebar .prow.dim .pb{opacity:.45;border-style:dashed}#phonebar .pb.wait{opacity:.55}#phonebar .pb.fl{background:var(--green);border-color:var(--green)}#phonebar .pb.fl b{color:#000;font-size:12px}#phonebar .pb.fl em,#phonebar .pb.fl small{color:#000!important}" +
     "#phonebar .pk{padding:3px 0 2px}#phonebar .pkh{font-size:10.5px;color:var(--dim)}#phonebar .pkh b{color:var(--gold);font-size:12px;margin-right:4px}" +
     "#phonebar .pkrow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:3px 0 1px;scroll-snap-type:x proximity}#phonebar .pkrow::-webkit-scrollbar{display:none}" +
@@ -884,6 +886,20 @@
     zhLookup(zhCandsOne(c)).then((res) => { ZH_ONE[id] = { res, at: Date.now() }; try { ZH_CACHE.set(id, { res, at: Date.now() }); } catch (_) {} paintBar(); },
       (e) => { ZH_ONE[id] = { res: { ok: false, errs: [e.message], hits: [], sold: [] }, at: Date.now() }; paintBar(); });
   }
+  // the Chinese bids as the regular condition pills (Derek, 2026-10-29: "same UI, where I can see breakeven, so I can work
+  // out my profit at the suggested bid"): one pill from the sales, one from the listings, each bid / mkt / b/e; the one the
+  // price uses comes first and is solid, the other dashed
+  function zhPills(pk) {
+    const one = (k) => {
+      const s = k === "sold" ? pk.sold : pk.list; if (!s) return "";
+      const b = zhBidOf(s.est), on = pk.use === k;
+      return `<span class="pb${on ? "" : " alt"}"${b ? ` data-t="zhbid" data-nolabel="1" data-bid="${b}"` : ""} title="max bid at ${zm(s.est)} from the Chinese ${k === "sold" ? "sales" : "listings"}">` +
+        `<em>${k === "sold" ? "中 SOLD" : "中 LISTED"}</em><b>${b ? "$" + b : "–"}</b>` +
+        `<small><i>mkt</i>${zm(s.est)}</small><small><i>b/e</i>${esc(beOf(s.est))}</small></span>`;
+    };
+    const ks = pk.use === "listed" ? ["listed", "sold"] : ["sold", "listed"];
+    return `<div class="prow zp">${ks.map(one).join("")}</div>`;
+  }
   function paintZh(el, tools) {
     const Z = window.ZH_LAST;
     if (Z.key !== ZH_KEY) { ZH_KEY = Z.key; ZH_PICK = null; }
@@ -897,9 +913,10 @@
       else if (!res.ok) body = `<div class="zl"><small class="bad">Chinese price: ${esc((res.errs || [])[0] || "failed")}</small></div>`;
       else {
         const pk = typeof zhPick === "function" ? zhPick(res) : null, est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0, b = est ? zhBidOf(est) : 0;
-        body = (pk && pk.sold ? `<div class="zl${pk.use === "sold" ? " on" : ""}"><b>sold ≈ ${zm(pk.sold.est)}</b> <small>${res.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese sale in the recent sales</small></div>`) +
-          (pk && pk.list ? `<div class="zl${pk.use === "listed" ? " on" : ""}"><b>listed ≈ ${zm(pk.list.est)}</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese listing right now</small></div>`) +
-          (b ? `<div class="zl"><button class="zhb" data-t="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zm(est)} from the ${pk.use === "sold" ? "sales" : "listings"}">bid $${b}</button> <small>from ${zm(est)} ${pk.use}</small></div>` : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
+        // one line each (the pills below carry the averages): the prices they come from
+        body = (pk && pk.sold ? `<div class="zl z1${pk.use === "sold" ? " on" : ""}"><b>sold</b> <small>${res.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese sale in the recent sales</small></div>`) +
+          (pk && pk.list ? `<div class="zl z1${pk.use === "listed" ? " on" : ""}"><b>listed</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese listing right now</small></div>`) +
+          (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
       }
       html = `<div class="pc"><div class="pimg" data-t="zhback">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
         `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
@@ -918,7 +935,7 @@
       const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); touched(); f(x); }; });
       on("zhpick", (x) => { ZH_PICK = x.dataset.id; zhStart(ZH_PICK); paintBar(); });
       on("zhback", () => { ZH_PICK = null; paintBar(); });
-      on("zhbid", (x) => { if (typeof copyAmt === "function") copyAmt(x.dataset.bid, x); });
+      on("zhbid", (x) => { if (typeof copyAmt === "function") copyAmt(x.dataset.bid, x.classList.contains("pb") ? x.querySelector("b") : x); });
       const sx = el.querySelector('[data-t="search"]'); if (sx) sx.onclick = (e) => { e.preventDefault(); e.stopPropagation(); window.ZH_LAST = null; TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } };
     }
   }
