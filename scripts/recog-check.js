@@ -744,8 +744,10 @@ async function appPage(browser, base, blockRecog) {
   if (await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8-238"] .zhbtn'); return !!b && b.style.display !== "none"; })) await ap.click('#results .card[data-id="sv8-238"] .zhbtn');
   await ap.waitForTimeout(600);
   st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
-  ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
-    "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
+  ok(st.prods.length === 2 && /English product \(where you list it\)no Chinese sale in the recent saleslisted ≈ \$4\.00 1 listing: \$4\.00 bid \$\d+Japanese product/.test(st.t) &&
+    /Japanese product \(to compare\)sold ≈ \$12\.50 avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /listed ≈ \$14\.50 avg of the 2 lowest: \$14\.00 · \$15\.00/.test(st.t) && !/\$9\.00/.test(st.t) &&
+    /⚠ Japanese Chinese copies run \d+% over the English ones/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
+    "open card after a Chinese read: the card and its twin, English product priced first (the bid), Japanese apart with the gap (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 420) + ")");
   // the bid sends without labeling the lot as the English card
   const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);

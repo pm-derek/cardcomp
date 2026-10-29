@@ -313,7 +313,7 @@ kind `foreign` / Chinese looks nothing up. It publishes the candidates (`window.
 Japanese card with the number read first, since Traditional Chinese follows the Japanese numbering, then the English
 one, their twins, the other printings) and the line says "open the right card for its Chinese price". The phone shows
 their pictures to pick from; the card picked (phone) or opened (desktop, `zhB.click()` on open) is looked up alone with
-its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid.
+its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid. English pool first (Derek: "I list Chinese under English, that's the pool I compete with; Japanese to see big disparities"): `zhSplit` prices the Chinese copies found on the English product and on the Japanese one apart; the bid comes from the English ones (Japanese only when English has none, said so), and a 30%+ gap between them is flagged ("⚠ Japanese Chinese copies run 45% under the English ones"). Phone card: an EN line and a JP line, the bid from EN.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

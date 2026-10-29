@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.5";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.6";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -886,7 +886,14 @@
       let body;
       if (!res) body = `<div class="zl"><small>checking Chinese sales and listings for this card…</small></div>`;
       else if (!res.ok) body = `<div class="zl"><small class="bad">Chinese price: ${esc((res.errs || [])[0] || "failed")}</small></div>`;
-      else {
+      else if (typeof zhSplit === "function") {   // English product first (where Derek lists it, the bid), Japanese to compare
+        const sp = zhSplit(res), B = sp.base, est = B ? B.est : 0, bd = est ? zhBidOf(est) : 0;
+        const blk = (P, lab, main) => !P.sold.length && !P.hits.length ? `<div class="zl"><small>${lab}: nothing says Chinese</small></div>` :
+          `<div class="zl${main ? " on" : ""}"><b>${lab}</b> ${P.pk.sold ? `sold ≈ ${zm(P.pk.sold.est)} <small>(${P.pk.sold.all.length}, ${day(P.sold[0].at)})</small>` : "<small>no sale</small>"} · ${P.pk.list ? `listed ≈ ${zm(P.pk.list.est)} <small>(${P.pk.list.all.length})</small>` : "<small>none listed</small>"}</div>`;
+        body = blk(sp.en, "EN", sp.baseLang === "en") + blk(sp.jp, "JP", sp.baseLang === "jp") +
+          (sp.gap != null ? `<div class="zl"><small class="bad">⚠ JP copies ${Math.round(Math.abs(sp.gap) * 100)}% ${sp.gap < 0 ? "under" : "over"} EN</small></div>` : "") +
+          (bd ? `<div class="zl"><button class="zhb" data-t="zhbid" data-nolabel="1" data-bid="${bd}" title="max bid at ${zm(est)} from the ${sp.baseLang === "jp" ? "Japanese" : "English"} product's Chinese ${B.pk.use === "sold" ? "sales" : "listings"}">bid $${bd}</button> <small>from ${sp.baseLang === "jp" ? "JP" : "EN"} ${B.pk.use} ${zm(est)}</small></div>` : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
+      } else {
         const pk = typeof zhPick === "function" ? zhPick(res) : null, est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0, b = est ? zhBidOf(est) : 0;
         body = (pk && pk.sold ? `<div class="zl${pk.use === "sold" ? " on" : ""}"><b>sold ≈ ${zm(pk.sold.est)}</b> <small>${res.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese sale in the recent sales</small></div>`) +
           (pk && pk.list ? `<div class="zl${pk.use === "listed" ? " on" : ""}"><b>listed ≈ ${zm(pk.list.est)}</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese listing right now</small></div>`) +

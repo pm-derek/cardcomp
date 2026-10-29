@@ -1984,28 +1984,46 @@ function zhPick(res){
   const sold=zhSummary(res.sold), list=zhSummary(res.hits), fresh=res.sold.length && Date.now()-res.sold[0].at < ZH_SOLD_DAYS*864e5;
   return {sold, list, use: sold && fresh ? "sold" : list ? "listed" : sold ? "sold" : null};
 }
+// English pool first (Derek, 2026-10-29: "I would pretty much always list the Chinese card under English, so that's the
+// pool I compete with; Japanese is useful to see big disparities"): the Chinese copies found on the English product and on
+// the Japanese one are priced apart; the bid comes from the English ones (the Japanese ones only when English has none),
+// and a gap of 30%+ between them is called out.
+function zhSplit(res){
+  const isJp=id=>{ const c=BY_ID.get(id); return !!c && (c.lang||"en")==="jp"; };
+  const part=jp=>{ const r={ok:true, hits:res.hits.filter(h=>isJp(h.id)===jp), sold:res.sold.filter(x=>isJp(x.id)===jp)}; r.pk=zhPick(r); r.est=r.pk.use?(r.pk.use==="sold"?r.pk.sold.est:r.pk.list.est):0; return r; };
+  const en=part(false), jp=part(true), base=en.est?en:jp.est?jp:null;
+  const gap=en.est && jp.est ? jp.est/en.est-1 : null;
+  return {en, jp, base, baseLang: base===en?"en":base===jp?"jp":null, gap: gap!=null && Math.abs(gap)>=0.3 ? gap : null};
+}
 function zhHTML(res, opt){
   opt=opt||{};
   const dbg=' <a class="zhdbg" style="color:var(--blue);cursor:pointer">copy debug</a>';
   if(!res.ok) return `<span style="color:var(--red)">Chinese price: ${escH((res.errs||[])[0]||"failed")}</span>`+dbg;
   if(!res.hits.length && !res.sold.length) return `<span style="color:var(--faint)">no TCGplayer listing or recent sale says Chinese (${res.checked} product${res.checked===1?"":"s"} checked, English + Japanese)</span>`+dbg;
-  const pk=zhPick(res), mf=getNum("tgtmargin",10)/100, est=(pk.use==="sold"?pk.sold:pk.list).est, np=netProceeds(listSale(est)), b=wholeBid(bidForMargin(est, mf), np);
+  const sp=zhSplit(res), B=sp.base, mf=getNum("tgtmargin",10)/100, est=B?B.est:0, b=est?wholeBid(bidForMargin(est, mf), netProceeds(listSale(est))):0;
   const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
   const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `avg of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
   const left=s=>s.out.length?` <span style="color:var(--faint)">(${s.out.map(zhMoney).join(", ")} left out, too far off)</span>`:"";
-  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button>`:"";
-  const line=(k, s, lab, list)=>{ const on=pk.use===k;
-    return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
-  if(opt.compact){   // the auto line sits in the sticky header: one line
-    const s=pk.use==="sold"?pk.sold:pk.list, list=pk.use==="sold"?res.sold.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "):s.all.map(zhMoney).join(" · ");
-    return line(pk.use, s, pk.use==="sold"?"latest sales":"lowest", list).replace(/<\/div>$/, ` <span style="color:var(--faint)">· ${res.sold.length} sold · ${res.hits.length} listed</span></div>`); }
-  let h="";
-  if(pk.sold){ const s=pk.sold;
-    h+=line("sold", s, s.all.length===1?"sale":"latest sales", res.sold.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "));
-    if(pk.use!=="sold") h+=`<div style="color:var(--faint)">newest sale ${day(res.sold[0].at)}, over ${ZH_SOLD_DAYS} days ago: bid from the listings</div>`; }
-  else h+=`<div style="color:var(--faint)">no Chinese sale in the recent sales of these products</div>`;
-  if(pk.list) h+=line("listed", pk.list, pk.list.all.length===1?"listing":"lowest", pk.list.all.map(zhMoney).join(" · "));
-  else h+=`<div style="color:var(--faint)">no listing says Chinese right now</div>`;
+  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${sp.baseLang==="jp"?"Japanese":"English"} product's Chinese ${B.pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button>`:"";
+  const line=(P, k, lab)=>{ const s=k==="sold"?P.pk.sold:P.pk.list, on=P===B && P.pk.use===k, list=k==="sold"?P.sold.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "):s.all.map(zhMoney).join(" · ");
+    return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
+  const gapTxt=sp.gap!=null?`<div style="color:var(--amber,#e0a030)">⚠ Japanese Chinese copies run ${Math.round(Math.abs(sp.gap)*100)}% ${sp.gap<0?"under":"over"} the English ones</div>`:"";
+  if(opt.compact){   // one line: the English pool (else Japanese) and the bid
+    const P=B; if(!P) return `<span style="color:var(--faint)">no Chinese price</span>`;
+    const s=P.pk.use==="sold"?P.pk.sold:P.pk.list;
+    return `<div><b style="color:var(--gold)">Chinese ${P.pk.use} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${sp.baseLang==="jp"?"Japanese":"English"} product</span>${bidB}${sp.gap!=null?` <span style="color:var(--amber,#e0a030)">· JP ${sp.gap<0?"-":"+"}${Math.round(Math.abs(sp.gap)*100)}%</span>`:""}</div>`; }
+  const block=(P, lang)=>{
+    const head=lang==="en" ? `<div style="margin-top:2px"><b>English product</b> <span style="color:var(--faint)">(where you list it)</span></div>` : `<div style="margin-top:4px"><b style="color:var(--dim)">Japanese product</b> <span style="color:var(--faint)">(to compare)</span></div>`;
+    if(!P.sold.length && !P.hits.length) return head+`<div style="color:var(--faint)">nothing says Chinese here</div>`;
+    let h=head;
+    if(P.pk.sold){ h+=line(P, "sold", P.pk.sold.all.length===1?"sale":"latest sales");
+      if(P.pk.use!=="sold") h+=`<div style="color:var(--faint)">newest sale ${day(P.sold[0].at)}, over ${ZH_SOLD_DAYS} days ago: from the listings</div>`; }
+    else h+=`<div style="color:var(--faint)">no Chinese sale in the recent sales</div>`;
+    if(P.pk.list) h+=line(P, "listed", P.pk.list.all.length===1?"listing":"lowest");
+    else h+=`<div style="color:var(--faint)">no Chinese listing right now</div>`;
+    return h; };
+  let h=`<div style="color:var(--gold);font-weight:600">中 Chinese copies</div>` + block(sp.en, "en") + block(sp.jp, "jp") + gapTxt;
+  if(sp.baseLang==="jp") h+=`<div style="color:var(--faint)">no Chinese copies on the English product: the bid uses the Japanese one</div>`;
   const prods=new Set(res.hits.concat(res.sold).map(x=>x.pid)).size;
   h+=`<div style="color:var(--faint)">${res.sold.length} sold · ${res.hits.length} listed · on ${prods} of ${res.checked} products (English + Japanese) · listings are asks</div>`;
   const name=c=>{ const x=BY_ID.get(c); return x ? `${escH(x.s)}${x.lang==="jp"?" JP":""} #${escH(x.num)}` : ""; };
