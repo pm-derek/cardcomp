@@ -2020,10 +2020,15 @@ function zhWire(el, res){
     try{ navigator.clipboard.writeText(t).then(()=>x.textContent="copied", ()=>copyFallback(t, ()=>x.textContent="copied")); }catch(_){ copyFallback(t, ()=>x.textContent="copied"); } });
 }
 // open card: "中 Chinese price" (works on the phone: no extension needed with the proxy set)
+// One card's Chinese price (Derek, 2026-10-29: "not every card's Chinese price, once I pick the card"): the card and its
+// other-language twin of the same tier (Chinese copies get listed on either), not the same name in other sets.
+function zhCandsOne(card){
+  return zhCands(card).filter(c=>c.id===card.id || ((c.lang||"en")!==(card.lang||"en") && zhTwinSet(card, c) && zhTier(c.r)===zhTier(card.r))).slice(0,3);
+}
 async function zhForCard(card, el){
   const hit=ZH_CACHE.get(card.id);
   if(hit && Date.now()-hit.at<10*60e3){ el.innerHTML=zhHTML(hit.res); zhWire(el, hit.res); return; }
-  const cands=zhCands(card);
+  const cands=zhCandsOne(card);
   el.innerHTML=`<span style="color:var(--faint)">checking ${cands.length} TCGplayer product${cands.length===1?"":"s"} (English + Japanese) for Chinese listings…</span>`;
   const res=await zhLookup(cands);
   ZH_CACHE.set(card.id, {res, at:Date.now()});
@@ -3071,6 +3076,7 @@ function renderPrices(host, data, prices, src){
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
   const zhB=host.querySelector(".zhbtn"); if(zhB){ const zo=host.querySelector(".zhout"); zhB.onclick=(e)=>{ e.stopPropagation(); zhB.style.display="none"; zhForCard(card, zo); };
     const hit=ZH_CACHE.get(card.id); if(hit && Date.now()-hit.at<10*60e3){ zhB.style.display="none"; zo.innerHTML=zhHTML(hit.res); zhWire(zo, hit.res); } }
+  if(zhB && zhB.style.display!=="none" && window.ZH_LAST && Date.now()-window.ZH_LAST.at<15*60e3 && (window.ZH_LAST.ids||[]).includes(card.id)) zhB.click();   // RECOG a Chinese read: the card opened from its candidates is looked up at once
   // your bid: follows the last bid tapped (copyAmt fills it), −1 / +1 step it, Enter or send puts it into Whatnot / clipboard
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
   const ovrSend=()=>{ if(!(parseFloat(ovrIn.value)>0)) return; copyAmt(ovrIn.value, ovrBtn); };

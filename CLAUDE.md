@@ -308,10 +308,12 @@ is empty or fails, the other fills (`fallback`). The log row carries `recog.src`
 lots (before the picture match, which only runs on the shown one). Undocumented for us until a live call: the exact
 Pokemon `setName` / `number` format; `recog.cs` keeps the raw reply so the mapping can be checked from the log.
 Extension 0.9.0 (host api.cardsight.ai). The key stays in chrome.storage.local, never in the repo or chat.
-Chinese card read (Derek, 2026-10-28): a reading of kind `foreign` / Chinese runs the Chinese copy price below on the
-Japanese card with the number read (Traditional Chinese follows the Japanese numbering), the English one, their twins
-and the other printings; the auto line shows one compact line (sold or listed estimate + bid), results get a red
-"CN $X" badge, the log row's reading carries `zh {n, est, low, id, checked, ids}`.
+Chinese card read (Derek, 2026-10-28; 2026-10-29: "not every card's Chinese price, once I pick the card"): a reading of
+kind `foreign` / Chinese looks nothing up. It publishes the candidates (`window.ZH_LAST` + a `cardcomp-zh` event: the
+Japanese card with the number read first, since Traditional Chinese follows the Japanese numbering, then the English
+one, their twins, the other printings) and the line says "open the right card for its Chinese price". The phone shows
+their pictures to pick from; the card picked (phone) or opened (desktop, `zhB.click()` on open) is looked up alone with
+its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 
