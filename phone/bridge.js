@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.2";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.5";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -88,7 +88,45 @@
   };
   P.frameFail = function (req, why) { delete PENDING[req]; readState(false); toApp({ type: "cardcomp-auto-readack", ok: false, why: why || "no frame" }); };
 
+  // ---------------------------------------------------------------- read journal (Derek, 2026-10-29: "the last few scans
+  // on Latios were terrible, take a look", and nothing of them was kept: a read reaches the auction log only as the last
+  // read of a lot that got logged). Every read is saved ~25 s later (or when the next read starts) to the private repo:
+  // phone-reads/YYYY-MM-DD/HHMMSS-name.json (text only, ~1-2 KB: no picture), what the model read (and the zoomed
+  // re-read), what CardComp suggested and listed, the picture match, the card on the small card and the last bid tapped.
+  // Needs the GitHub token (same as the log). One file per read: nothing is read back or rewritten.
+  let JOURNAL = null;
+  function journalStart(p, img) {
+    journalFlush();
+    const e = JOURNAL = { v: 1, at: p.at, src: p.src, seller: SELLER || "", lot: lot ? lot.title : "" };   // text only, no picture (Derek: images eat space)
+    clearTimeout(e.timer); e.timer = setTimeout(() => { if (JOURNAL === e) journalFlush(); }, 25000);
+  }
+  function journalFlush() {
+    const e = JOURNAL; JOURNAL = null; if (!e || e.done) return; e.done = true; clearTimeout(e.timer); delete e.timer; delete e.done;
+    try {
+      if (e.read && e.read.name && typeof window.autoMatch === "function") {
+        const m = window.autoMatch(e.read, { short: e.short || 0, model: e.model || "" });
+        e.match = { kind: m.kind, strength: m.strength || null, sug: m.suggestion || null, printing: m.printing || "", note: m.note || "", ids: (m.cards || []).slice(0, 12).map((c) => c.id), pool: (m.pool || []).length };
+      }
+      const fc = typeof focusCard === "function" ? focusCard() : null;
+      e.shown = fc ? fc.dataset.id : null;
+      e.picked = typeof PICKED !== "undefined" ? !!PICKED : null;
+      if (typeof LAST_TAP !== "undefined" && LAST_TAP && LAST_TAP.at >= e.at) e.tapped = { id: LAST_TAP.id || "", n: LAST_TAP.n || "", cond: LAST_TAP.cond || "", bid: LAST_TAP.bid };
+      if (window.ZH_LAST && window.ZH_LAST.at >= e.at) e.zh = { ids: window.ZH_LAST.ids, pick: ZH_PICK || null };
+    } catch (_) {}
+    let tok = ""; try { tok = A.key("github") || ""; } catch (_) {}
+    if (!tok) return;
+    const d = new Date(e.at), pad = (n) => String(n).padStart(2, "0");
+    const name = ((e.read && e.read.name) || e.err || "none").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30).replace(/^-|-$/g, "");
+    const path = `phone-reads/${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}/${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${name || "read"}.json`;
+    const body = JSON.stringify({ message: "phone read " + (e.read && e.read.name || ""), content: btoa(unescape(encodeURIComponent(JSON.stringify(e)))) });
+    fetch("https://api.github.com/repos/pm-derek/cardcomp-data/contents/" + path, { method: "PUT", headers: { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json", "Content-Type": "application/json" }, body })
+      .then((r) => { if (!r.ok) log("read journal: " + r.status); }, (er) => log("read journal: " + er.message));
+  }
+  P.journalNow = journalFlush;   // tests
+
   async function runRead(img, w, h, p) {
+    journalStart(p, img);
+    const je = JOURNAL; je.fkey = String(p.src === "auto" && lot ? lot.startedAt : p.at);
     P.lastFrame = img;   // "frame" on the status line shows what was read
     const fr0 = { img, box: null, at: Date.now() };
     FRAMES.set(String(p.src === "auto" && lot ? lot.startedAt : p.at), fr0);   // the picture match ranks this frame (box once the reply names it)
@@ -108,6 +146,7 @@
     if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(lk)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
     toApp(Object.assign({}, head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short }));
     log({ read: res.read || null, error: res.error || "", ms: res.ms, cost: res.cost, src: p.src });
+    if (je) Object.assign(je, { read: res.read || null, err: res.error || "", model: res.model || modelKey, ms: res.ms || 0, short, tap2reply: Date.now() - p.at });
     readState(false);
     if (!auto || MODE === "card") setMode("card", true);   // the compact card shows the best guess (an automatic read never closes the full view)
     // no number read, or unsure: read the enlarged card from the same frame (CardComp keeps it only if it ranks higher)
@@ -117,6 +156,7 @@
       if (zc) {
         const zr = await recogRead(zc.img, modelKey, apiKey);
         if (zr.read) toApp(Object.assign({}, head, { zoom: zc.z, read: zr.read, error: "", model: zr.model || "", ms: zr.ms || 0, cost: zr.cost || 0, short }));
+        if (je) je.zoom = { z: zc.z, read: zr.read || null, err: zr.error || "" };
       }
     }
   }
@@ -209,7 +249,7 @@
     if (st.seller) SELLER = st.seller; else st.seller = SELLER;
     st.url = "whatnot-app/" + (st.seller || "");
     // the button row (or the Custom sheet's Submit) anchors the lot card above it
-    const sheet = it.find((x) => /^submit max bid$/i.test(x.t));
+    const sheet = it.find((x) => /^submit (max |exact )?bid$/i.test(x.t));   // "Submit Exact Bid" when the sheet's Max Bid switch is off
     const btn = it.filter((x) => x.y > H * 0.55 && (/^custom$/i.test(x.t) || LRX.next.test(x.t) || /^awaiting next item$/i.test(x.t) || /^max bid added/i.test(x.t)));
     const anchorY = sheet ? sheet.y : btn.length ? Math.min(...btn.map((x) => x.y)) : H * 0.94;
     const say = it.find((x) => /^say something/i.test(x.t));
@@ -367,6 +407,7 @@
     if (!usable.length) return { ok: false, why: "no pictures", cands: cands.length };
     const ranked = IM.match(f.px, f.box, usable), v = IM.verdict(ranked, usable);
     log({ pic: v.top, s: v.s, sure: v.sure, pics: usable.length, ms: Date.now() - t0 });
+    if (JOURNAL && String(msg.key) === JOURNAL.fkey) JOURNAL.pic = { top: v.top, s: v.s, sure: v.sure, pics: usable.length, ms: Date.now() - t0, ranked: ranked.slice(0, 5).map((x) => [x.id, +(+x.s || 0).toFixed(3)]) };
     return { ok: true, ranked: ranked.slice(0, 40), v, box: !!f.box, cands: cands.length, pics: usable.length, ms: Date.now() - t0, dl };
   }
 
@@ -969,6 +1010,8 @@
   P.bidAck = function (r) {
     r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r);
     if (!r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) { NOTE = { txt: "Custom box: " + r.why + " (bid copied, paste it)", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
+    // the app switches the sheet's Max Bid on (Derek: max bids only); if it could not, Submit would place an exact bid
+    if (r.ok && r.exact) { NOTE = { txt: "Max Bid is still OFF in Whatnot: switch it on before Submit, or it places an exact bid of the full amount.", until: Date.now() + 12000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 12100); }
   };
   function flashBid(r) {
     const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";

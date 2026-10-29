@@ -328,6 +328,26 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.evaluate(() => { window.zhLookup = window.__zhOrig; });
   await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
 
+  console.log("3e. read journal: every read saved to the private repo (text only): reading, match and pick");
+  await page.evaluate(() => {
+    window.__puts = []; const of = window.fetch;
+    window.fetch = (u, o) => { if (/api\.github\.com\/repos\/pm-derek\/cardcomp-data\/contents\/phone-reads\//.test(String(u))) { window.__puts.push({ u: String(u), b: JSON.parse(o.body) }); return Promise.resolve({ ok: true, status: 201 }); } return of(u, o); };
+    window.__keyOrig = window.Android.key; window.Android.key = (n) => (n === "github" ? "ghp_test" : n === "anthropic" ? "sk-ant-test" : "");
+  });
+  await page.evaluate(() => window.__phone.readNow("bubble")); await page.waitForTimeout(100);
+  await page.evaluate(() => { const cv = document.createElement("canvas"); cv.width = 640; cv.height = 900; cv.getContext("2d").fillRect(0, 0, 640, 900); window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 640, 900); });
+  await page.waitForTimeout(1800);
+  await page.evaluate(() => window.__phone.journalNow()); await page.waitForTimeout(200);
+  const jr = await page.evaluate(() => window.__puts.map((x) => ({ u: x.u, e: JSON.parse(decodeURIComponent(escape(atob(x.b.content)))) })));
+  const jl = jr[jr.length - 1] || {}, je = jl.e || {};
+  ok(jr.length >= 1 && /phone-reads\/\d{4}-\d\d-\d\d\/\d{6}-/.test(jl.u) && !je.frame && JSON.stringify(je).length < 4000 && je.read && je.read.name && je.match && je.match.kind && "shown" in je,
+    `read saved (the previous read is saved when the next starts): ${jl.u ? jl.u.split("/contents/")[1] : "none"} (read ${je.read && je.read.name}, match ${je.match && je.match.kind}, ${JSON.stringify(je).length} bytes, no picture)`);
+  await page.evaluate(() => { window.Android.key = window.__keyOrig; });
+
+  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: true, how: "typed", exact: true }); }); await page.waitForTimeout(200);
+  const ex = await page.evaluate(() => (document.querySelector("#phonestat") || {}).textContent || "");
+  ok(/Max Bid is still OFF/.test(ex), "Max Bid could not be switched on (\"Submit Exact Bid\"): the small card warns: " + ex);
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box
