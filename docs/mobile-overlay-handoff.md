@@ -230,7 +230,8 @@ works like the browser extension and everything merges into one log.
    then holds Whatnot alone, without our overlay, so no crop tricks. Reduced size (about 720 px wide) into an
    ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
    "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
-   14+), with the capture notification.
+   14+), with the capture notification. Since 2026-10-29 the dialog asks for the entire screen on Android 14+
+   (`createConfigForDefaultDisplay`, `ConsentActivity.captureIntent`), see "capture lost" below.
 8. Overlay layout (Derek, 2026-10-23: "it can't cover up damage"; he reads the card's condition off the stream
    before deciding the bid). Rule: the card band, y 22 to 72%, is never covered, except while the keyboard is up.
    Two bands, both remembered:
@@ -629,3 +630,17 @@ price for me to accidentally bid incorrectly; give me a signal"): when the switc
 enters nothing (`no("exact")`) and the small card shows a big red "⚠ Max Bid is OFF in Whatnot. Nothing entered" banner
 for 20 s (`WARN` in `#phonealert`); when the app switched it on itself, a gold note says so. His test ran on the old APK
 (the dump says "live screen not in front"), so the switch itself still waits for the first run on the new APK.
+
+## Capture lost (2026-10-29): "start" on the bubble
+
+Derek: "I often have to stop and restart the overlay because the scanning isn't working anymore, when I switch screens a
+bit too much". Android ends a screen capture on its own: a "single app" capture stops or goes blank when that app's
+screen changes, and the app then only said "start again from the CardComp app" (or failed with "no frame" every read).
+Now:
+- The consent dialog (setup screen and the new one) asks for the entire screen on Android 14+, so switching apps
+  cannot end it. The overlay is hidden for the frame anyway (alpha 0, ~0.2 s).
+- When the capture ends (`MediaProjection` onStop) or two grabs in a row return no frame, it is released and the bubble
+  turns red "start" (`bubbleIdle`). A tap opens `ConsentActivity` (invisible, excluded from recents): the system dialog
+  only, then `ACTION_START` with the new token and `EXTRA_READ`, and the read runs 0.7 s later. No stop / restart.
+- The page gets `__phone.captureLost()`: the reading bar clears and the small card says to tap start. Bridge 0.15.7.
+Needs the new APK.

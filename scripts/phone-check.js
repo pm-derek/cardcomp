@@ -352,6 +352,12 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const mo = await page.evaluate(() => ({ warn: !!document.querySelector("#phonealert .pwarn"), st: (document.querySelector("#phonestat") || {}).textContent || "" }));
   ok(!mo.warn && /switched it on/.test(mo.st), "Max Bid switched on by the app: the warning goes, a gold note says so: " + mo.st);
 
+  // Android ended the capture (screen switching): reading state clears, the note says to tap start on the bubble
+  await page.waitForTimeout(8200);
+  await page.evaluate(() => window.__phone.captureLost()); await page.waitForTimeout(250);
+  const cl = await page.evaluate(() => ({ st: (document.querySelector("#phonestat") || {}).textContent || "", rd: !!document.querySelector("#phoneread:not([hidden])") && getComputedStyle(document.querySelector("#phoneread")).display !== "none" }));
+  ok(/tap start on the bubble/i.test(cl.st) && !cl.rd, "capture lost: reading bar gone, note says tap start on the bubble: " + cl.st);
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box

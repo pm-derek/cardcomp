@@ -26,6 +26,14 @@
             </intent-filter>
         </activity>
 
+        <!-- the screen-capture dialog straight from the bubble ("start"), without opening the app -->
+        <activity
+            android:name=".ConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- screen capture + the floating CardComp windows -->
         <service
             android:name=".OverlayService"

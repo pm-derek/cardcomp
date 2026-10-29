@@ -153,12 +153,13 @@ class OverlayService : Service() {
                         main.post {
                             if (capture !== c) return@post
                             capture = null
-                            toast("screen capture stopped: start again from the CardComp app")
-                            js("window.__phone&&window.__phone.captureLost&&window.__phone.captureLost()")
+                            captureLost("screen capture ended: tap start on the bubble")
                         }
                     }
                     capture = if (c.start(code, data, screenW, screenH, dpi)) c else null
-                    if (capture == null) toast("screen capture did not start")
+                    if (capture == null) toast("screen capture did not start") else { noFrames = 0; bubbleIdle() }
+                    // started from the bubble's "start": go ahead with the read once the dialog is gone
+                    if (capture != null && intent.getBooleanExtra(ConsentActivity.EXTRA_READ, false)) main.postDelayed({ readNow("bubble") }, 700)
                 }
                 running = true
                 return START_NOT_STICKY
@@ -523,11 +524,34 @@ class OverlayService : Service() {
         }
     }
 
+    // ---------------------------------------------------------------- capture lost -> "start" on the bubble, one tap to re-allow
+    private var noFrames = 0
+    private fun captureLost(why: String) {
+        toast(why)
+        bubbleIdle()
+        js("window.__phone&&window.__phone.captureLost&&window.__phone.captureLost()")
+    }
+    /** the system's screen-capture dialog over the stream; with read = true the read follows once it is allowed */
+    private fun askCapture(read: Boolean) {
+        try { startActivity(Intent(this, ConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION).putExtra(ConsentActivity.EXTRA_READ, read)) }
+        catch (e: Exception) { toast("could not ask for screen capture: open the CardComp app") }
+    }
+    /** the bubble at rest: gold "read", or red "start" when the capture is gone */
+    private fun bubbleIdle() {
+        main.post {
+            val b = bubble ?: return@post
+            if (readingSince > 0) return@post
+            val off = capture?.running != true
+            b.text = if (off) "start" else "read"; b.textSize = 13f
+            b.setTextColor(Color.parseColor(if (off) "#ff6b6b" else "#f5b301"))
+            (b.background as? GradientDrawable)?.let { it.setColor(Color.parseColor("#E614181D")); it.setStroke(dp(2), Color.parseColor(if (off) "#ff6b6b" else "#f5b301")) }
+        }
+    }
     private fun flashBubble(txt: String, ms: Long = 1200) {
         val b = bubble ?: return
         if (readingSince > 0) return   // the reading look stays until the read is done
         b.text = txt
-        main.postDelayed({ if (b.text.toString() == txt && readingSince == 0L) b.text = "read" }, ms)
+        main.postDelayed({ if (b.text.toString() == txt && readingSince == 0L) bubbleIdle() }, ms)
     }
 
     // ---------------------------------------------------------------- reading look (Derek: "clearer feedback when a search
@@ -554,8 +578,8 @@ class OverlayService : Service() {
             main.postDelayed(readTimeout, 25000)
         } else {
             readingSince = 0L
-            b.text = "read"; b.textSize = 13f; b.setTextColor(Color.parseColor("#f5b301"))
             bg?.setColor(Color.parseColor("#E614181D"))
+            bubbleIdle()
         }
     }
 
@@ -564,7 +588,7 @@ class OverlayService : Service() {
         if (web == null) return
         bubble?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)   // the tap registered
         if (reading()) { js("window.__phone&&window.__phone.stillReading&&window.__phone.stillReading()"); return }
-        if (capture?.running != true) { toast("screen capture is off: start the overlay from the CardComp app"); return }
+        if (capture?.running != true) { askCapture(true); return }   // one tap: the system dialog, then the read
         setReading(true)
         js("window.__phone&&window.__phone.blur&&window.__phone.blur()")   // the keyboard sits above every overlay: it would be in the frame
         setFocusable(false, false)
@@ -663,7 +687,7 @@ class OverlayService : Service() {
 
         /** one frame of the screen -> window.__phone.frame(req, dataUrl, w, h), or frameFail(req, why) */
         @JavascriptInterface fun grab(req: String): String {
-            val c = capture ?: return "screen capture is off: start the overlay from the CardComp app"
+            val c = capture ?: run { main.post { askCapture(false) }; return "screen capture is off: allow it in the dialog, then read again" }
             val q = JSONObject.quote(req)
             main.post {
                 // a whole-screen capture would include the panel and bubble: hide them for the frame (~0.2 s blink).
@@ -671,8 +695,13 @@ class OverlayService : Service() {
                 band?.alpha = 0f; bubble?.alpha = 0f
                 main.postDelayed({ val started = c.grab { bmp ->
                     band?.alpha = 1f; bubble?.alpha = 1f
-                    if (bmp == null) js("window.__phone.frameFail($q,'no frame from the screen capture')")
+                    if (bmp == null) {
+                        // two empty grabs in a row: the capture is alive in name only (its app gone): treat it as ended
+                        if (++noFrames >= 2 && capture === c) { c.release(); capture = null; captureLost("screen capture stopped giving pictures: tap start on the bubble") }
+                        js("window.__phone.frameFail($q,'no frame from the screen capture: tap start on the bubble if it says so')")
+                    }
                     else Thread {
+                        noFrames = 0
                         val f = cardBand(bmp)
                         val url = Capture.jpegDataUrl(f, 88)
                         js("window.__phone.frame($q,${JSONObject.quote(url)},${f.width},${f.height})")

@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.6";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.7";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -85,6 +85,13 @@
     const p = PENDING[req]; delete PENDING[req]; if (!p) return;
     readState(true, "model");
     runRead(img, w, h, p).catch((e) => log("read: " + e.message)).finally(() => readState(false));
+  };
+  // Android ended the screen capture (an app / screen switch): the bubble now says "start"; drop any read waiting on a frame
+  P.captureLost = function () {
+    for (const k in PENDING) delete PENDING[k];
+    readState(false);
+    NOTE = { txt: "Screen capture ended. Tap start on the bubble to allow it again.", until: Date.now() + 8000 };
+    try { paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 8100); } catch (e) {}
   };
   P.frameFail = function (req, why) { delete PENDING[req]; readState(false); toApp({ type: "cardcomp-auto-readack", ok: false, why: why || "no frame" }); };
 
