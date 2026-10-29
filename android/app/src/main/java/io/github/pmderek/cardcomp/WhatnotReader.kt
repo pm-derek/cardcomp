@@ -96,18 +96,19 @@ class WhatnotReader : AccessibilityService() {
     // Rules as on desktop: a lot already sold / "Awaiting Next Item" enters nothing; a max under the next bid ("Bid $5")
     // does not open the sheet ({why:"under", min}). The amount goes in by ACTION_SET_TEXT when the sheet's amount is a
     // text field; else by the sheet's − / + buttons, reading the amount back after every press (works whatever the step).
-    private class N(val node: AccessibilityNodeInfo, val text: String, val r: Rect)
+    private val WHATNOT = "com.whatnot_mobile"
+    private class N(val node: AccessibilityNodeInfo, val text: String, val r: Rect, val pkg: String = "")
     private fun nodes(): List<N> {
         val out = ArrayList<N>()
         val wins = try { windows } catch (_: Exception) { null } ?: emptyList()
         val roots = wins.mapNotNull { try { it.root } catch (_: Exception) { null } }.filter { it.packageName?.toString() != packageName }
-        fun walk(n: AccessibilityNodeInfo, d: Int) {
+        fun walk(n: AccessibilityNodeInfo, d: Int, pkg: String) {
             if (d > 60 || out.size > 4000) return
             val r = Rect(); n.getBoundsInScreen(r)
-            out.add(N(n, (n.text ?: n.contentDescription ?: "").toString().replace('\n', ' ').trim(), r))
-            for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; walk(c, d + 1) }
+            out.add(N(n, (n.text ?: n.contentDescription ?: "").toString().replace('\n', ' ').trim(), r, pkg))
+            for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; walk(c, d + 1, pkg) }
         }
-        for (r in (if (roots.isEmpty()) listOfNotNull(rootInActiveWindow) else roots)) walk(r, 0)
+        for (r in (if (roots.isEmpty()) listOfNotNull(rootInActiveWindow) else roots)) walk(r, 0, r.packageName?.toString() ?: "")
         return out
     }
     private fun clickable(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -132,19 +133,30 @@ class WhatnotReader : AccessibilityService() {
     }
     private fun fill(amount: Int): org.json.JSONObject {
         fun no(why: String) = org.json.JSONObject().put("ok", false).put("why", why)
-        var all = nodes()
-        if (all.none { it.text.startsWith("Say something") } && all.none { it.text == "Submit Max Bid" }) return no("Whatnot live screen not in front")
+        // Whatnot's window only (split screen puts Chrome or Claude beside it: Chrome's "Customize and control" once
+        // matched as Custom). Live = its bid row or sheet is on screen; the chat box is often not readable, so it is not
+        // required (28 of 31 failed fills before 2026-10-29 had Custom and "Bid $N" on screen and stopped here).
+        fun wn() = nodes().filter { it.pkg == WHATNOT }
+        var all = wn()
+        val live = Regex("""^(Custom|Submit Max Bid|Awaiting Next Item|Sold|Bid \$[0-9,]+)$|^Say something|^Max bid added""", RegexOption.IGNORE_CASE)
+        if (all.none { live.containsMatchIn(it.text) }) return no(if (all.isEmpty()) "Whatnot not on screen" else "Whatnot live screen not in front")
         if (all.any { it.text.equals("Awaiting Next Item", true) || it.text == "Sold" }) return no("sold")
         val next = all.mapNotNull { Regex("""^Bid \$([0-9,]+)""").find(it.text)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() }.firstOrNull()
         if (next != null && amount < next) return no("under").put("min", next)
         if (all.none { it.text == "Submit Max Bid" }) {
-            val custom = all.firstOrNull { it.text.equals("Custom", true) }
-                ?: all.firstOrNull { Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE).containsMatchIn(it.text) }
+            val customRx = Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE)
+            fun findCustom() = all.firstOrNull { it.text.equals("Custom", true) } ?: all.firstOrNull { customRx.containsMatchIn(it.text) }
+            var custom = findCustom()
+            var w = 0
+            while (custom == null && w < 10 && all.none { it.text == "Submit Max Bid" }) { Thread.sleep(100); all = wn(); custom = findCustom(); w++ }   // buttons still animating in
+        }
+        if (all.none { it.text == "Submit Max Bid" }) {
+            val custom = (all.firstOrNull { it.text.equals("Custom", true) } ?: all.firstOrNull { Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE).containsMatchIn(it.text) })
                 ?: return no("no Custom button on screen")
             val target = clickable(custom.node) ?: return no("Custom is not tappable")
-            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (!target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return no("Whatnot refused the tap on Custom")
             var t = 0
-            while (t < 20) { Thread.sleep(100); all = nodes(); if (all.any { it.text == "Submit Max Bid" }) break; t++ }
+            while (t < 20) { Thread.sleep(100); all = wn(); if (all.any { it.text == "Submit Max Bid" }) break; t++ }
             if (all.none { it.text == "Submit Max Bid" }) return no("Custom sheet did not open")
         }
         val submit = all.first { it.text == "Submit Max Bid" }
@@ -169,7 +181,7 @@ class WhatnotReader : AccessibilityService() {
             if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped")
             (if (last < amount) plus else minus).node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             Thread.sleep(90)
-            val now = nodes().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+            val now = wn().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
             am = amountNode(now) ?: return no("amount gone")
             val v = dollars(am.text) ?: return no("amount unreadable")
             if (v == last) { if (++stuck >= 3) return no("the amount does not move: set it by hand") } else stuck = 0
