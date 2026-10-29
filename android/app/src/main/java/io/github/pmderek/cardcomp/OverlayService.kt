@@ -186,7 +186,7 @@ class OverlayService : Service() {
         dpi = resources.displayMetrics.densityDpi
     }
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
-    private val GRIP get() = dp(26)
+    private val GRIP get() = dp(if (wide) 40 else 26)   // taller in the full view, so its shrink button is a real target
 
     /** The page asks for its height (CSS px): the panel is exactly as tall as what it shows, never dead space. */
     private var typingNow = false
@@ -228,7 +228,7 @@ class OverlayService : Service() {
             if (cardH > 0) lp.height = cardH   // the small card's last height at once; the page refines it (never stuck tall)
             typingNow = false
         }
-        collapseBtn?.text = if (on) "✕" else "–"   // full view: ✕ goes back to the small card; small card: – folds into the bubble
+        styleCollapse(on)
         if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
         place()
     }
@@ -302,6 +302,20 @@ class OverlayService : Service() {
         }
     }
 
+    /** Full view: a gold "▾ shrink" pill back to the small card (Derek, 2026-10-29: the ✕ was "very small, hard to find");
+     *  small card: the plain – that folds the panel into the bubble. */
+    private fun styleCollapse(full: Boolean) {
+        val c = collapseBtn ?: return
+        if (full) {
+            c.text = "▾ shrink"; c.textSize = 14f; c.setTextColor(Color.BLACK)
+            c.background = GradientDrawable().apply { setColor(Color.parseColor("#f5b301")); cornerRadius = dp(9).toFloat() }
+            c.layoutParams = LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.MATCH_PARENT).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        } else {
+            c.text = "–"; c.textSize = 18f; c.setTextColor(Color.parseColor("#8b97a5")); c.background = null
+            c.layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        (c.parent as? View)?.let { bar -> bar.layoutParams = bar.layoutParams?.apply { height = GRIP } }
+    }
     private fun gripText(t: String, sizeSp: Float, color: String): TextView = TextView(uiCtx).apply {
         text = t; textSize = sizeSp; setTextColor(Color.parseColor(color)); gravity = Gravity.CENTER
         typeface = Typeface.DEFAULT_BOLD
@@ -396,9 +410,9 @@ class OverlayService : Service() {
         collapseBtn = collapse
         val dots = gripText("⠿ drag", 11f, "#5b6573")
         val resize = gripText("◢", 14f, "#8b97a5")
-        grip.addView(collapse, LinearLayout.LayoutParams(dp(44), GRIP))
-        grip.addView(dots, LinearLayout.LayoutParams(0, GRIP, 1f))
-        grip.addView(resize, LinearLayout.LayoutParams(dp(44), GRIP))
+        grip.addView(collapse, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+        grip.addView(dots, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        grip.addView(resize, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(grip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, GRIP))
 
         val wv = makeWeb()

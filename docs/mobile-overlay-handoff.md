@@ -617,3 +617,10 @@ same tier, `zhCandsOne`), with "checking…" until it lands. Desktop: opening a 
   amount and checks the label again; if it stays off the small card warns before Submit.
 - The screen push to the page (lot tracking) required the chat box or "Submit Max Bid": with the chat minimized no lot
   was read. It now uses the same live test as the fill (bid row, sheet, sold, or chat). Needs the new APK.
+
+## APK (2026-10-29): shrink button
+
+Derek: "the button for minimizing the overlay when it's expanded is hard to find, a very small button". In the full
+view the panel's top bar is now 40 dp tall (26 on the small card) and its left button is a gold "▾ shrink" pill
+(112 dp wide, `styleCollapse`); on the small card it stays the plain – that folds the panel into the bubble. Also:
+PR #91 (English / Japanese Chinese prices apart) was closed unmerged; Derek prefers the pooled price.
