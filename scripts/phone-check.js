@@ -324,7 +324,9 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(300);
   const nb = (await calls()).filter((x) => x.n === "bid");
   ok(/checking Chinese sales and listings for this card/.test(zw) && zv.calls.length === 1 && zv.calls[0][0] === zids[1], "tap a card: only that card is looked up (" + JSON.stringify(zv.calls) + ")");
-  ok(/sold ≈ \$12\.50/.test(zv.t) && /listed ≈ \$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
+  const zpl = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .prow.zp .pb")).map((x) => ({ t: x.textContent, alt: x.classList.contains("alt") })));
+  ok(zpl.length === 2 && /SOLD/.test(zpl[0].t) && !zpl[0].alt && zpl[1].alt && zpl.every((x) => /mkt\$[\d.]+b\/e\$\d+\.\d\d/.test(x.t)), "Chinese bids as pills like the conditions: sold first (used), listed dashed, each bid / mkt / b/e: " + zpl.map((x) => x.t).join(" | "));
+  ok(/sold\s*\$12\.00 Oct/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
   await page.evaluate(() => { window.zhLookup = window.__zhOrig; });
   await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
 
@@ -344,9 +346,19 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
     `read saved (the previous read is saved when the next starts): ${jl.u ? jl.u.split("/contents/")[1] : "none"} (read ${je.read && je.read.name}, match ${je.match && je.match.kind}, ${JSON.stringify(je).length} bytes, no picture)`);
   await page.evaluate(() => { window.Android.key = window.__keyOrig; });
 
-  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: true, how: "typed", exact: true }); }); await page.waitForTimeout(200);
-  const ex = await page.evaluate(() => (document.querySelector("#phonestat") || {}).textContent || "");
-  ok(/Max Bid is still OFF/.test(ex), "Max Bid could not be switched on (\"Submit Exact Bid\"): the small card warns: " + ex);
+  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: false, why: "exact" }); }); await page.waitForTimeout(250);
+  const ex = await page.evaluate(() => ({ warn: (document.querySelector("#phonealert .pwarn") || {}).textContent || "", bg: (() => { const w = document.querySelector("#phonealert .pwarn"); return w ? getComputedStyle(w).backgroundColor : ""; })() }));
+  ok(/Max Bid is OFF in Whatnot\. Nothing entered/.test(ex.warn) && /192, 57, 43/.test(ex.bg), "Max Bid off and could not be switched: nothing entered, big red warning: " + ex.warn);
+  await page.screenshot({ path: path.join(OUT, "phone-maxoff.png") });
+  await page.evaluate(() => window.__phone.bidAck({ ok: true, how: "typed", maxOn: true })); await page.waitForTimeout(250);
+  const mo = await page.evaluate(() => ({ warn: !!document.querySelector("#phonealert .pwarn"), st: (document.querySelector("#phonestat") || {}).textContent || "" }));
+  ok(!mo.warn && /switched it on/.test(mo.st), "Max Bid switched on by the app: the warning goes, a gold note says so: " + mo.st);
+
+  // Android ended the capture (screen switching): reading state clears, the note says to tap start on the bubble
+  await page.waitForTimeout(8200);
+  await page.evaluate(() => window.__phone.captureLost()); await page.waitForTimeout(250);
+  const cl = await page.evaluate(() => ({ st: (document.querySelector("#phonestat") || {}).textContent || "", rd: !!document.querySelector("#phoneread:not([hidden])") && getComputedStyle(document.querySelector("#phoneread")).display !== "none" }));
+  ok(/tap start on the bubble/i.test(cl.st) && !cl.rd, "capture lost: reading bar gone, note says tap start on the bubble: " + cl.st);
 
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;

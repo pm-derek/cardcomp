@@ -183,6 +183,9 @@ class WhatnotReader : AccessibilityService() {
                     t++
                 }
             }
+            // still off: enter nothing (Derek, 2026-10-29: "we shouldn't put in the price for me to accidentally bid incorrectly,
+            // give me a signal"); the small card shows a red warning instead
+            if (exact) return no("exact")
         }
         // the sheet: everything between its title row and Submit; the amount is the biggest "$N" there
         val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }

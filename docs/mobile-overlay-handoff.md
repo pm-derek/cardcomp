@@ -230,7 +230,7 @@ works like the browser extension and everything merges into one log.
    then holds Whatnot alone, without our overlay, so no crop tricks. Reduced size (about 720 px wide) into an
    ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
    "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
-   14+), with the capture notification.
+   14+), with the capture notification. See "capture lost" below for one-tap re-consent from the bubble.
 8. Overlay layout (Derek, 2026-10-23: "it can't cover up damage"; he reads the card's condition off the stream
    before deciding the bid). Rule: the card band, y 22 to 72%, is never covered, except while the keyboard is up.
    Two bands, both remembered:
@@ -617,3 +617,46 @@ same tier, `zhCandsOne`), with "checking…" until it lands. Desktop: opening a 
   amount and checks the label again; if it stays off the small card warns before Submit.
 - The screen push to the page (lot tracking) required the chat box or "Submit Max Bid": with the chat minimized no lot
   was read. It now uses the same live test as the fill (bid row, sheet, sold, or chat). Needs the new APK.
+
+## APK (2026-10-29): shrink button
+
+Derek: "the button for minimizing the overlay when it's expanded is hard to find, a very small button". In the full
+view the panel's top bar is now 40 dp tall (26 on the small card) and its left button is a gold "▾ shrink" pill
+(112 dp wide, `styleCollapse`); on the small card it stays the plain – that folds the panel into the bubble. Also:
+PR #91 (English / Japanese Chinese prices apart) was closed unmerged; Derek prefers the pooled price.
+Max Bid signal (Derek, 2026-10-29: he set Exact by hand, tapped a bid and "nothing happened... we shouldn't put in the
+price for me to accidentally bid incorrectly; give me a signal"): when the switch cannot be turned on, the fill now
+enters nothing (`no("exact")`) and the small card shows a big red "⚠ Max Bid is OFF in Whatnot. Nothing entered" banner
+for 20 s (`WARN` in `#phonealert`); when the app switched it on itself, a gold note says so. His test ran on the old APK
+(the dump says "live screen not in front"), so the switch itself still waits for the first run on the new APK.
+
+## Capture lost (2026-10-29): "start" on the bubble
+
+Derek: "I often have to stop and restart the overlay because the scanning isn't working anymore, when I switch screens a
+bit too much". Android ends a screen capture on its own: a "single app" capture stops or goes blank when that app's
+screen changes, and the app then only said "start again from the CardComp app" (or failed with "no frame" every read).
+Now:
+- The consent dialog stays Android's usual choice. Forcing the entire screen was tried and dropped the same day (Derek
+  works in split screen at times: the frame would hold the other app's half and the card would shrink; "A single app"
+  reads well). While Whatnot is off screen (`onCapturedContentVisibilityChanged`, Android 14+) a read says so at once
+  and does not count toward a lost capture.
+- When the capture ends (`MediaProjection` onStop) or two grabs in a row return no frame with Whatnot on screen, it is released and the bubble
+  turns red "start" (`bubbleIdle`). A tap opens `ConsentActivity` (invisible, excluded from recents): the system dialog
+  only, then `ACTION_START` with the new token and `EXTRA_READ`, and the read runs 0.7 s later. No stop / restart.
+- The page gets `__phone.captureLost()`: the reading bar clears and the small card says to tap start. Bridge 0.15.7.
+Needs the new APK.
+
+## Read button redesign (2026-10-29)
+
+Derek: "make the read button look cool and thoughtfully designed". The bubble is now `ReadButton` (60 dp, drawn on a
+Canvas, no assets): dark glass disc with a gold ring, a card-shaped viewfinder (corner brackets, 5:7) and a small
+label. READ: resting scan line. READING: the scan line sweeps the viewfinder, a gold comet circles the ring, a ping on
+start (replaces the shrink pulse). START (capture off): red, a play mark, the ring breathes. A copied bid flashes large
+with "COPIED". Pressing squishes it to 90% with an overshoot back. It animates only while something moves.
+
+## Chinese bids with break-even (2026-10-29, bridge 0.15.8)
+
+Derek: "Chinese bids should follow the same UI where I can see breakeven, so I can work out my profit at the suggested
+bid". The picked Chinese card now shows two pills like the condition pills: 中 SOLD and 中 LISTED, each with the bid,
+mkt (the averaged Chinese price) and b/e. The one the price uses comes first and is solid; the other is dashed and can
+be tapped too. Above them, one line each of the sales / listings they come from. Desktop: "b/e $X" beside the bid.
