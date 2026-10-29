@@ -232,6 +232,11 @@ async function englishCards(){
       shadowSetId = (bg && claim[bg.groupId]) ? claim[bg.groupId].setId : null;
     }
     let enr = 0, stand = 0, seal = 0;
+    // collector numbers held by 2+ products in a Shadowless group (Base Set Shadowless #58: "Pikachu" and "Pikachu Red
+    // Cheeks"): only the product named like the card folds onto it; the variant becomes its own card. Folding both let
+    // the last one overwrite the printings, so Shadowless Pikachu was priced and linked as Red Cheeks (2026-10-29).
+    const dupNum = {};
+    if (isShadowless) for (const p of products){ const d = (p.extendedData||[]).find(x => x.name === "Number"); if (d){ const n = num0(d.value); dupNum[n] = (dupNum[n]||0) + 1; } }
 
     for (const p of products){
       const ext = {}; (p.extendedData||[]).forEach(d => ext[d.name] = d.value);
@@ -247,8 +252,10 @@ async function englishCards(){
       const num = num0(ext.Number);
       noteSize(setName, ext.Number);
       const name = p.name || "";
+      let variant = false;
       if (isShadowless){                          // fold shadowless printings onto the base card
-        const card = joinCard(shadowSetId, num, p.cleanName || name);
+        let card = joinCard(shadowSetId, num, p.cleanName || name);
+        if (card && dupNum[num] > 1){ const ct = nameToks(card.n); if ([...nameToks(p.cleanName || name)].some(t => !ct.has(t))){ card = null; variant = true; } }
         // each folded printing keeps its own product id (p): the link must open the Shadowless product, not the base card
         if (card){ card.px = card.px || {}; for (const k in px) card.px["Shadowless " + k] = Object.assign({}, px[k], { p: p.productId }); if (!card.pid) card.pid = p.productId; if (!card.o) card.o = g.groupId; enr++; continue; }
         // no base match -> fall through and emit standalone below
@@ -257,7 +264,7 @@ async function englishCards(){
       if (/master ?ball/i.test(name)) prefix = "Master Ball ";
       else if (/pok[eé] ?ball/i.test(name)) prefix = "Poké Ball ";
 
-      const card = joinCard(setId, num, p.cleanName || name);
+      const card = variant ? null : joinCard(setId, num, p.cleanName || name);
       if (card){                                // ---- JOINED: enrich pokemon-tcg-data card ----
         card.o = g.groupId;
         if (prefix){                            // special holo pattern -> add as its own printing(s)
@@ -278,7 +285,9 @@ async function englishCards(){
         standalones.push({
           id: `tc:${p.productId}`, n: (p.cleanName || name), s: g.name, c: g.abbreviation || "",
           y: gyear, o: g.groupId, num, r: ext.Rarity || "", hp: ext.HP || "", t: [], st: [], atk: "",
-          img: p.imageUrl || "", lang: "en", pid: p.productId, px
+          img: p.imageUrl || "", lang: "en", pid: p.productId,
+          // a Shadowless variant keeps "Shadowless" in its printing names, so "shadowless" searches and chips still find it
+          px: variant ? Object.fromEntries(Object.entries(px).map(([k, v]) => ["Shadowless " + k, Object.assign({}, v, { p: p.productId })])) : px
         });
         stand++;
       }
