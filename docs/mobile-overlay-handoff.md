@@ -550,3 +550,21 @@ NM market each): one tap picks it in the open card, so the pills, the fast read,
 follow. When a read names the finish (automatch.js `finishKey`: reverse, holo, Poké Ball, Master Ball, non-holo), the
 card starts on that printing and its chip has a dashed edge; a chip Derek tapped is never overridden. Only cards with
 2+ printings get the row (161 px tall at 250 px wide with it). Bridge 0.13.0, no APK change (the live bridge loads).
+
+## 0.14 (2026-10-29): reading feedback, printing buttons, Custom fill gate
+
+- Reading feedback (Derek: "clearer feedback when a search is happening, sometimes I tap too many times"): one read
+  at a time. While it runs, a gold bar on the small card says "taking the picture / reading the card / found X,
+  checking the rest" with a timer, and the card under it dims and takes no taps. Another tap only shows "still reading,
+  one tap is enough" (25 s cap). The bubble (APK, NATIVE_API 7, `Bridge.reading`) turns solid gold and pulses until
+  the reply, buzzes on every tap, and ignores taps meanwhile. Pulse is scale, not alpha (the capture hides the bubble
+  with alpha 0).
+- Printing buttons (Derek: "hard to navigate between first edition, shadow, unlimited and non-holo"): a full-width
+  row of equal buttons under the card, never scrolling, plain words in a fixed order: 1st Ed, Shadowless, Unlimited
+  (TCGplayer's Normal / Holofoil on a card with 1st Ed or Shadowless printings), Holo, Non-holo, Reverse, Poké Ball,
+  Master Ball; NM price under each; the chosen one solid gold, the one the read saw dashed. 173 px tall at 250 wide.
+- Custom fill: 28 of 31 failed fills in phone-dumps had Custom and "Bid $N" on screen and stopped at "Whatnot live
+  screen not in front", because the gate wanted the chat box ("Say something"), which is often not readable. Now only
+  Whatnot's own window is searched (split screen once matched Chrome's "Customize and control" as Custom) and live
+  means its bid row or sheet is on screen. Replayed on every failed dump: 19 now open Custom, 9 are sold lots (enter
+  nothing, as before), 2 had the sheet opening late (now waits up to 1 s). Needs the new APK.

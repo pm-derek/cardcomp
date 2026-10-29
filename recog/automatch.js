@@ -279,6 +279,9 @@
     if (/master/.test(f)) return pick(/master ball/i);
     if (/pok/.test(f)) return pick(/pok[eé] ball/i);
     if (/reverse/.test(f)) return pick(/^reverse holofoil$/i) || pick(/reverse/i, (k) => !/ball/i.test(k));
+    // holo / non-holo cannot tell 1st Edition or Shadowless from Unlimited (Base Set Pikachu read "non-holo" picked
+    // the $13 Unlimited over the Shadowless one on the table, 2026-10-29): no printing then
+    if (/^holo|non/.test(f) && keys.some((k) => /1st|shadowless/i.test(k))) return "";
     if (/^holo/.test(f)) return pick(/^holofoil$/i) || pick(/^unlimited holofoil$/i) || pick(/holofoil/i, plain);
     if (/non/.test(f)) return pick(/^normal$/i) || pick(/^unlimited$/i);
     return "";

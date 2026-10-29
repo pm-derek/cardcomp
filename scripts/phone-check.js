@@ -54,6 +54,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
       key(n) { rec("key", [n]); return n === "anthropic" ? "sk-ant-test" : ""; },
       setCfg(j) { rec("setCfg", [j]); },
       grab(req) { rec("grab", [req]); window.__lastReq = req; return "ok"; },
+      reading(on) { rec("reading", [on]); },
       bid(a, n) { rec("bid", [a, n]); return JSON.stringify({ ok: false, why: "copied" }); },
       open(u) { rec("open", [u]); },
       focus(w) { rec("focus", [w]); },
@@ -132,12 +133,21 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(100);
   let c = await calls();
   ok(c.some((x) => x.n === "grab"), "bubble -> Android.grab");
+  // one read at a time: a second tap while reading grabs nothing and says so; the card dims under the reading bar
+  await page.evaluate(() => window.__phone.readNow("bubble"));
+  await page.waitForTimeout(250);
+  const rb = await page.evaluate(() => ({ grabs: window.__calls.filter((x) => x.n === "grab").length, bar: (document.querySelector("#phoneread") || {}).textContent || "",
+    still: document.querySelector("#phoneread").classList.contains("still"), dim: document.querySelector("#phonecard").classList.contains("reading"), busy: window.__calls.filter((x) => x.n === "reading").map((x) => x.a[0]).join() }));
+  ok(rb.grabs === 1 && /still reading, one tap is enough/.test(rb.bar) && rb.still && rb.dim && rb.busy === "true", "second tap while reading: no second read, bar says so: " + rb.bar + " (app told: " + rb.busy + ")");
+  await page.screenshot({ path: path.join(OUT, "phone-reading.png") });
   await page.evaluate(() => {
     const cv = document.createElement("canvas"); cv.width = 64; cv.height = 96; const g = cv.getContext("2d"); g.fillStyle = "#c33"; g.fillRect(0, 0, 64, 96);
     window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 720, 1560);
   });
   await page.waitForFunction(() => document.querySelectorAll("#results .card").length > 0, null, { timeout: 10000 });
   await page.waitForTimeout(500);
+  const ra = await page.evaluate(() => ({ bar: (document.querySelector("#phoneread") || {}).className, dim: document.querySelector("#phonecard").classList.contains("reading"), last: window.__calls.filter((x) => x.n === "reading").map((x) => x.a[0]).pop() }));
+  ok(!ra.bar && !ra.dim && ra.last === false, "reply in: bar gone, card back, app told the read is done");
   // not sure (a best guess, no picture agreement): the likely cards to pick from, no pricing yet
   const pk = await page.evaluate(() => ({ items: document.querySelectorAll("#phonebar .pki").length, first: (document.querySelector("#phonebar .pki em") || {}).textContent, guess: !!document.querySelector("#phonebar .pki.g"), priced: !!document.querySelector("#phonebar .pb"), head: (document.querySelector("#phonebar .pkh") || {}).textContent }));
   ok(pk.items > 1 && pk.guess && !pk.priced && /charizard/i.test(pk.first), `unsure read: ${pk.items} likely cards to pick, best guess first (${pk.first}), no pricing yet · "${(pk.head || "").trim()}"`);
@@ -171,7 +181,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
-  ok(h2 > 100 && h2 < 165, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
+  ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
   const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = Math.floor(bidForMargin(m, 0)); return x.be === "$" + be && be >= +x.bid.slice(1); }), rows);
@@ -343,7 +353,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await feed(sold(142, 4, "someone_else")); await page.waitForTimeout(200);
   await feed(live(143, 2, "00:12", "", 3)); await feed(live(143, 2, "00:11", "", 3)); await page.waitForTimeout(1400);
   const g2 = (await calls()).filter((x) => x.n === "grab").length;
-  await page.evaluate(() => { window.__mode = "manual"; });
+  await page.evaluate(() => { window.__mode = "manual"; window.__phone.frameFail(window.__lastReq, "test: no frame"); });   // the mock never sends the frame
   ok(g1 === g0 && g2 === g1 + 1, `auto read: none in manual mode, exactly one per lot in auto mode (${g0} -> ${g1} -> ${g2})`);
 
   // a sold screen that flickers back to a timer restarts the same lot; it must not log twice (rudeboi75404 #79, 2026-10-23)

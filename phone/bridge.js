@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.13.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.14.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -41,17 +41,50 @@
 
   // ---------------------------------------------------------------- read now: frame from the screen capture -> model -> cardcomp-auto
   let REQ = 0; const PENDING = {}, FRAMES = new Map();
+  // One read at a time (Derek, 2026-10-29: "I need clearer feedback when a search is happening, sometimes I tap too many
+  // times"): while a read runs the small card dims under a gold "reading the card" bar with a timer, the app's bubble
+  // pulses (A.reading, APK 0.14+), and another tap only says "still reading". 25 s at most, in case a reply never comes.
+  let READING = null;   // {at, phase: "frame" | "model" | "partial", what}
+  let STILL = 0;        // until when the bar says "still reading"
+  const readBusy = () => !!READING && Date.now() - READING.at < 25000;
+  function readState(on, phase, what) {
+    if (on) READING = Object.assign(READING || { at: Date.now() }, { phase: phase || "frame" }, what ? { what } : {});
+    else READING = null;
+    try { if (typeof A.reading === "function") A.reading(!!on); } catch (_) {}
+    paintReading();
+  }
+  P.stillReading = function () { STILL = Date.now() + 1800; paintReading(); };
+  let readTick = 0;
+  function paintReading() {
+    const w = wrap(); if (!w) return;
+    const el = w.querySelector("#phoneread"), on = readBusy();
+    w.classList.toggle("reading", on);
+    if (!on) { if (READING) READING = null; el.className = ""; el.innerHTML = ""; clearInterval(readTick); readTick = 0; sizeSoon(); return; }
+    const secs = ((Date.now() - READING.at) / 1000).toFixed(1);
+    const txt = READING.phase === "partial" && READING.what ? `found ${READING.what}, checking the rest` : READING.phase === "model" ? "reading the card" : "taking the picture";
+    const html = STILL > Date.now() ? `<span class="sp"></span><b class="still">still reading, one tap is enough</b><span class="sec">${secs}s</span>`
+      : `<span class="sp"></span><b>${esc(txt)}…</b><span class="sec">${secs}s</span>`;
+    el.className = "on" + (STILL > Date.now() ? " still" : "");
+    if (el.innerHTML !== html) el.innerHTML = html;
+    if (!readTick) { readTick = setInterval(paintReading, 200); sizeSoon(); }
+  }
   P.readNow = function (src) {
+    if (readBusy()) { P.stillReading(); return; }
     const c = cfg();
     if (c.mode === "off") { toApp({ type: "cardcomp-auto-readack", ok: false, why: "auto is off" }); return; }
     if (!c.hasKey) { toApp({ type: "cardcomp-auto-readack", ok: false, why: "no API key: add it in the CardComp app" }); return; }
     const req = String(++REQ);
     PENDING[req] = { at: Date.now(), src: src || "app" };
+    readState(true, "frame");
     let r = ""; try { r = A.grab(req); } catch (e) { r = "error: " + e.message; }
-    if (r && r !== "ok") { delete PENDING[req]; toApp({ type: "cardcomp-auto-readack", ok: false, why: r }); }
+    if (r && r !== "ok") { delete PENDING[req]; readState(false); toApp({ type: "cardcomp-auto-readack", ok: false, why: r }); }
   };
-  P.frame = function (req, img, w, h) { const p = PENDING[req]; delete PENDING[req]; if (p) runRead(img, w, h, p); };
-  P.frameFail = function (req, why) { delete PENDING[req]; toApp({ type: "cardcomp-auto-readack", ok: false, why: why || "no frame" }); };
+  P.frame = function (req, img, w, h) {
+    const p = PENDING[req]; delete PENDING[req]; if (!p) return;
+    readState(true, "model");
+    runRead(img, w, h, p).catch((e) => log("read: " + e.message)).finally(() => readState(false));
+  };
+  P.frameFail = function (req, why) { delete PENDING[req]; readState(false); toApp({ type: "cardcomp-auto-readack", ok: false, why: why || "no frame" }); };
 
   async function runRead(img, w, h, p) {
     P.lastFrame = img;   // "frame" on the status line shows what was read
@@ -64,11 +97,14 @@
     let apiKey = ""; try { apiKey = A.key("anthropic") || ""; } catch (_) {}
     if (!apiKey) { toApp(Object.assign(head, { error: "no API key: add it in the CardComp app" })); return; }
     const short = Math.min(w || 0, h || 0);
-    const res = await recogRead(img, modelKey, apiKey, (read, ms) =>
-      toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short })));
+    const res = await recogRead(img, modelKey, apiKey, (read, ms) => {
+      if (read && read.name) readState(true, "partial", read.name + (read.number ? " " + read.number + (read.total ? "/" + read.total : "") : ""));
+      toApp(Object.assign({}, head, { partial: true, read, ms, model: RECOG_MODELS[modelKey] || "", short }));
+    });
     if (res.read && Array.isArray(res.read.box)) { const f = FRAMES.get(String(lk)); if (f) f.box = res.read.box; }   // before the app asks for the picture match
     toApp(Object.assign({}, head, { read: res.read || null, error: res.error || "", model: res.model || "", ms: res.ms || 0, cost: res.cost || 0, short }));
     log({ read: res.read || null, error: res.error || "", ms: res.ms, cost: res.cost, src: p.src });
+    readState(false);
     if (!auto || MODE === "card") setMode("card", true);   // the compact card shows the best guess (an automatic read never closes the full view)
     // no number read, or unsure: read the enlarged card from the same frame (CardComp keeps it only if it ranks higher)
     const r = res.read;
@@ -480,10 +516,11 @@
     "#phonebar .st.on{color:var(--gold);border-color:var(--gold)}" +
     "#phonebar .sn{flex:none;font-size:10px;color:var(--faint);min-width:22px;text-align:center}" +
     // printing chips (Holo / Reverse / Poké Ball...): one tap reprices the pills; gold = the printing the pills show
-    "#phonebar .pp{display:flex;gap:4px;margin-top:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}#phonebar .pp::-webkit-scrollbar{display:none}" +
-    "#phonebar .pq{flex:none;font-size:10px;line-height:1;padding:3px 6px;border:1px solid var(--line);border-radius:11px;color:var(--dim);white-space:nowrap;cursor:pointer}" +
-    "#phonebar .pq i{font-style:normal;color:var(--faint);margin-left:3px}#phonebar .pq.on{border-color:var(--gold);color:var(--gold);background:rgba(245,179,1,.10)}#phonebar .pq.on i{color:var(--gold)}" +
-    "#phonebar .pq.rd{border-style:dashed}" +
+    "#phonebar .pp{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:4px;margin:2px 0 1px}" +
+    "#phonebar .pq{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;height:29px;border:1.5px solid var(--line);border-radius:8px;color:var(--ink);cursor:pointer;line-height:1.1;padding:0 2px}" +
+    "#phonebar .pq b{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}#phonebar .pq i{font-style:normal;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}" +
+    "#phonebar .pq.on{background:var(--gold);border-color:var(--gold);color:#000}#phonebar .pq.on i{color:#000}" +
+    "#phonebar .pq.rd:not(.on){border-style:dashed;border-color:var(--gold)}" +
     "#phonebar .pmiss{font-size:10.5px;color:var(--red);line-height:1.2;margin:1px 0}" +
     // condition pills: a sideways scroller, about two at a time; swipe for MP / HP / DMG
     "#phonebar .prow{display:flex;gap:5px;margin-top:3px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:1px}" +
@@ -503,6 +540,12 @@
     "#phonebar .pki small{font-size:9px;color:var(--dim);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#phonebar .pki .pkp{color:var(--gold)}" +
     "#phonebar .pe{display:flex;align-items:center;gap:8px;padding:6px 0}#phonebar .pe>div:first-child{flex:1;min-width:0}" +
     "#phonebar .pe b{font-size:14px}#phonebar .pe span{display:block;font-size:12px;color:var(--dim);line-height:1.35}#phonebar .ptools{display:flex;gap:6px}" +
+    // reading bar: gold, spinner, timer; the card under it dims and takes no taps until the reply
+    "#phoneread{display:none}#phoneread.on{display:flex;align-items:center;gap:6px;background:var(--gold);color:#000;border-radius:7px;padding:5px 8px;margin:2px 0 3px;font-size:11.5px;line-height:1.2;white-space:nowrap;overflow:hidden}" +
+    "#phoneread b{overflow:hidden;text-overflow:ellipsis}#phoneread .sec{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700}#phoneread .still{font-weight:700;color:#7a1010}" +
+    "#phoneread .sp{flex:none;width:11px;height:11px;border:2px solid #000;border-right-color:transparent;border-radius:50%;animation:phsp .7s linear infinite}@keyframes phsp{to{transform:rotate(360deg)}}" +
+    "#phoneread.still{animation:phsh .3s 2}@keyframes phsh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}" +
+    "#phonecard.reading #phonebar{opacity:.3;pointer-events:none;filter:grayscale(.6)}#phonecard.reading #phonealert{opacity:.4}" +
     "#phonestat{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 0 2px;cursor:pointer}#phonestat:empty{display:none}#phonestat a{color:var(--blue)}#phonestat .bad{color:var(--red)}";
   document.head.appendChild(css);
   document.body.classList.add("phone");
@@ -558,7 +601,7 @@
     if (wrapEl && wrapEl.isConnected) return wrapEl;
     const sr = $(".searchrow"); if (!sr) return null;
     wrapEl = document.createElement("div"); wrapEl.id = "phonecard";
-    wrapEl.innerHTML = '<div id="phonebar"></div><div id="phonealert"></div><div id="phonestat"></div>';
+    wrapEl.innerHTML = '<div id="phoneread"></div><div id="phonebar"></div><div id="phonealert"></div><div id="phonestat"></div>';
     sr.insertBefore(wrapEl, sr.firstChild);
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
@@ -595,6 +638,29 @@
   const SHOW = ["NM", "LP", "MP", "HP", "DMG"];
   const USER_PRINT = {};   // card id -> printing Derek picked on the small card
   let READ_PRINT = null;   // {id, k, done}: the printing the last reading named for its suggested card
+  // Printing buttons in words Derek uses (2026-10-29: "hard to navigate between first edition, shadow, unlimited and
+  // non-holo"): 1st Ed / Shadowless / Unlimited on vintage, Holo / Non-holo on modern, then Reverse and the Ball patterns,
+  // always in that order. TCGplayer's "Normal" / "Holofoil" on a card that also has 1st Edition or Shadowless printings
+  // is the Unlimited one. Two keys landing on one word keep their full names.
+  function printLabels(keys) {
+    const ed = keys.some((k) => /1st|shadowless/i.test(k)), out = {};
+    for (const k of keys) {
+      const s = k.toLowerCase(); let t, rank;
+      if (/master ball/.test(s)) { t = "Master Ball"; rank = 6; }
+      else if (/pok[eé] ball/.test(s)) { t = "Poké Ball"; rank = 5; }
+      else if (/reverse/.test(s)) { t = "Reverse"; rank = 4; }
+      else if (/1st/.test(s)) { t = "1st Ed"; rank = 0; }
+      else if (/shadowless/.test(s)) { t = "Shadowless"; rank = 1; }
+      else if (/unlimited/.test(s) || (ed && /^(normal|holofoil)$/.test(s))) { t = "Unlimited"; rank = 2; }
+      else if (/holo/.test(s)) { t = "Holo"; rank = 2; }
+      else if (/normal/.test(s)) { t = "Non-holo"; rank = 3; }
+      else { t = shortPrint(k); rank = 7; }
+      out[k] = { t, rank };
+    }
+    const seen = {}; for (const k of keys) (seen[out[k].t] = seen[out[k].t] || []).push(k);
+    for (const t in seen) if (seen[t].length > 1) for (const k of seen[t]) out[k].t = shortPrint(k);
+    return out;
+  }
   const shortPrint = (k) => { const s = typeof prettyPrinting === "function" ? prettyPrinting(k) : k;
     return s.replace(/^Reverse Holo$/i, "Reverse").replace(/^Normal$/i, "Non-holo").replace(/Unlimited/g, "Unl").replace(/Shadowless/g, "Shdl").replace(/\s*Pattern$/i, "").replace(/Pok[eé] Ball/i, "Poké Ball").replace(/(Ball) Holo$/, "$1"); };
   // wrap the matcher once (automatch.js loads before this file): remember the printing its finish read names
@@ -652,8 +718,10 @@
     }
     const pk = card.querySelector(".pchip.on"), printing = pk ? (typeof prettyPrinting === "function" ? prettyPrinting(pk.dataset.k) : pk.dataset.k) : "";
     const readK = READ_PRINT && READ_PRINT.id === r.id ? READ_PRINT.k : "";
-    const pchips = pks.length > 1 ? `<div class="pp">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0;
-      return `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}"${c.dataset.k === readK ? ' title="the printing the read saw"' : ""}>${esc(shortPrint(c.dataset.k))}<i>${v > 0 ? money(v) : ""}</i></span>`; }).join("") + `</div>` : "";
+    const labs = printLabels(pks.map((c) => c.dataset.k));
+    const pchips = pks.length > 1 ? `<div class="pp">` + pks.map((c) => { const mm = /\$([\d,]+(?:\.\d+)?)/.exec(c.textContent || ""), v = mm ? +mm[1].replace(/,/g, "") : 0; return { c, v, l: labs[c.dataset.k] }; })
+      .sort((a, b) => a.l.rank - b.l.rank || b.v - a.v).map(({ c, v, l }) =>
+      `<span class="pq${c.classList.contains("on") ? " on" : ""}${c.dataset.k === readK ? " rd" : ""}" data-t="print" data-k="${esc(c.dataset.k)}" title="${esc(typeof prettyPrinting === "function" ? prettyPrinting(c.dataset.k) : c.dataset.k)}${c.dataset.k === readK ? " (the printing the read saw)" : ""}"><b>${esc(l.t)}</b><i>${v > 0 ? money(v).replace(/\.\d\d$/, (x) => (v >= 10 ? "" : x)) : "–"}</i></span>`).join("") + `</div>` : "";
     let rows;
     if (btns.length) {
       const whole = (t) => { const v = Math.floor(parseFloat(String(t).replace(/[^0-9.]/g, "")) || 0); return v >= 1 ? "$" + v : "<$1"; };   // what copyAmt copies
@@ -673,7 +741,7 @@
       `<div class="pc">` +
         `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
-          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` + pchips +
+          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` +
           `<div class="ph">` +
             (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
             `<span class="tg">${live || (tag ? `<i>${esc({ "best guess": "guess", "picture": "pic", "auto + picture": "pic ✓" }[tag] || tag)}</i>` : "")}</span>` +
@@ -688,7 +756,7 @@
             `<small><i>mkt</i>${x.mkt > 0 ? money(x.mkt) : "–"}</small><small><i>b/e</i>${esc(beOf(x.mkt))}</small></span>`).join("") +
           `</div>` +
         `</div>` +
-      `</div>`;
+      `</div>` + pchips;
     if (el.innerHTML !== html) {
       const pr0 = el.querySelector(".prow"), sx = pr0 ? pr0.scrollLeft : 0, same = el.dataset.id === r.id;
       el.innerHTML = html; el.dataset.id = r.id; wire(el, card);

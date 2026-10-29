@@ -26,6 +26,11 @@ import android.util.Log
 import android.view.ContextThemeWrapper
 import android.view.Display
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.ValueAnimator
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -76,7 +81,7 @@ class OverlayService : Service() {
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
         /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
-        const val NATIVE_API = 6
+        const val NATIVE_API = 7
         /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
          *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
          *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
@@ -506,17 +511,49 @@ class OverlayService : Service() {
 
     private fun flashBubble(txt: String, ms: Long = 1200) {
         val b = bubble ?: return
+        if (readingSince > 0) return   // the reading look stays until the read is done
         b.text = txt
-        main.postDelayed({ if (b.text.toString() == txt) b.text = "read" }, ms)
+        main.postDelayed({ if (b.text.toString() == txt && readingSince == 0L) b.text = "read" }, ms)
+    }
+
+    // ---------------------------------------------------------------- reading look (Derek: "clearer feedback when a search
+    // is happening, sometimes I tap too many times"): solid gold bubble that pulses until the page says the read is done
+    // (Bridge.reading), at most 25 s. Taps meanwhile buzz and only make the page say "still reading".
+    private var readingSince = 0L
+    private var pulse: ValueAnimator? = null
+    private val readTimeout = Runnable { setReading(false) }
+    private fun reading() = readingSince > 0 && SystemClock.elapsedRealtime() - readingSince < 25000
+    private fun setReading(on: Boolean) {
+        val b = bubble ?: return
+        val bg = b.background as? GradientDrawable
+        main.removeCallbacks(readTimeout)
+        pulse?.cancel(); pulse = null
+        b.scaleX = 1f; b.scaleY = 1f
+        if (on) {
+            readingSince = SystemClock.elapsedRealtime()
+            b.text = "reading"; b.textSize = 10.5f; b.setTextColor(Color.BLACK)
+            bg?.setColor(Color.parseColor("#f5b301"))
+            // scale, not alpha: the capture hides the bubble with alpha 0 for the frame
+            pulse = ObjectAnimator.ofPropertyValuesHolder(b, PropertyValuesHolder.ofFloat("scaleX", 1f, 0.84f), PropertyValuesHolder.ofFloat("scaleY", 1f, 0.84f)).apply {
+                duration = 520; repeatMode = ValueAnimator.REVERSE; repeatCount = ValueAnimator.INFINITE; start()
+            }
+            main.postDelayed(readTimeout, 25000)
+        } else {
+            readingSince = 0L
+            b.text = "read"; b.textSize = 13f; b.setTextColor(Color.parseColor("#f5b301"))
+            bg?.setColor(Color.parseColor("#E614181D"))
+        }
     }
 
     // ---------------------------------------------------------------- actions
     private fun readNow(src: String) {
         if (web == null) return
+        bubble?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)   // the tap registered
+        if (reading()) { js("window.__phone&&window.__phone.stillReading&&window.__phone.stillReading()"); return }
         if (capture?.running != true) { toast("screen capture is off: start the overlay from the CardComp app"); return }
+        setReading(true)
         js("window.__phone&&window.__phone.blur&&window.__phone.blur()")   // the keyboard sits above every overlay: it would be in the frame
         setFocusable(false, false)
-        flashBubble("…", 3000)
         if (src == "bubble" && wide) toCard()
         main.postDelayed({ js("window.__phone&&window.__phone.readNow(" + JSONObject.quote(src) + ")") }, 120)
     }
@@ -606,6 +643,9 @@ class OverlayService : Service() {
                 if (o.has("model") && !o.isNull("model")) prefs.model = o.getString("model")
             } catch (_: Exception) {}
         }
+
+        /** the page's read state: true when a read starts (also automatic ones), false when its reply is in or it failed */
+        @JavascriptInterface fun reading(on: Boolean) { main.post { if (on != (readingSince > 0)) setReading(on) } }
 
         /** one frame of the screen -> window.__phone.frame(req, dataUrl, w, h), or frameFail(req, why) */
         @JavascriptInterface fun grab(req: String): String {
