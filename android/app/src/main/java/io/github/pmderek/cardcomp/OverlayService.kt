@@ -27,9 +27,6 @@ import android.view.ContextThemeWrapper
 import android.view.Display
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
-import android.animation.ObjectAnimator
-import android.animation.PropertyValuesHolder
-import android.animation.ValueAnimator
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -115,7 +112,7 @@ class OverlayService : Service() {
     private var web: WebView? = null
     private var band: BandLayout? = null
     private var bandLp: WindowManager.LayoutParams? = null
-    private var bubble: TextView? = null
+    private var bubble: ReadButton? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
     private var screenW = 0
     private var screenH = 0
@@ -465,22 +462,13 @@ class OverlayService : Service() {
     // ---------------------------------------------------------------- the bubble: read now; drag; long press hides the band
     @SuppressLint("ClickableViewAccessibility")
     private fun makeBubble() {
-        val tv = TextView(uiCtx)
-        tv.text = "read"
-        tv.setTextColor(Color.parseColor("#f5b301"))
-        tv.textSize = 13f
-        tv.typeface = Typeface.DEFAULT_BOLD
-        tv.gravity = Gravity.CENTER
-        val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
-        bg.setColor(Color.parseColor("#E614181D"))
-        bg.setStroke(dp(2), Color.parseColor("#f5b301"))
-        tv.background = bg
-        val size = dp(56)
+        val tv = ReadButton(uiCtx)   // drawn by hand: viewfinder, scan sweep while reading, red "start" when capture is off
+        if (capture?.running != true) tv.setMode(ReadButton.Mode.OFF)
+        val size = dp(60)
         val lp = WindowManager.LayoutParams(
             size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.START
@@ -500,12 +488,13 @@ class OverlayService : Service() {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false; longFired = false
+                    if (v is ReadButton) v.isPressed = true
                     main.postDelayed(longRun, 550)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - sx; val dy = e.rawY - sy
-                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(longRun) }
+                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(longRun); if (v is ReadButton) v.isPressed = false }
                     if (moved) {
                         lp.x = (ox + dx).toInt().coerceIn(0, maxOf(0, screenW - win.width))
                         lp.y = (oy + dy).toInt().coerceIn(0, maxOf(0, screenH - win.height))
@@ -515,6 +504,7 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(longRun)
+                    if (v is ReadButton) v.isPressed = false
                     if (moved) save()
                     else if (!longFired && e.actionMasked == MotionEvent.ACTION_UP) { v.performClick(); onTap() }
                     return true
@@ -541,44 +531,30 @@ class OverlayService : Service() {
         main.post {
             val b = bubble ?: return@post
             if (readingSince > 0) return@post
-            val off = capture?.running != true
-            b.text = if (off) "start" else "read"; b.textSize = 13f
-            b.setTextColor(Color.parseColor(if (off) "#ff6b6b" else "#f5b301"))
-            (b.background as? GradientDrawable)?.let { it.setColor(Color.parseColor("#E614181D")); it.setStroke(dp(2), Color.parseColor(if (off) "#ff6b6b" else "#f5b301")) }
+            b.setMode(if (capture?.running != true) ReadButton.Mode.OFF else ReadButton.Mode.IDLE)
         }
     }
     private fun flashBubble(txt: String, ms: Long = 1200) {
         val b = bubble ?: return
         if (readingSince > 0) return   // the reading look stays until the read is done
-        b.text = txt
-        main.postDelayed({ if (b.text.toString() == txt && readingSince == 0L) bubbleIdle() }, ms)
+        b.flash(txt, "copied", ms)
     }
 
     // ---------------------------------------------------------------- reading look (Derek: "clearer feedback when a search
-    // is happening, sometimes I tap too many times"): solid gold bubble that pulses until the page says the read is done
+    // is happening, sometimes I tap too many times"): the bubble's scan sweeps (ReadButton READING) until the page says the read is done
     // (Bridge.reading), at most 25 s. Taps meanwhile buzz and only make the page say "still reading".
     private var readingSince = 0L
-    private var pulse: ValueAnimator? = null
     private val readTimeout = Runnable { setReading(false) }
     private fun reading() = readingSince > 0 && SystemClock.elapsedRealtime() - readingSince < 25000
     private fun setReading(on: Boolean) {
         val b = bubble ?: return
-        val bg = b.background as? GradientDrawable
         main.removeCallbacks(readTimeout)
-        pulse?.cancel(); pulse = null
-        b.scaleX = 1f; b.scaleY = 1f
         if (on) {
             readingSince = SystemClock.elapsedRealtime()
-            b.text = "reading"; b.textSize = 10.5f; b.setTextColor(Color.BLACK)
-            bg?.setColor(Color.parseColor("#f5b301"))
-            // scale, not alpha: the capture hides the bubble with alpha 0 for the frame
-            pulse = ObjectAnimator.ofPropertyValuesHolder(b, PropertyValuesHolder.ofFloat("scaleX", 1f, 0.84f), PropertyValuesHolder.ofFloat("scaleY", 1f, 0.84f)).apply {
-                duration = 520; repeatMode = ValueAnimator.REVERSE; repeatCount = ValueAnimator.INFINITE; start()
-            }
+            b.setMode(ReadButton.Mode.READING)
             main.postDelayed(readTimeout, 25000)
         } else {
             readingSince = 0L
-            bg?.setColor(Color.parseColor("#E614181D"))
             bubbleIdle()
         }
     }

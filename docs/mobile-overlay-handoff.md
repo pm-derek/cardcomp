@@ -644,3 +644,11 @@ Now:
   only, then `ACTION_START` with the new token and `EXTRA_READ`, and the read runs 0.7 s later. No stop / restart.
 - The page gets `__phone.captureLost()`: the reading bar clears and the small card says to tap start. Bridge 0.15.7.
 Needs the new APK.
+
+## Read button redesign (2026-10-29)
+
+Derek: "make the read button look cool and thoughtfully designed". The bubble is now `ReadButton` (60 dp, drawn on a
+Canvas, no assets): dark glass disc with a gold ring, a card-shaped viewfinder (corner brackets, 5:7) and a small
+label. READ: resting scan line. READING: the scan line sweeps the viewfinder, a gold comet circles the ring, a ping on
+start (replaces the shrink pulse). START (capture off): red, a play mark, the ring breathes. A copied bid flashes large
+with "COPIED". Pressing squishes it to 90% with an overshoot back. It animates only while something moves.
