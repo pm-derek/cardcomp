@@ -73,4 +73,11 @@ async function tcgFast(q) {
   out.ms = Date.now() - t0;
   return out;
 }
-if (typeof module !== "undefined" && module.exports) module.exports = { tcgFast };
+// Relay for CardComp's own TCGplayer requests (Chinese copy prices, index.html zhLookup): the page cannot call
+// TCGplayer's data services itself (cross-site), the extension can. Only the listings search and the latest sales of one product.
+const TCG_POST_OK = /^https:\/\/(mp-search-api\.tcgplayer\.com\/v1\/product\/\d+\/listings|mpapi\.tcgplayer\.com\/v2\/product\/\d+\/latestsales)$/;
+async function tcgPostRelay(msg) {
+  if (!TCG_POST_OK.test(String(msg.url || ""))) return { ok: false, err: "not a TCGplayer listings address" };
+  try { return { ok: true, j: await tcgJson(msg.url, msg.body || {}) }; } catch (e) { return { ok: false, err: e.message }; }
+}
+if (typeof module !== "undefined" && module.exports) module.exports = { tcgFast, tcgPostRelay };

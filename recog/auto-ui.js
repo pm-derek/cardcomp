@@ -33,7 +33,7 @@
     ".autobadge.strong{background:var(--gold);color:#000}.autobadge.weak{border:1px solid var(--gold);color:var(--gold)}.card.autosug{border-color:var(--gold)}" +
     // the mark says who picked (Derek, 2026-10-20): gold = the auto read, blue = the picture alone, green = both agree
     ".card.autosug{box-shadow:0 0 0 1px var(--gold)}.card.autosug.bypic{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}.card.autosug.byboth{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}" +
-    ".autobadge.pic{border:1px solid var(--blue);color:var(--blue)}.autobadge.both{background:var(--green);color:#000}";
+    ".autobadge.zh{border:1px solid var(--red);color:var(--red)}.autobadge.pic{border:1px solid var(--blue);color:var(--blue)}.autobadge.both{background:var(--green);color:#000}";
   document.head.appendChild(css);
 
   function lineEl() {
@@ -55,8 +55,9 @@
     el.innerHTML = `<span class="modes" id="automodes">${modes.map(([m, l, t]) => `<span data-m="${m}" class="${STATE.mode === m ? "on" : ""}" title="${t}">${l}</span>`).join("")}</span>${STATE.on ? sel : ""}<span id="automsg">${msg}</span>${w}`;
     el.querySelectorAll("#automodes span").forEach((b) => b.onclick = () => { if (b.dataset.m !== STATE.mode) post({ type: "cardcomp-auto-config", mode: b.dataset.m }); });
     paintRead();
+    const zb = $("#autoline .zhauto"); if (zb && ZH_SHOWN && typeof window.zhWire === "function") window.zhWire(zb, ZH_SHOWN);
     const ms = $("#automodel"); if (ms) ms.onchange = () => post({ type: "cardcomp-auto-config", model: ms.value });
-    const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); };
+    const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); const a = Object.values(AUTO).find((x) => x.best && x.best.m === SHOW.m); if (a) zhBadges(a.zh); };
   }
 
   const queryText = (r) => [r.name, r.number ? r.number + (r.total ? "/" + r.total : "") : ""].filter(Boolean).join(" ");
@@ -231,6 +232,7 @@
     if (!touched) fill(m, r);
     a.filledAt = touched ? 0 : Date.now(); a.pic = null;
     askPic(d, m, a);
+    askZh(d, m, a, ctxOf(d));
     if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
     MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "") + (a.picAsk && a.picAsk.key === d.key && !a.pic ? ' &middot; <span class="wt" id="picwait">' + picWaitTxt() + '</span>' : "");
@@ -258,6 +260,45 @@
       a.pic = { err: "no reply" };
       if ((a.best.d.capAt || a.best.d.key) >= LATEST) { MSG = describe(a.best.m, a.best.r, a.best.d) + ' &middot; <span class="bad">picture: no reply from the extension, reload it at chrome://extensions</span>'; paint(); }
     }, 12000);
+  }
+  // Chinese card (Derek, 2026-10-28: "detect that it's Chinese, then find the lowest listed that has Chinese in its
+  // title"; then "check English and JP listings, average of the 3 lowest"). index.html zhLookup reads the listings of the
+  // printings the reading could be: the Japanese card with the number read first (Traditional Chinese follows the
+  // Japanese numbering), then the English one, their twins, the other printings. The line shows the estimate and a bid;
+  // results get a "CN $X" badge on the printings where a Chinese listing was found.
+  const dn = (x) => String(x || "").replace(/^0+/, "");
+  function askZh(d, m, a, ctx) {
+    if (m.kind !== "foreign" || m.foreign !== "Chinese" || typeof window.zhLookup !== "function") return;
+    const r = d.read || {}, num = dn(r.number);
+    let jp = { cards: [] }; try { jp = window.autoMatch(Object.assign({}, r, { language: "jp" }), Object.assign({ noSwap: true }, ctx)); } catch (_) {}
+    const hasNum = (c) => num && dn(c.num) === num, en = m.pool || m.cards, jpc = jp.pool || jp.cards || [];
+    const leads = [jpc.find(hasNum), en.find(hasNum)].filter(Boolean);
+    const extra = jpc.filter(hasNum).concat(en.filter(hasNum), en, jpc);
+    const cands = window.zhCands(leads.length ? leads : en.slice(0, 1), extra);
+    if (!cands.length) return;
+    const ask = a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
+    window.zhLookup(cands).then((res) => { if (a.zhAsk === ask) onZh(d.key, res); });
+  }
+  function zhBadges(z) {
+    if (!z || !z.hits) return;
+    const lo = new Map(); for (const h of z.hits) if (!lo.has(h.id)) lo.set(h.id, h.p);   // hits come cheapest first
+    for (const [id, p] of lo) {
+      const nm = document.querySelector(`#results .card[data-id="${CSS.escape(id)}"] .nm`);
+      if (nm && !nm.querySelector(".autobadge.zh")) nm.insertAdjacentHTML("beforeend", `<span class="autobadge zh" title="cheapest TCGplayer listing on this product that says Chinese">CN $${(+p).toFixed(2)}</span>`);
+    }
+  }
+  let ZH_SHOWN = null;
+  const zhLog = (z) => { if (!z || !z.ok) return null; const s = window.zhSummary(z.hits);
+    return { n: z.hits.length, est: s ? +s.est.toFixed(2) : null, low: s ? s.all : [], id: (z.hits[0] || {}).id || null, checked: z.checked, ids: z.ids }; };
+  function onZh(key, res) {
+    const ak = ADOPT[key] || key, a = AUTO[ak];
+    if (!a || !a.best) return;
+    a.zh = res;
+    zhBadges(res);
+    const bd = a.best.d; if ((bd.capAt || bd.key) < LATEST) return;
+    ZH_SHOWN = res;
+    MSG = describe(a.best.m, a.best.r, bd) + '<div class="zhauto" style="margin-top:3px">' + window.zhHTML(res, { compact: true }) + "</div>";
+    paint();
   }
   // picture match needs extension 0.7+ (state carries the version from then on)
   const picExt = () => { const v = String(STATE.ver || "").split(".").map(Number); return v.length > 1 && (v[0] > 0 || v[1] >= 7); };
@@ -317,7 +358,7 @@
         read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
         kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
         sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id),
-        pic: AUTO[key].pic || null, cs: b.d.cs || null, alt: AUTO[key].alt || null };   // alt: the side-by-side reading that was not shown
+        pic: AUTO[key].pic || null, zh: zhLog(AUTO[key].zh), cs: b.d.cs || null, alt: AUTO[key].alt || null };   // alt: the side-by-side reading that was not shown
     } catch (_) {}
     post({ type: "cardcomp-auto-outcome", key, outcome: { card: c ? { id: c.id, n: c.n, s: c.s, num: c.num, r: c.r || "", label: c.label, cond: c.cond, printing: c.printing || "", multi: !!c.multi, myMax: c.myMax || null } : null, placedMax: rec.placedMax != null ? rec.placedMax : null,
       final: rec.final, winner: rec.winner || "", me: !!rec.me, bids: rec.bids, title: rec.title || "", at: rec.at || Date.now() } });
@@ -336,6 +377,7 @@
     else if (d.type === "cardcomp-auto") { EXT = true; if (STATE.on) onAuto(d); }
     else if (d.type === "cardcomp-auto-watch") { WATCH = { why: d.phase === "watching" || d.phase === "live" || d.phase === "paused" || d.phase === "off" ? d.why : d.phase, mean: d.mean, peak: d.peak, at: Date.now() }; if (STATE.mode === "auto") { const m = $("#autoline .wt"); if (m) m.innerHTML = "&middot; " + esc(WATCH.why); else paint(); } }
     else if (d.type === "cardcomp-auto-img-ack") onPic(d);
+    else if (d.type === "cardcomp-auto-zh-ack") onZh(d);
     else if (d.type === "cardcomp-auto-readack" && !d.ok) { READING = 0; MSG = `<span class="bad">read now: ${esc(d.why || "failed")}</span>`; paint(); paintRead("bad"); }
     else if (d.type === "cardcomp-auto-adopt") {   // read before the timer: the same card is this lot's
       ADOPT[d.from] = d.to;

@@ -17,6 +17,7 @@ window.addEventListener("message", (e) => {
   if (!d || e.source !== cc.contentWindow) return;
   if (/^cardcomp-auto-(hello|config|match|outcome|read)$/.test(d.type || "")) { send(d); return; }   // RECOG app -> extension
   if (d.type === "cardcomp-auto-img") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r, { type: "cardcomp-auto-img-ack", key: d.key, n: d.n }), "*")); return; }   // RECOG picture match (the reading's key / n win over the reply's fields)
+  if (d.type === "cardcomp-tcg-post") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, err: chrome.runtime.lastError.message } : r, { type: "cardcomp-tcg-post-ack", req: d.req }), "*")); return; }   // Chinese copy prices
   if (d.type === "cardcomp-tcg-fast") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({}, chrome.runtime.lastError ? { ok: false, errs: [chrome.runtime.lastError.message] } : r, { type: "cardcomp-tcg-fast-ack", req: d.req }), "*")); return; }
   if (d.type === "cardcomp-live-save" || d.type === "cardcomp-log-save" || d.type === "cardcomp-open-bg") { send(d); return; }
   if (d.type === "cardcomp-snapshot") { send(d, (r) => cc.contentWindow.postMessage(Object.assign({ type: "cardcomp-snapshot-ack" }, chrome.runtime.lastError ? { ok: false, why: chrome.runtime.lastError.message } : r), "*")); return; }
