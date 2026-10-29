@@ -163,8 +163,27 @@ class WhatnotReader : AccessibilityService() {
             while (t < 20) { Thread.sleep(100); all = wn(); if (all.any { SUBMIT.matches(it.text) }) break; t++ }
             if (all.none { SUBMIT.matches(it.text) }) return no("Custom sheet did not open")
         }
-        val submit = all.first { SUBMIT.matches(it.text) }
-        val exact = submit.text.contains("Exact", true)   // Max Bid switched off: Submit places this exact bid at once
+        var submit = all.first { SUBMIT.matches(it.text) }
+        // Max bids only (Derek, 2026-10-29: "I'll never want an exact bid; check it is a max bid and correct it"): the sheet's
+        // Max Bid switch off reads "Submit Exact Bid". Turn it on (the switch, else its row) and wait for "Submit Max Bid";
+        // if it stays off the amount is still entered and the result says exact, so the small card warns before Submit.
+        var exact = submit.text.contains("Exact", true)
+        var switched = false
+        if (exact) {
+            val zone = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+            val toggle = zone.firstOrNull { (it.node.viewIdResourceName ?: "").contains("toggle", true) }?.let { clickable(it.node) }
+                ?: zone.firstOrNull { it.text.equals("Max Bid", true) }?.let { clickable(it.node) }
+            if (toggle != null && toggle.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                var t = 0
+                while (t < 12) {
+                    Thread.sleep(100); all = wn()
+                    val s2 = all.firstOrNull { SUBMIT.matches(it.text) }
+                    if (s2 != null) submit = s2
+                    if (s2 != null && !s2.text.contains("Exact", true)) { exact = false; switched = true; break }
+                    t++
+                }
+            }
+        }
         // the sheet: everything between its title row and Submit; the amount is the biggest "$N" there
         val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
         val edit = sheet.firstOrNull { it.node.isEditable }
@@ -172,7 +191,8 @@ class WhatnotReader : AccessibilityService() {
             val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, amount.toString()) }
             if (edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
                 Thread.sleep(150)
-                return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", exact)
+                val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
+                return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
             }
         }
         fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
@@ -183,7 +203,7 @@ class WhatnotReader : AccessibilityService() {
         if (minus == null || plus == null) return no("no − / + in the Custom sheet")
         var stuck = 0; var last = dollars(am.text) ?: return no("amount unreadable")
         for (i in 0 until 60) {
-            if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped").put("exact", exact)
+            if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped").put("exact", exact).put("maxOn", switched)
             (if (last < amount) plus else minus).node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             Thread.sleep(90)
             val now = wn().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
@@ -191,7 +211,7 @@ class WhatnotReader : AccessibilityService() {
             val v = dollars(am.text) ?: return no("amount unreadable")
             if (v == last) { if (++stuck >= 3) return no("the amount does not move: set it by hand") } else stuck = 0
             // overshoot on a coarse step: stop at the highest value not above the max (never bid over it)
-            if (last < amount && v > amount) { minus.node.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(90); return org.json.JSONObject().put("ok", true).put("how", "stepped, below max (step)").put("exact", exact) }
+            if (last < amount && v > amount) { minus.node.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(90); return org.json.JSONObject().put("ok", true).put("how", "stepped, below max (step)").put("exact", exact).put("maxOn", switched) }
             last = v
         }
         return no("too many steps: set it by hand")

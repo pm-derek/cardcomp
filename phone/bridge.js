@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.4";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.5";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -91,16 +91,13 @@
   // ---------------------------------------------------------------- read journal (Derek, 2026-10-29: "the last few scans
   // on Latios were terrible, take a look", and nothing of them was kept: a read reaches the auction log only as the last
   // read of a lot that got logged). Every read is saved ~25 s later (or when the next read starts) to the private repo:
-  // phone-reads/YYYY-MM-DD/HHMMSS-name.json with a 480 px picture of the frame, what the model read (and the zoomed
+  // phone-reads/YYYY-MM-DD/HHMMSS-name.json (text only, ~1-2 KB: no picture), what the model read (and the zoomed
   // re-read), what CardComp suggested and listed, the picture match, the card on the small card and the last bid tapped.
   // Needs the GitHub token (same as the log). One file per read: nothing is read back or rewritten.
   let JOURNAL = null;
   function journalStart(p, img) {
     journalFlush();
-    const e = JOURNAL = { v: 1, at: p.at, src: p.src, seller: SELLER || "", lot: lot ? lot.title : "", frame: "" };
-    const im = new Image();
-    im.onload = () => { try { const sc = Math.min(1, 480 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * sc); c.height = Math.round(im.naturalHeight * sc); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); e.frame = c.toDataURL("image/jpeg", 0.7); } catch (_) {} };
-    im.src = img;
+    const e = JOURNAL = { v: 1, at: p.at, src: p.src, seller: SELLER || "", lot: lot ? lot.title : "" };   // text only, no picture (Derek: images eat space)
     clearTimeout(e.timer); e.timer = setTimeout(() => { if (JOURNAL === e) journalFlush(); }, 25000);
   }
   function journalFlush() {
@@ -1013,8 +1010,8 @@
   P.bidAck = function (r) {
     r = r || {}; toApp(Object.assign({ type: "cardcomp-bid-ack" }, r)); flashBid(r);
     if (!r.ok && r.why && !/^(copied|under|sold)$/.test(r.why)) { NOTE = { txt: "Custom box: " + r.why + " (bid copied, paste it)", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
-    // the sheet's Max Bid switch is off: Submit would place the whole amount as an exact bid at once, not a max
-    if (r.ok && r.exact) { NOTE = { txt: "Max Bid is OFF in Whatnot: Submit places an exact bid of the full amount. Turn Max Bid on first.", until: Date.now() + 9000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 9100); }
+    // the app switches the sheet's Max Bid on (Derek: max bids only); if it could not, Submit would place an exact bid
+    if (r.ok && r.exact) { NOTE = { txt: "Max Bid is still OFF in Whatnot: switch it on before Submit, or it places an exact bid of the full amount.", until: Date.now() + 12000 }; paintStat(); sizeSoon(); setTimeout(() => { paintStat(); sizeSoon(); }, 12100); }
   };
   function flashBid(r) {
     const txt = r && r.ok ? "in Whatnot ✓" : r && r.why === "under" && r.min ? "need $" + r.min : r && r.why === "sold" ? "sold" : "copied ✓";

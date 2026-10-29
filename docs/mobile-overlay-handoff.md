@@ -607,12 +607,13 @@ same tier, `zhCandsOne`), with "checking…" until it lands. Desktop: opening a 
 
 - Read journal (Derek: "the last few scans on Latios were terrible, take a look"; none of them was kept: a read reaches
   the auction log only as the last read of a lot that got logged, and he was switching streams). Every phone read is
-  now saved ~25 s later (or when the next read starts) to `cardcomp-data/phone-reads/YYYY-MM-DD/HHMMSS-name.json`: a
-  480 px frame, the reading and the zoomed re-read, CardComp's match (kind, suggestion, listed ids), the picture match
+  now saved ~25 s later (or when the next read starts) to `cardcomp-data/phone-reads/YYYY-MM-DD/HHMMSS-name.json`, text
+  only (~1 KB; Derek: no pictures, they eat space): the reading and the zoomed re-read, CardComp's match (kind, suggestion, listed ids), the picture match
   (top 5), the card on the small card, the last bid tapped, the Chinese pick. Needs the GitHub token.
 - Custom fill: the Custom sheet's button reads "Submit Exact Bid" when its Max Bid switch is off (2 of 5 dumps), and
   only "Submit Max Bid" was known, so the sheet looked closed ("Whatnot refused the tap on Custom", "Custom sheet did
-  not open"). Both labels count now. With the switch off the amount is still entered and the small card warns that
-  Submit places an exact bid of the full amount (the switch is not flipped for Derek).
+  not open"). Both labels count now. Max bids only (Derek: "I'll never want an exact bid; check it and correct it"): with
+  the switch off the fill taps it (`#wds.toggle`, else the "Max Bid" row), waits for "Submit Max Bid", then enters the
+  amount and checks the label again; if it stays off the small card warns before Submit.
 - The screen push to the page (lot tracking) required the chat box or "Submit Max Bid": with the chat minimized no lot
   was read. It now uses the same live test as the fill (bid row, sheet, sold, or chat). Needs the new APK.
