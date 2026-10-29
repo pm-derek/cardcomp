@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.14.3";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.0";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -385,7 +385,7 @@
   const FAST_OK = {};   // product id -> {ok, at}: the last fast read of it
   const HANDLED = new Set(["cardcomp-status", "cardcomp-auto-hello", "cardcomp-auto-config", "cardcomp-auto-read", "cardcomp-bid", "cardcomp-open-bg",
     "cardcomp-auto-img", "cardcomp-auto-match", "cardcomp-auto-outcome", "cardcomp-log-save", "cardcomp-live-save", "cardcomp-log-read", "cardcomp-log-edit",
-    "cardcomp-log-prune", "cardcomp-tcg-fast", "cardcomp-snapshot", "cardcomp-live-test"]);
+    "cardcomp-log-prune", "cardcomp-tcg-fast", "cardcomp-snapshot", "cardcomp-live-test", "cardcomp-tcg-post"]);
   window.addEventListener("message", (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
     const d = e.data; if (!d || typeof d.type !== "string" || !HANDLED.has(d.type)) return;
@@ -412,6 +412,14 @@
       }
       case "cardcomp-auto-img": picRank(d).then((r) => toApp(Object.assign({ type: "cardcomp-auto-img-ack" }, r, { key: d.key, n: d.n || 1 })),
         (e) => toApp({ type: "cardcomp-auto-img-ack", key: d.key, n: d.n || 1, cands: 0, ok: false, why: e.message })); break;
+      case "cardcomp-tcg-post": {   // Chinese copy prices: listings / latest sales of one product, through the app (no proxy needed)
+        const url = String(d.url || "");
+        if (!/^https:\/\/(mp-search-api\.tcgplayer\.com\/v1\/product\/\d+\/listings|mpapi\.tcgplayer\.com\/v2\/product\/\d+\/latestsales)$/.test(url)) { toApp({ type: "cardcomp-tcg-post-ack", req: d.req, ok: false, err: "not a TCGplayer listings address" }); break; }
+        nativeFetch(url, { method: "POST", body: JSON.stringify(d.body || {}) })
+          .then(async (r) => { if (!r.ok) throw new Error(new URL(url).host + " " + r.status); return r.json(); })
+          .then((j) => toApp({ type: "cardcomp-tcg-post-ack", req: d.req, ok: true, j }), (e) => toApp({ type: "cardcomp-tcg-post-ack", req: d.req, ok: false, err: e.message }));
+        break;
+      }
       case "cardcomp-tcg-fast":   // every condition from TCGplayer's data services (extension/tcgfast.js through the app)
         fastReady.then(async (f) => {
           let r;
@@ -521,6 +529,8 @@
     // card: only the card line and the status line (plus the lot strip when phase 1 feeds it)
     "body.ph-card .searchrow{padding-bottom:0!important}body.ph-card{overflow:hidden}body.ph-card .searchrow>*:not(#phonecard){display:none!important}" +
     "#phonealert{font-size:10.5px;line-height:1.3;color:var(--red);display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:1px 0}#phonealert:empty{display:none}" +
+    "#phonealert .pzh{flex:1 1 100%;display:flex;align-items:center;gap:6px;color:var(--ink);font-size:11px;border:1px solid var(--red);border-radius:7px;padding:4px 6px;margin:2px 0}" +
+    "#phonealert .pzh span{flex:1;min-width:0}#phonealert .pzh button{flex:none;font-size:14px;color:#000;background:var(--gold);border-color:var(--gold);padding:6px 10px}" +
     "#phonealert .na{color:var(--gold)}#phonealert button{font:inherit;font-size:11px;font-weight:700;color:var(--ink);background:rgba(255,107,107,.14);border:1px solid var(--red);border-radius:6px;padding:3px 8px}" +
     "body:not(.ph-card) #phonealert{display:none}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
@@ -854,14 +864,23 @@
       }
       if (ls.querySelector(".lotnudge")) out.push(`<button data-t="nudge">${esc(ls.querySelector(".lotnudge").textContent.trim())}</button>`);
     }
+    // Chinese card read: the Chinese copy price from the auto line (sold / listed average) with its bid, on the small card
+    const am = $("#automsg"), zh = am && am.querySelector(".zhauto");
+    if (zh) {
+      const zb = zh.querySelector(".zhbid"), txt = (zh.textContent || "").replace(zb ? zb.textContent : "", "").replace(/\s+/g, " ").trim();
+      out.push(`<div class="pzh"><span>中 ${esc(txt)}</span>${zb ? `<button data-t="zhbid">${esc(zb.textContent.trim())}</button>` : ""}</div>`);
+    } else if (am && /chinese/i.test(am.textContent || "") && typeof window.zhLookup === "function" && fromRead()) out.push(`<div class="pzh"><span>中 Chinese card: checking Chinese copy prices on TCGplayer…</span></div>`);
     const html = [...new Set(out)].join("");
     if (al.innerHTML !== html) {
       al.innerHTML = html;
       const b = al.querySelector('[data-t="nudge"]'); if (b) b.onclick = (e) => { e.preventDefault(); touched(); const n = $("#lotstrip .lotnudge"); if (n) n.click(); };
+      const zb = al.querySelector('[data-t="zhbid"]'); if (zb) zb.onclick = (e) => { e.preventDefault(); touched(); const o = $("#automsg .zhauto .zhbid"); if (o) o.click(); };
       sizeSoon();
     }
   }
   { const ls = $("#lotstrip"); if (ls) new MutationObserver(() => paintAlerts()).observe(ls, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] }); }
+  // the auto line is rebuilt on every paint (#automsg is replaced): watch its container, which auto-ui creates once
+  { const watchLine = () => { const al = $("#autoline"); if (!al) return setTimeout(watchLine, 1000); new MutationObserver(() => paintAlerts()).observe(al, { childList: true, subtree: true, characterData: true }); paintAlerts(); }; watchLine(); }
 
   // status line under the card: what was read and how sure ("read Ralts · reverse holo → 3 of 27, no number"), and the frame
   function paintStat() {

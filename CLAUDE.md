@@ -170,7 +170,7 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
   listings; it copies / sends with `data-nolabel`, so the lot is not labeled as the English card at its English market.
   Rows under it: the 3 newest sales and 3 cheapest listings with titles and products. Transport (`tcgPost`): the
   extension on desktop (`cardcomp-tcg-post`, relay `tcgPostRelay` in tcgfast.js, only those two TCGplayer addresses;
-  extension 0.9.3); on the phone the proxy address in settings ("Chinese copy prices on the phone", a Cloudflare Worker,
+  extension 0.9.3); in the phone app the bridge relays it through the app (`cardcomp-tcg-post` -> `Android.http`, same two addresses; no proxy needed) and the small card shows the price line with its bid (`.pzh` in `#phonealert`, mirrored from `#automsg .zhauto`); in a plain phone browser the proxy address in settings ("Chinese copy prices on the phone", a Cloudflare Worker,
   `tools/tcg-proxy-worker.js`, setup steps at its top), else a direct request, which works only if TCGplayer allows
   this site (unknown; the cloud sandbox cannot reach TCGplayer). Field names of listings / sales are unverified: "copy
   debug" gives what each product returned (row counts, language / listing type counts, field names). Tested with mocked

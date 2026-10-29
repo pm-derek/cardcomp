@@ -30,6 +30,8 @@ import java.net.URL
 class MainActivity : Activity() {
     companion object {
         @Volatile var resumed = false
+        /** the screen in front, so the installer's confirm dialog is opened from it (a receiver may not start activities) */
+        @Volatile var front: java.lang.ref.WeakReference<Activity>? = null
         const val RELEASE_API = "https://api.github.com/repos/pm-derek/cardcomp/releases/tags/phone-latest"
         const val APK_URL = "https://github.com/pm-derek/cardcomp/releases/download/phone-latest/cardcomp-phone.apk"
     }
@@ -135,10 +137,10 @@ class MainActivity : Activity() {
 
     // the overlay never covers this screen (it hid the Stop button)
     override fun onResume() {
-        super.onResume(); resumed = true; OverlayService.instance?.appVisible(true); refresh()
+        super.onResume(); resumed = true; front = java.lang.ref.WeakReference(this); OverlayService.instance?.appVisible(true); refresh()
         if (System.currentTimeMillis() - updChecked > 5 * 60_000) checkUpdate()
     }
-    override fun onPause() { resumed = false; OverlayService.instance?.appVisible(false); super.onPause() }
+    override fun onPause() { resumed = false; front = null; OverlayService.instance?.appVisible(false); super.onPause() }
 
     private fun refresh() {
         val overlay = Settings.canDrawOverlays(this)
@@ -256,7 +258,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) { e.message ?: "failed" }
             runOnUiThread {
                 updBtn.isEnabled = true
-                updNote.text = err?.let { "update failed: $it" } ?: "confirm the install in the dialog"
+                updNote.text = err?.let { "update failed: $it" } ?: "confirm the install in the dialog (none? install it from the browser: link below)"
             }
         }.start()
     }
