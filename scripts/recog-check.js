@@ -732,25 +732,24 @@ async function appPage(browser, base, blockRecog) {
   await lotEnd();
   await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Pikachu ex", number: "132", total: "106", language: "zh", rarity: "Special Art Rare", stamp: "", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
   await ap.waitForTimeout(600);
-  const zp = await ap.evaluate(() => window.__tcgPosts.filter((d) => !/latestsales/.test(d.url)).map((d) => d.url.match(/product\/(\d+)/)[1] + (d.body.filters.term.listingType ? "c" : d.body.filters.term.language ? "l" : "")));
-  const zs = await ap.evaluate(() => window.__tcgPosts.filter((d) => /latestsales/.test(d.url)).length);
-  st = await ap.evaluate(() => ({ line: document.querySelector("#autoline").textContent, badges: [...document.querySelectorAll("#results .autobadge.zh")].map((b) => b.textContent), bid: (document.querySelector("#autoline .zhbid") || {}).textContent }));
-  const zpid = await ap.evaluate(() => window.__zhPid);
-  ok(zp[0] === zpid && zp.length > 2 && zp.length <= 16, "Chinese card: Japanese #132/106 checked first, then the rest (" + zp.slice(0, 6).join(",") + ")");
-  ok(zs >= zp.filter((x) => /^\d+$/.test(x)).length && /Chinese sold ≈ \$12\.50/.test(st.line) && /avg of 2 of the 3 latest sales/.test(st.line) && /\$40\.00 left out, too far off/.test(st.line) && /bid \$\d+/.test(st.bid || "") && /3 sold · 3 listed/.test(st.line),
-    "auto line: Chinese sold average of the 3 newest without the far one, bid from it (" + st.line.replace(/\s+/g, " ").slice(-150) + ")");
-  await ap.screenshot({ path: path.join(OUT, "recog-app-zh.png") });
-  // the bid sends without labeling the lot as the English card
-  const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
-  await ap.click("#autoline .zhbid"); await ap.waitForTimeout(150);
-  ok(await ap.evaluate((t0) => JSON.stringify(LAST_TAP) === t0, tap0) && (await posted()).length >= 0, "Chinese bid: sent without labeling the lot as the English card");
-  // open card (phone path too): the button runs the same lookup
+  // no lookups on the read (Derek, 2026-10-29: "not every card's Chinese price, once I pick the card"): the candidates
+  // are published (the phone shows their pictures), the line says to open the right card
+  st = await ap.evaluate(() => ({ posts: window.__tcgPosts.length, ids: (window.ZH_LAST || {}).ids || [], line: document.querySelector("#autoline").textContent, jp: String(CARDS.find((c) => c.lang === "jp" && c.n === "Pikachu ex 132 106").id) }));
+  ok(st.posts === 0 && st.ids[0] === st.jp && st.ids.includes("sv8-238") && /open the right card for its Chinese price/.test(st.line),
+    "Chinese card: no TCGplayer lookups on the read, candidates listed with the Japanese #132/106 first (" + st.ids.slice(0, 3).join(" | ") + ")");
+  // open card (phone path too): opening a candidate looks up that card and its other-language twin only, at once
   await ap.evaluate(() => { if (LANG !== "en") setLang("en", true); });
   await ap.fill("#q", "pikachu ex 238/191"); await ap.waitForTimeout(500);
   await ap.click('#results .card[data-id="sv8-238"]'); await ap.waitForTimeout(400);
-  await ap.click('#results .card[data-id="sv8-238"] .zhbtn'); await ap.waitForTimeout(600);
-  st = await ap.evaluate(() => (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "");
-  ok(/Chinese sold ≈ \$12\.50/.test(st) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st) && /\$4\.00 left out/.test(st) && !/\$9\.00/.test(st) && /3 sold · 3 listed · on 2 of/.test(st), "open card: '中 Chinese copy price' checks the English card and its Japanese twin (" + st.replace(/\s+/g, " ").slice(0, 260) + ")");
+  if (await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8-238"] .zhbtn'); return !!b && b.style.display !== "none"; })) await ap.click('#results .card[data-id="sv8-238"] .zhbtn');
+  await ap.waitForTimeout(600);
+  st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
+  ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
+    "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
+  // the bid sends without labeling the lot as the English card
+  const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
+  await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);
+  ok(await ap.evaluate((t0) => JSON.stringify(LAST_TAP) === t0, tap0), "Chinese bid: sent without labeling the lot as the English card");
   await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card.png") });
   await ap.setViewportSize({ width: 380, height: 800 }); await ap.waitForTimeout(200);
   await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8-238"] .zhout').scrollIntoView({ block: "end" })); await ap.waitForTimeout(100);

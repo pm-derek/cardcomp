@@ -599,3 +599,6 @@ average, "no CN", or "checking…" while it runs), priced ones first. A tap show
 cheapest Chinese listings and a bid from them (sent with `data-nolabel`); ≡ goes back. auto-ui publishes the lookup as
 `window.ZH_LAST` (+ a `cardcomp-zh` event); a new read or typing a search leaves the view. The one-line aggregate stays
 on desktop.
+Revised the same day (Derek: "not every card's Chinese price, once I pick the card"): no lookups on the read. The small
+card shows only the candidates' pictures; the one tapped is looked up alone (that card + its other-language twin of the
+same tier, `zhCandsOne`), with "checking…" until it lands. Desktop: opening a candidate runs the same single lookup.

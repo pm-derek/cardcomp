@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.1";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.2";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -533,7 +533,7 @@
     "#phonealert .pzh{flex:1 1 100%;display:flex;align-items:center;gap:6px;color:var(--ink);font-size:11px;border:1px solid var(--red);border-radius:7px;padding:4px 6px;margin:2px 0}" +
     "#phonealert .pzh span{flex:1;min-width:0}#phonealert .pzh button{flex:none;font-size:14px;color:#000;background:var(--gold);border-color:var(--gold);padding:6px 10px}" +
     "#phonebar .zl{font-size:11px;line-height:1.3;color:var(--ink);margin-top:3px}#phonebar .zl small{color:var(--dim);font-size:10px}#phonebar .zl.on b{color:var(--gold)}" +
-    "#phonebar .zhb{font:inherit;font-size:16px;font-weight:800;color:#000;background:var(--gold);border:0;border-radius:8px;padding:7px 14px}#phonebar .pki .pkp.no{color:var(--faint)}" +
+    "#phonebar .zhb{font:inherit;font-size:16px;font-weight:800;color:#000;background:var(--gold);border:0;border-radius:8px;padding:7px 14px}#phonebar .zl .bad{color:var(--red)}" +
     "#phonealert .na{color:var(--gold)}#phonealert button{font:inherit;font-size:11px;font-weight:700;color:var(--ink);background:rgba(255,107,107,.14);border:1px solid var(--red);border-radius:6px;padding:3px 8px}" +
     "body:not(.ph-card) #phonealert{display:none}" +
     "body.ph-card .searchrow~*,body.ph-card #autoline{display:none!important}" +
@@ -813,55 +813,60 @@
     paintStat(); sizeSoon();
   }
   // ---- Chinese card read (Derek, 2026-10-29: "it's not showing me which card it is calculating against; nest the Chinese
-  // price in each card art and I select the right one"): every product the lookup checked, with its picture and its own
-  // Chinese price (sold average, else listed average); a tap shows that card's sales, listings and bid. The bid is sent
-  // like the Chinese line's (data-nolabel: the lot is not labeled as the English card at its English price).
+  // price in the card art and I select the right one" -> "not every card's Chinese price, once I pick the card"): the
+  // small card shows the candidates' pictures; the one Derek taps is looked up alone (that card + its other-language twin,
+  // index.html zhCandsOne) and shows its Chinese sales, listings and bid. The bid is sent like the Chinese line's
+  // (data-nolabel: the lot is not labeled as the English card at its English price).
   let ZH_PICK = null, ZH_KEY = null;
+  const ZH_ONE = {};   // card id -> {res} or {pending}
   const zhActive = () => { const Z = window.ZH_LAST; return !!Z && Date.now() - Z.at < 15 * 60e3; };
   const zhById = (id) => (typeof BY_ID !== "undefined" && BY_ID.get && BY_ID.get(id)) || (typeof CARDS !== "undefined" ? CARDS.find((c) => c.id === id) : null);
-  function zhOne(res, id) {
-    const r = { ok: true, hits: res.hits.filter((h) => h.id === id), sold: res.sold.filter((x) => x.id === id) };
-    const pk = typeof zhPick === "function" ? zhPick(r) : null;
-    const est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0;
-    return { r, pk, est };
-  }
   const zm = (v) => (typeof zhMoney === "function" ? zhMoney(v) : money(v));
   function zhBidOf(est) {
     try { const mf = (typeof getNum === "function" ? getNum("tgtmargin", 10) : 10) / 100, np = netProceeds(listSale(est)), b = wholeBid(bidForMargin(est, mf), np); return b >= 1 ? b : 0; } catch (_) { return 0; }
   }
+  function zhStart(id) {
+    const c = zhById(id); if (!c || (ZH_ONE[id] && (ZH_ONE[id].pending || Date.now() - ZH_ONE[id].at < 10 * 60e3))) return;
+    const hit = typeof ZH_CACHE !== "undefined" && ZH_CACHE.get(id);
+    if (hit && Date.now() - hit.at < 10 * 60e3) { ZH_ONE[id] = { res: hit.res, at: hit.at }; return; }
+    if (typeof zhLookup !== "function" || typeof zhCandsOne !== "function") { ZH_ONE[id] = { res: { ok: false, errs: ["Chinese price not loaded"], hits: [], sold: [] }, at: Date.now() }; return; }
+    ZH_ONE[id] = { pending: true, at: Date.now() };
+    zhLookup(zhCandsOne(c)).then((res) => { ZH_ONE[id] = { res, at: Date.now() }; try { ZH_CACHE.set(id, { res, at: Date.now() }); } catch (_) {} paintBar(); },
+      (e) => { ZH_ONE[id] = { res: { ok: false, errs: [e.message], hits: [], sold: [] }, at: Date.now() }; paintBar(); });
+  }
   function paintZh(el, tools) {
     const Z = window.ZH_LAST;
     if (Z.key !== ZH_KEY) { ZH_KEY = Z.key; ZH_PICK = null; }
-    const res = Z.res, ids = ((res && res.ids) || Z.ids || []).filter((id) => zhById(id));
+    const ids = (Z.ids || []).filter((id) => zhById(id));
     const day = (t) => (t ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
     let html;
-    if (ZH_PICK && res) {
-      const c = zhById(ZH_PICK), o = zhOne(res, ZH_PICK), img = c && typeof imgOf === "function" ? imgOf(c) : "", b = o.est ? zhBidOf(o.est) : 0;
-      const soldL = o.pk && o.pk.sold ? `<div class="zl${o.pk.use === "sold" ? " on" : ""}"><b>sold ≈ ${zm(o.pk.sold.est)}</b> <small>${o.r.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese sale in the recent sales</small></div>`;
-      const listL = o.pk && o.pk.list ? `<div class="zl${o.pk.use === "listed" ? " on" : ""}"><b>listed ≈ ${zm(o.pk.list.est)}</b> <small>${o.pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese listing right now</small></div>`;
+    if (ZH_PICK) {
+      const c = zhById(ZH_PICK), one = ZH_ONE[ZH_PICK] || {}, res = one.res, img = c && typeof imgOf === "function" ? imgOf(c) : "";
+      let body;
+      if (!res) body = `<div class="zl"><small>checking Chinese sales and listings for this card…</small></div>`;
+      else if (!res.ok) body = `<div class="zl"><small class="bad">Chinese price: ${esc((res.errs || [])[0] || "failed")}</small></div>`;
+      else {
+        const pk = typeof zhPick === "function" ? zhPick(res) : null, est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0, b = est ? zhBidOf(est) : 0;
+        body = (pk && pk.sold ? `<div class="zl${pk.use === "sold" ? " on" : ""}"><b>sold ≈ ${zm(pk.sold.est)}</b> <small>${res.sold.slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese sale in the recent sales</small></div>`) +
+          (pk && pk.list ? `<div class="zl${pk.use === "listed" ? " on" : ""}"><b>listed ≈ ${zm(pk.list.est)}</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl"><small>no Chinese listing right now</small></div>`) +
+          (b ? `<div class="zl"><button class="zhb" data-t="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zm(est)} from the ${pk.use === "sold" ? "sales" : "listings"}">bid $${b}</button> <small>from ${zm(est)} ${pk.use}</small></div>` : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
+      }
       html = `<div class="pc"><div class="pimg" data-t="zhback">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
         `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
-        `<div class="ph"><span class="st" data-t="zhback" title="back to the cards">&#8801;</span><span class="tg">${o.r.sold.length} sold · ${o.r.hits.length} listed</span>${tools}</div>` +
-        soldL + listL +
-        (b ? `<div class="zl"><button class="zhb" data-t="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zm(o.est)} from the ${o.pk.use === "sold" ? "sales" : "listings"}">bid $${b}</button> <small>from ${zm(o.est)} ${o.pk.use}</small></div>` : `<div class="zl"><small>nothing Chinese on this card: ≡ for the others</small></div>`) +
-        `</div></div>`;
+        `<div class="ph"><span class="st" data-t="zhback" title="back to the cards">&#8801;</span><span class="tg">${res && res.ok ? `${res.sold.length} sold · ${res.hits.length} listed` : ""}</span>${tools}</div>` +
+        body + `</div></div>`;
     } else {
-      const rows = ids.map((id, i) => { const o = res ? zhOne(res, id) : null; return { id, i, o, n: o ? o.r.sold.length * 2 + o.r.hits.length : 0 }; });
-      if (res) rows.sort((a, b) => b.n - a.n || a.i - b.i);
-      const withN = rows.filter((x) => x.n > 0).length;
-      const items = rows.slice(0, 8).map(({ id, o }) => {
+      const items = ids.slice(0, 8).map((id) => {
         const c = zhById(id), img = typeof imgOf === "function" ? imgOf(c) : "";
-        const pr = !res ? "checking…" : o.est ? `CN ${o.pk.use} ${zm(o.est)}` : "no CN";
-        return `<span class="pki${o && o.est ? " g" : ""}" data-t="zhpick" data-id="${esc(id)}"><span class="pkim">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</span>` +
-          `<em>${esc(c.n)}</em><small>${esc(c.s)} #${esc(c.num)}${(c.lang || "en") === "jp" ? " JP" : ""}</small><small class="pkp${o && o.est ? "" : " no"}">${esc(pr)}</small></span>`;
+        return `<span class="pki" data-t="zhpick" data-id="${esc(id)}"><span class="pkim">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</span>` +
+          `<em>${esc(c.n)}</em><small>${esc(c.s)} #${esc(c.num)}${(c.lang || "en") === "jp" ? " JP" : ""}</small></span>`;
       }).join("");
-      const head = !res ? "checking Chinese prices on these cards…" : !res.ok ? "Chinese price lookup failed" : withN ? `${withN} of ${rows.length} with Chinese sales / listings` : "no Chinese sale or listing on any of these";
-      html = `<div class="pk"><div class="ph"><span class="tg pkh"><b>中 Which card?</b> ${esc(head)}</span>${tools}</div><div class="pkrow">${items}</div></div>`;
+      html = `<div class="pk"><div class="ph"><span class="tg pkh"><b>中 Which card?</b> tap it for its Chinese price</span>${tools}</div><div class="pkrow">${items}</div></div>`;
     }
     if (el.innerHTML !== html) {
       el.innerHTML = html; el.dataset.id = "";
       const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); touched(); f(x); }; });
-      on("zhpick", (x) => { ZH_PICK = x.dataset.id; paintBar(); });
+      on("zhpick", (x) => { ZH_PICK = x.dataset.id; zhStart(ZH_PICK); paintBar(); });
       on("zhback", () => { ZH_PICK = null; paintBar(); });
       on("zhbid", (x) => { if (typeof copyAmt === "function") copyAmt(x.dataset.bid, x); });
       const sx = el.querySelector('[data-t="search"]'); if (sx) sx.onclick = (e) => { e.preventDefault(); e.stopPropagation(); window.ZH_LAST = null; TOUCH_FIELD_AT = Date.now(); try { A.focus(true); } catch (_) {} setMode("list"); const q = $("#q"); if (q) { q.focus(); q.select(); } };
