@@ -246,7 +246,7 @@
       <label>target return % (margin)<input id="cfg-tgtmargin" type="number" value="10"></label>
       <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-speed" checked style="width:auto"> speed-based margin (fast cards keep the target above, slow cards up to 25%)</label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
-      <label>min profit per card $ (cheap cards: the bid always leaves this)<input id="cfg-minprofit" type="number" value="0.5" step="0.25" min="0"></label>
+      <label>min profit per card $ (cheap cards: the bid always leaves this)<input id="cfg-minprofit" type="number" value="0.25" step="0.25" min="0"></label>
       <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
     </div>
     <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">Fees &amp; shipping are modeled from verified TCGplayer rates (commission, txn, PWE/tracked postage, thresholds) — no longer manual.</div>
@@ -1626,7 +1626,7 @@ function feeTierFor(p, tiers){ tiers=tiers||FEE_TIERS; return tiers.find(x=>p>=x
 function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B
 // Min profit per card (Derek, 2026-10-30: "bid $2 for a net profit of 9 cents, not worth my time"): on cheap cards the
 // margin alone nets cents (10% of a $2 card is $0.18), so the bid also leaves at least this many dollars.
-const minProfit=()=>Math.max(0, getNum("minprofit", 0.5));
+const minProfit=()=>Math.max(0, getNum("minprofit", 0.25));
 function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? Math.max(0, Math.min(np/(1+mf), np-minProfit())) : 0; }  // highest cost that still nets >= mf margin and >= the min profit
 /* ---- Velocity-tiered margin (see CLAUDE.md "Planned: velocity-tiered margin").
    From 12 months of Derek's TCGplayer sales + one inventory snapshot. Pokemon singles only.
