@@ -26,6 +26,8 @@ import android.util.Log
 import android.view.ContextThemeWrapper
 import android.view.Display
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -76,7 +78,7 @@ class OverlayService : Service() {
         @Volatile var running = false
         @Volatile var instance: OverlayService? = null
         /** what this APK's Bridge offers; phone/bridge.js says which it needs (PHONE_API) */
-        const val NATIVE_API = 6
+        const val NATIVE_API = 7
         /** After each page load: run the newest bridge that this APK can serve. The live site's copy (main) wins when its
          *  version is higher than the one built into the APK and it needs no newer native API; else the built-in one.
          *  So page-side fixes reach the phone with no new APK once they are merged. Indirect eval keeps the globals global. */
@@ -110,7 +112,7 @@ class OverlayService : Service() {
     private var web: WebView? = null
     private var band: BandLayout? = null
     private var bandLp: WindowManager.LayoutParams? = null
-    private var bubble: TextView? = null
+    private var bubble: ReadButton? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
     private var screenW = 0
     private var screenH = 0
@@ -148,12 +150,13 @@ class OverlayService : Service() {
                         main.post {
                             if (capture !== c) return@post
                             capture = null
-                            toast("screen capture stopped: start again from the CardComp app")
-                            js("window.__phone&&window.__phone.captureLost&&window.__phone.captureLost()")
+                            captureLost("screen capture ended: tap start on the bubble")
                         }
                     }
                     capture = if (c.start(code, data, screenW, screenH, dpi)) c else null
-                    if (capture == null) toast("screen capture did not start")
+                    if (capture == null) toast("screen capture did not start") else { noFrames = 0; bubbleIdle() }
+                    // started from the bubble's "start": go ahead with the read once the dialog is gone
+                    if (capture != null && intent.getBooleanExtra(ConsentActivity.EXTRA_READ, false)) main.postDelayed({ readNow("bubble") }, 700)
                 }
                 running = true
                 return START_NOT_STICKY
@@ -181,7 +184,7 @@ class OverlayService : Service() {
         dpi = resources.displayMetrics.densityDpi
     }
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
-    private val GRIP get() = dp(26)
+    private val GRIP get() = dp(if (wide) 40 else 26)   // taller in the full view, so its shrink button is a real target
 
     /** The page asks for its height (CSS px): the panel is exactly as tall as what it shows, never dead space. */
     private var typingNow = false
@@ -223,7 +226,7 @@ class OverlayService : Service() {
             if (cardH > 0) lp.height = cardH   // the small card's last height at once; the page refines it (never stuck tall)
             typingNow = false
         }
-        collapseBtn?.text = if (on) "✕" else "–"   // full view: ✕ goes back to the small card; small card: – folds into the bubble
+        styleCollapse(on)
         if (b.isAttachedToWindow) try { wm.updateViewLayout(b, lp) } catch (_: Exception) {}
         place()
     }
@@ -297,6 +300,20 @@ class OverlayService : Service() {
         }
     }
 
+    /** Full view: a gold "▾ shrink" pill back to the small card (Derek, 2026-10-29: the ✕ was "very small, hard to find");
+     *  small card: the plain – that folds the panel into the bubble. */
+    private fun styleCollapse(full: Boolean) {
+        val c = collapseBtn ?: return
+        if (full) {
+            c.text = "▾ shrink"; c.textSize = 14f; c.setTextColor(Color.BLACK)
+            c.background = GradientDrawable().apply { setColor(Color.parseColor("#f5b301")); cornerRadius = dp(9).toFloat() }
+            c.layoutParams = LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.MATCH_PARENT).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        } else {
+            c.text = "–"; c.textSize = 18f; c.setTextColor(Color.parseColor("#8b97a5")); c.background = null
+            c.layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        (c.parent as? View)?.let { bar -> bar.layoutParams = bar.layoutParams?.apply { height = GRIP } }
+    }
     private fun gripText(t: String, sizeSp: Float, color: String): TextView = TextView(uiCtx).apply {
         text = t; textSize = sizeSp; setTextColor(Color.parseColor(color)); gravity = Gravity.CENTER
         typeface = Typeface.DEFAULT_BOLD
@@ -391,9 +408,9 @@ class OverlayService : Service() {
         collapseBtn = collapse
         val dots = gripText("⠿ drag", 11f, "#5b6573")
         val resize = gripText("◢", 14f, "#8b97a5")
-        grip.addView(collapse, LinearLayout.LayoutParams(dp(44), GRIP))
-        grip.addView(dots, LinearLayout.LayoutParams(0, GRIP, 1f))
-        grip.addView(resize, LinearLayout.LayoutParams(dp(44), GRIP))
+        grip.addView(collapse, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+        grip.addView(dots, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        grip.addView(resize, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(grip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, GRIP))
 
         val wv = makeWeb()
@@ -445,22 +462,13 @@ class OverlayService : Service() {
     // ---------------------------------------------------------------- the bubble: read now; drag; long press hides the band
     @SuppressLint("ClickableViewAccessibility")
     private fun makeBubble() {
-        val tv = TextView(uiCtx)
-        tv.text = "read"
-        tv.setTextColor(Color.parseColor("#f5b301"))
-        tv.textSize = 13f
-        tv.typeface = Typeface.DEFAULT_BOLD
-        tv.gravity = Gravity.CENTER
-        val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
-        bg.setColor(Color.parseColor("#E614181D"))
-        bg.setStroke(dp(2), Color.parseColor("#f5b301"))
-        tv.background = bg
-        val size = dp(56)
+        val tv = ReadButton(uiCtx)   // drawn by hand: viewfinder, scan sweep while reading, red "start" when capture is off
+        if (capture?.running != true) tv.setMode(ReadButton.Mode.OFF)
+        val size = dp(60)
         val lp = WindowManager.LayoutParams(
             size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         )
         lp.gravity = Gravity.TOP or Gravity.START
@@ -480,12 +488,13 @@ class OverlayService : Service() {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false; longFired = false
+                    if (v is ReadButton) v.isPressed = true
                     main.postDelayed(longRun, 550)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - sx; val dy = e.rawY - sy
-                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(longRun) }
+                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(longRun); if (v is ReadButton) v.isPressed = false }
                     if (moved) {
                         lp.x = (ox + dx).toInt().coerceIn(0, maxOf(0, screenW - win.width))
                         lp.y = (oy + dy).toInt().coerceIn(0, maxOf(0, screenH - win.height))
@@ -495,6 +504,7 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(longRun)
+                    if (v is ReadButton) v.isPressed = false
                     if (moved) save()
                     else if (!longFired && e.actionMasked == MotionEvent.ACTION_UP) { v.performClick(); onTap() }
                     return true
@@ -504,19 +514,60 @@ class OverlayService : Service() {
         }
     }
 
+    // ---------------------------------------------------------------- capture lost -> "start" on the bubble, one tap to re-allow
+    private var noFrames = 0
+    private fun captureLost(why: String) {
+        toast(why)
+        bubbleIdle()
+        js("window.__phone&&window.__phone.captureLost&&window.__phone.captureLost()")
+    }
+    /** the system's screen-capture dialog over the stream; with read = true the read follows once it is allowed */
+    private fun askCapture(read: Boolean) {
+        try { startActivity(Intent(this, ConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION).putExtra(ConsentActivity.EXTRA_READ, read)) }
+        catch (e: Exception) { toast("could not ask for screen capture: open the CardComp app") }
+    }
+    /** the bubble at rest: gold "read", or red "start" when the capture is gone */
+    private fun bubbleIdle() {
+        main.post {
+            val b = bubble ?: return@post
+            if (readingSince > 0) return@post
+            b.setMode(if (capture?.running != true) ReadButton.Mode.OFF else ReadButton.Mode.IDLE)
+        }
+    }
     private fun flashBubble(txt: String, ms: Long = 1200) {
         val b = bubble ?: return
-        b.text = txt
-        main.postDelayed({ if (b.text.toString() == txt) b.text = "read" }, ms)
+        if (readingSince > 0) return   // the reading look stays until the read is done
+        b.flash(txt, "copied", ms)
+    }
+
+    // ---------------------------------------------------------------- reading look (Derek: "clearer feedback when a search
+    // is happening, sometimes I tap too many times"): the bubble's scan sweeps (ReadButton READING) until the page says the read is done
+    // (Bridge.reading), at most 25 s. Taps meanwhile buzz and only make the page say "still reading".
+    private var readingSince = 0L
+    private val readTimeout = Runnable { setReading(false) }
+    private fun reading() = readingSince > 0 && SystemClock.elapsedRealtime() - readingSince < 25000
+    private fun setReading(on: Boolean) {
+        val b = bubble ?: return
+        main.removeCallbacks(readTimeout)
+        if (on) {
+            readingSince = SystemClock.elapsedRealtime()
+            b.setMode(ReadButton.Mode.READING)
+            main.postDelayed(readTimeout, 25000)
+        } else {
+            readingSince = 0L
+            bubbleIdle()
+        }
     }
 
     // ---------------------------------------------------------------- actions
     private fun readNow(src: String) {
         if (web == null) return
-        if (capture?.running != true) { toast("screen capture is off: start the overlay from the CardComp app"); return }
+        bubble?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)   // the tap registered
+        if (reading()) { js("window.__phone&&window.__phone.stillReading&&window.__phone.stillReading()"); return }
+        if (capture?.running != true) { askCapture(true); return }   // one tap: the system dialog, then the read
+        setReading(true)
         js("window.__phone&&window.__phone.blur&&window.__phone.blur()")   // the keyboard sits above every overlay: it would be in the frame
         setFocusable(false, false)
-        flashBubble("…", 3000)
         if (src == "bubble" && wide) toCard()
         main.postDelayed({ js("window.__phone&&window.__phone.readNow(" + JSONObject.quote(src) + ")") }, 120)
     }
@@ -607,9 +658,13 @@ class OverlayService : Service() {
             } catch (_: Exception) {}
         }
 
+        /** the page's read state: true when a read starts (also automatic ones), false when its reply is in or it failed */
+        @JavascriptInterface fun reading(on: Boolean) { main.post { if (on != (readingSince > 0)) setReading(on) } }
+
         /** one frame of the screen -> window.__phone.frame(req, dataUrl, w, h), or frameFail(req, why) */
         @JavascriptInterface fun grab(req: String): String {
-            val c = capture ?: return "screen capture is off: start the overlay from the CardComp app"
+            val c = capture ?: run { main.post { askCapture(false) }; return "screen capture is off: allow it in the dialog, then read again" }
+            if (!c.contentVisible) return "Whatnot is not on screen (the capture is set to Whatnot only): bring it up, then read"
             val q = JSONObject.quote(req)
             main.post {
                 // a whole-screen capture would include the panel and bubble: hide them for the frame (~0.2 s blink).
@@ -617,8 +672,13 @@ class OverlayService : Service() {
                 band?.alpha = 0f; bubble?.alpha = 0f
                 main.postDelayed({ val started = c.grab { bmp ->
                     band?.alpha = 1f; bubble?.alpha = 1f
-                    if (bmp == null) js("window.__phone.frameFail($q,'no frame from the screen capture')")
+                    if (bmp == null) {
+                        // two empty grabs in a row: the capture is alive in name only (its app gone): treat it as ended
+                        if (c.contentVisible && ++noFrames >= 2 && capture === c) { c.release(); capture = null; captureLost("screen capture stopped giving pictures: tap start on the bubble") }
+                        js("window.__phone.frameFail($q,'no frame from the screen capture: tap start on the bubble if it says so')")
+                    }
                     else Thread {
+                        noFrames = 0
                         val f = cardBand(bmp)
                         val url = Capture.jpegDataUrl(f, 88)
                         js("window.__phone.frame($q,${JSONObject.quote(url)},${f.width},${f.height})")

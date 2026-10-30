@@ -54,6 +54,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
       key(n) { rec("key", [n]); return n === "anthropic" ? "sk-ant-test" : ""; },
       setCfg(j) { rec("setCfg", [j]); },
       grab(req) { rec("grab", [req]); window.__lastReq = req; return "ok"; },
+      reading(on) { rec("reading", [on]); },
       bid(a, n) { rec("bid", [a, n]); return JSON.stringify({ ok: false, why: "copied" }); },
       open(u) { rec("open", [u]); },
       focus(w) { rec("focus", [w]); },
@@ -132,12 +133,21 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(100);
   let c = await calls();
   ok(c.some((x) => x.n === "grab"), "bubble -> Android.grab");
+  // one read at a time: a second tap while reading grabs nothing and says so; the card dims under the reading bar
+  await page.evaluate(() => window.__phone.readNow("bubble"));
+  await page.waitForTimeout(250);
+  const rb = await page.evaluate(() => ({ grabs: window.__calls.filter((x) => x.n === "grab").length, bar: (document.querySelector("#phoneread") || {}).textContent || "",
+    still: document.querySelector("#phoneread").classList.contains("still"), dim: document.querySelector("#phonecard").classList.contains("reading"), busy: window.__calls.filter((x) => x.n === "reading").map((x) => x.a[0]).join() }));
+  ok(rb.grabs === 1 && /still reading, one tap is enough/.test(rb.bar) && rb.still && rb.dim && rb.busy === "true", "second tap while reading: no second read, bar says so: " + rb.bar + " (app told: " + rb.busy + ")");
+  await page.screenshot({ path: path.join(OUT, "phone-reading.png") });
   await page.evaluate(() => {
     const cv = document.createElement("canvas"); cv.width = 64; cv.height = 96; const g = cv.getContext("2d"); g.fillStyle = "#c33"; g.fillRect(0, 0, 64, 96);
     window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 720, 1560);
   });
   await page.waitForFunction(() => document.querySelectorAll("#results .card").length > 0, null, { timeout: 10000 });
   await page.waitForTimeout(500);
+  const ra = await page.evaluate(() => ({ bar: (document.querySelector("#phoneread") || {}).className, dim: document.querySelector("#phonecard").classList.contains("reading"), last: window.__calls.filter((x) => x.n === "reading").map((x) => x.a[0]).pop() }));
+  ok(!ra.bar && !ra.dim && ra.last === false, "reply in: bar gone, card back, app told the read is done");
   // not sure (a best guess, no picture agreement): the likely cards to pick from, no pricing yet
   const pk = await page.evaluate(() => ({ items: document.querySelectorAll("#phonebar .pki").length, first: (document.querySelector("#phonebar .pki em") || {}).textContent, guess: !!document.querySelector("#phonebar .pki.g"), priced: !!document.querySelector("#phonebar .pb"), head: (document.querySelector("#phonebar .pkh") || {}).textContent }));
   ok(pk.items > 1 && pk.guess && !pk.priced && /charizard/i.test(pk.first), `unsure read: ${pk.items} likely cards to pick, best guess first (${pk.first}), no pricing yet · "${(pk.head || "").trim()}"`);
@@ -171,11 +181,11 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
   const h2 = await fit();
-  ok(h2 > 100 && h2 < 165, "small card with a result: card picture + condition pills, " + h2 + " css px tall at 250 px wide");
+  ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
-  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = Math.floor(bidForMargin(m, 0)); return x.be === "$" + be && be >= +x.bid.slice(1); }), rows);
-  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0), and never below the suggested bid");
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForMargin(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
+  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
   ok(gridNM && rows[0].bid === "$" + gridNM, "NM pill sends what the full grid's NM sends: $" + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
@@ -246,6 +256,110 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(sel === 0, "no visible <select> (an overlay WebView crashes on dropdowns)");
 
 
+  console.log("3c. speed: likely cards at the partial reading, photos fetched while the model finishes");
+  await page.evaluate(() => {   // a streamed reply: name and number at 300 ms, the rest at 1.5 s
+    window.__rr = window.recogRead;
+    window.recogRead = (img, mk, key, onPartial) => new Promise((res) => {
+      setTimeout(() => onPartial && onPartial({ name: "Pikachu", number: "58", total: "102", language: "en" }, 300), 300);
+      setTimeout(() => res({ read: { card_visible: true, name: "Pikachu", number: "58", total: "102", language: "en", rarity: "Common", finish: "", set: "Base", confidence: 0.9, box: [] }, ms: 1500, model: "claude-sonnet-5-5", cost: 0 }), 1500);
+    });
+  });
+  const img0 = (await calls()).filter((x) => x.n === "img").length;
+  await page.evaluate(() => window.__phone.readNow("bubble"));
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { const cv = document.createElement("canvas"); cv.width = 64; cv.height = 96; cv.getContext("2d").fillRect(0, 0, 64, 96); window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 720, 1560); });
+  await page.waitForTimeout(800);
+  const sp = await page.evaluate(() => ({ cls: document.querySelector("#phonecard").className, bar: document.querySelector("#phoneread").textContent, dim: getComputedStyle(document.querySelector("#phonebar")).opacity, imgs: window.__calls.filter((x) => x.n === "img").length }));
+  ok(/partial/.test(sp.cls) && +sp.dim === 1 && /found Pikachu 58\/102, checking the rest/.test(sp.bar) && sp.imgs > img0, `at the partial reading the card is usable and photos are downloading (${sp.imgs - img0} so far, bar: ${sp.bar})`);
+  await page.waitForTimeout(1500);
+  const sf = await page.evaluate(() => ({ bar: document.querySelector("#phoneread").className, cls: document.querySelector("#phonecard").className }));
+  ok(!sf.bar && !/reading/.test(sf.cls), "full reply: bar gone");
+  await page.evaluate(() => { window.recogRead = window.__rr; });
+
+  console.log("3d. Chinese copy price on the phone: TCGplayer requests through the app, price + bid on the small card");
+  const zr = await page.evaluate(() => new Promise((res) => {
+    const h = (e) => { if (e.data && e.data.type === "cardcomp-tcg-post-ack" && e.data.req === "zt1") { window.removeEventListener("message", h); res(e.data); } };
+    window.addEventListener("message", h);
+    window.postMessage({ type: "cardcomp-tcg-post", req: "zt1", url: "https://mp-search-api.tcgplayer.com/v1/product/42382/listings", body: { size: 50 } }, location.origin);
+    setTimeout(() => res({ timeout: true }), 5000);
+  }));
+  const zc = (await calls()).filter((x) => x.n === "http" && /42382\/listings/.test(x.a[1] || "")).length;
+  ok(!zr.timeout && zr.req === "zt1" && zc === 1, `listings request went through the app and was answered (here TCGplayer is unreachable: ${zr.err || "data"})`);
+  await page.evaluate(() => {
+    window.__zhClicked = 0; window.__phone.setMode("card");
+    let am = document.querySelector("#automsg");
+    if (!am) { const al = document.querySelector("#autoline") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "autoline" })); am = al.appendChild(Object.assign(document.createElement("span"), { id: "automsg" })); }
+    am.insertAdjacentHTML("beforeend", '<div class="zhauto"><div><b>Chinese sold ≈ $12.50</b> <span>avg of the 3 latest sales: $12 · $13 · $12.50</span> <button class="zhbid" data-bid="9">bid $9</button></div></div>');
+    am.querySelector(".zhbid").addEventListener("click", () => window.__zhClicked++);
+  });
+  await page.waitForTimeout(300);
+  const zb = await page.evaluate(() => { const b = document.querySelector('#phonealert [data-t="zhbid"]'); const t = (document.querySelector("#phonealert .pzh") || {}).textContent || ""; if (b) b.click(); return { t, has: !!b, clicked: window.__zhClicked }; });
+  ok(zb.has && /Chinese sold ≈ \$12\.50/.test(zb.t) && zb.clicked === 1, "small card shows the Chinese price and its bid button sends it: " + zb.t);
+  await page.evaluate(() => { const z = document.querySelector("#automsg .zhauto"); if (z) z.remove(); });
+
+  // a Chinese read: the candidates' pictures, no lookups; the card tapped is looked up alone, then its bid
+  const zids = await page.evaluate(() => CARDS.filter((c) => /^sylveon/i.test(c.n) && c.px).slice(0, 3).map((c) => c.id));
+  await page.evaluate((ids) => {
+    const now = Date.now();
+    window.__zhCalls = []; window.__zhOrig = window.zhLookup;
+    window.zhLookup = async (cands) => { window.__zhCalls.push(cands.map((c) => c.id)); await new Promise((r) => setTimeout(r, 150));
+      const id = cands[0].id; return { ok: true, ids: cands.map((c) => c.id), checked: cands.length, errs: [], dbg: [],
+        hits: [{ id, pid: 1, p: 14, title: "Sylveon Chinese" }, { id, pid: 1, p: 15, title: "S-Chinese" }],
+        sold: [{ id, pid: 1, p: 12, at: now - 864e5 }, { id, pid: 1, p: 13, at: now - 2 * 864e5 }, { id, pid: 1, p: 12.5, at: now - 3 * 864e5 }] }; };
+    window.ZH_LAST = { key: 1, at: now, ids };
+    window.__phone.setMode("card"); window.dispatchEvent(new Event("cardcomp-zh"));
+  }, zids);
+  await page.waitForTimeout(300);
+  const zp = await page.evaluate(() => ({ items: Array.from(document.querySelectorAll('#phonebar [data-t="zhpick"]')).map((x) => ({ id: x.dataset.id, t: x.textContent, img: !!x.querySelector("img") })), calls: window.__zhCalls.length }));
+  ok(zp.items.length === zids.length && zp.items.every((x) => x.img) && zp.calls === 0, "Chinese read: the candidates' pictures to pick from, no price lookups yet: " + zp.items.map((x) => x.t).join(" | "));
+  await page.screenshot({ path: path.join(OUT, "phone-zh-pick.png") });
+  const nb0 = (await calls()).filter((x) => x.n === "bid").length;
+  await page.evaluate(() => document.querySelectorAll('#phonebar [data-t="zhpick"]')[1].click());
+  await page.waitForTimeout(80);
+  const zw = await page.evaluate(() => document.querySelector("#phonebar").textContent);
+  await page.waitForTimeout(400);
+  const zv = await page.evaluate(() => ({ t: document.querySelector("#phonebar").textContent, bid: (document.querySelector('#phonebar [data-t="zhbid"]') || {}).dataset, calls: window.__zhCalls }));
+  await page.screenshot({ path: path.join(OUT, "phone-zh-card.png") });
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="zhbid"]').click());
+  await page.waitForTimeout(300);
+  const nb = (await calls()).filter((x) => x.n === "bid");
+  ok(/checking Chinese sales and listings for this card/.test(zw) && zv.calls.length === 1 && zv.calls[0][0] === zids[1], "tap a card: only that card is looked up (" + JSON.stringify(zv.calls) + ")");
+  const zpl = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .prow.zp .pb")).map((x) => ({ t: x.textContent, alt: x.classList.contains("alt") })));
+  ok(zpl.length === 2 && /SOLD/.test(zpl[0].t) && !zpl[0].alt && zpl[1].alt && zpl.every((x) => /mkt\$[\d.]+b\/e\$\d+\.\d\d/.test(x.t)), "Chinese bids as pills like the conditions: sold first (used), listed dashed, each bid / mkt / b/e: " + zpl.map((x) => x.t).join(" | "));
+  ok(/sold\s*\$12\.00 Oct/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
+  await page.evaluate(() => { window.zhLookup = window.__zhOrig; });
+  await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
+
+  console.log("3e. read journal: every read saved to the private repo (text only): reading, match and pick");
+  await page.evaluate(() => {
+    window.__puts = []; const of = window.fetch;
+    window.fetch = (u, o) => { if (/api\.github\.com\/repos\/pm-derek\/cardcomp-data\/contents\/phone-reads\//.test(String(u))) { window.__puts.push({ u: String(u), b: JSON.parse(o.body) }); return Promise.resolve({ ok: true, status: 201 }); } return of(u, o); };
+    window.__keyOrig = window.Android.key; window.Android.key = (n) => (n === "github" ? "ghp_test" : n === "anthropic" ? "sk-ant-test" : "");
+  });
+  await page.evaluate(() => window.__phone.readNow("bubble")); await page.waitForTimeout(100);
+  await page.evaluate(() => { const cv = document.createElement("canvas"); cv.width = 640; cv.height = 900; cv.getContext("2d").fillRect(0, 0, 640, 900); window.__phone.frame(window.__lastReq, cv.toDataURL("image/jpeg", 0.8), 640, 900); });
+  await page.waitForTimeout(1800);
+  await page.evaluate(() => window.__phone.journalNow()); await page.waitForTimeout(200);
+  const jr = await page.evaluate(() => window.__puts.map((x) => ({ u: x.u, e: JSON.parse(decodeURIComponent(escape(atob(x.b.content)))) })));
+  const jl = jr[jr.length - 1] || {}, je = jl.e || {};
+  ok(jr.length >= 1 && /phone-reads\/\d{4}-\d\d-\d\d\/\d{6}-/.test(jl.u) && !je.frame && JSON.stringify(je).length < 4000 && je.read && je.read.name && je.match && je.match.kind && "shown" in je,
+    `read saved (the previous read is saved when the next starts): ${jl.u ? jl.u.split("/contents/")[1] : "none"} (read ${je.read && je.read.name}, match ${je.match && je.match.kind}, ${JSON.stringify(je).length} bytes, no picture)`);
+  await page.evaluate(() => { window.Android.key = window.__keyOrig; });
+
+  await page.evaluate(() => { window.__phone.setMode("card"); window.__phone.bidAck({ ok: false, why: "exact" }); }); await page.waitForTimeout(250);
+  const ex = await page.evaluate(() => ({ warn: (document.querySelector("#phonealert .pwarn") || {}).textContent || "", bg: (() => { const w = document.querySelector("#phonealert .pwarn"); return w ? getComputedStyle(w).backgroundColor : ""; })() }));
+  ok(/Max Bid is OFF in Whatnot\. Nothing entered/.test(ex.warn) && /192, 57, 43/.test(ex.bg), "Max Bid off and could not be switched: nothing entered, big red warning: " + ex.warn);
+  await page.screenshot({ path: path.join(OUT, "phone-maxoff.png") });
+  await page.evaluate(() => window.__phone.bidAck({ ok: true, how: "typed", maxOn: true })); await page.waitForTimeout(250);
+  const mo = await page.evaluate(() => ({ warn: !!document.querySelector("#phonealert .pwarn"), st: (document.querySelector("#phonestat") || {}).textContent || "" }));
+  ok(!mo.warn && /switched it on/.test(mo.st), "Max Bid switched on by the app: the warning goes, a gold note says so: " + mo.st);
+
+  // Android ended the capture (screen switching): reading state clears, the note says to tap start on the bubble
+  await page.waitForTimeout(8200);
+  await page.evaluate(() => window.__phone.captureLost()); await page.waitForTimeout(250);
+  const cl = await page.evaluate(() => ({ st: (document.querySelector("#phonestat") || {}).textContent || "", rd: !!document.querySelector("#phoneread:not([hidden])") && getComputedStyle(document.querySelector("#phoneread")).display !== "none" }));
+  ok(/tap start on the bubble/i.test(cl.st) && !cl.rd, "capture lost: reading bar gone, note says tap start on the bubble: " + cl.st);
+
   console.log("4. keyboard rule");
   const b4 = (await calls()).length;
   await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());   // 🔍 opens the list and focuses the box
@@ -304,6 +418,14 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const st1 = await page.evaluate(([i, w, h]) => window.__phone.readLotPhone(i, w, h), [live(140, 2, "00:08", "onestop_collectables", 3), W, H]);
   ok(st1.title === "Card on screen #140" && st1.cur === 2 && st1.timer === "00:08" && st1.lead === "onestop_collectables" && st1.next === 3 && st1.seller === "domvault_card" && st1.viewers === 39 && st1.ship === 0.38 && st1.cond === "NM",
     "live lot read: " + JSON.stringify({ title: st1.title, cur: st1.cur, timer: st1.timer, lead: st1.lead, next: st1.next, seller: st1.seller, viewers: st1.viewers, ship: st1.ship, cond: st1.cond }));
+  // chat minimized (Derek's screenshot, gamecitytcg 2026-10-28): no chat box, the leader line sits right above the title
+  const mini = [T("gamecitytcg", 158, 95, 370, 142), T("5.0", 208, 168, 256, 213), T("57", 873, 145, 911, 184),
+    T("mexicanjocker is winning!", 101, 1845, 640, 1895), T("$1 Start Singles #183", 259, 1920, 677, 1973), T("New • Card", 259, 1990, 447, 2030),
+    T("$0.78 Shipping + Taxes", 259, 2050, 650, 2095), T("$2", 983, 1920, 1035, 1973), T("00:00", 936, 1990, 1035, 2035),
+    T("Custom", 160, 2160, 330, 2210, 1), T("Bid $3", 590, 2160, 740, 2210, 1)];
+  const stm = await page.evaluate(([i, w, h]) => window.__phone.readLotPhone(i, w, h), [mini, W, H]);
+  ok(stm.title === "$1 Start Singles #183" && stm.cur === 2 && stm.lead === "mexicanjocker" && stm.next === 3 && stm.ship === 0.78 && stm.timer === "00:00" && stm.seller === "gamecitytcg" && stm.cond === "NM",
+    "chat minimized: lot still read: " + JSON.stringify({ title: stm.title, cur: stm.cur, lead: stm.lead, next: stm.next, ship: stm.ship, timer: stm.timer, seller: stm.seller, cond: stm.cond }));
   await feed(live(140, 2, "00:08", "onestop_collectables", 3));
   await page.waitForTimeout(200);
   const strip = await page.evaluate(() => { const el = document.querySelector("#lotstrip"); return { t: el ? el.textContent : "", shown: !!el && getComputedStyle(el).display !== "none" }; });
@@ -343,7 +465,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await feed(sold(142, 4, "someone_else")); await page.waitForTimeout(200);
   await feed(live(143, 2, "00:12", "", 3)); await feed(live(143, 2, "00:11", "", 3)); await page.waitForTimeout(1400);
   const g2 = (await calls()).filter((x) => x.n === "grab").length;
-  await page.evaluate(() => { window.__mode = "manual"; });
+  await page.evaluate(() => { window.__mode = "manual"; window.__phone.frameFail(window.__lastReq, "test: no frame"); });   // the mock never sends the frame
   ok(g1 === g0 && g2 === g1 + 1, `auto read: none in manual mode, exactly one per lot in auto mode (${g0} -> ${g1} -> ${g2})`);
 
   // a sold screen that flickers back to a timer restarts the same lot; it must not log twice (rudeboi75404 #79, 2026-10-23)
@@ -364,7 +486,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "sylveon 040/131"; run("sylveon 040/131"); window.__phone.setMode("card"); });
   await page.waitForTimeout(900);
   const pc0 = await page.evaluate(() => ({ chips: Array.from(document.querySelectorAll("#phonebar .pq")).map((x) => x.textContent), on: (document.querySelector("#phonebar .pq.on") || {}).textContent || "", name: (document.querySelector("#phonebar .pn b") || {}).textContent }));
-  ok(pc0.name === "Sylveon" && pc0.chips.length === 4 && pc0.chips.some((t) => /^Reverse/.test(t)) && pc0.chips.some((t) => /^Master Ball/.test(t)), "small card shows every printing as a chip: " + pc0.chips.join(" | ") + " (on: " + pc0.on + ")");
+  ok(pc0.name === "Sylveon" && pc0.chips.length === 4 && pc0.chips.some((t) => /^Reverse/.test(t)) && pc0.chips.some((t) => /^Master/.test(t)), "small card shows every printing as a chip: " + pc0.chips.join(" | ") + " (on: " + pc0.on + ")");
   // a reading that saw a reverse holo starts the card on Reverse
   await page.evaluate(() => { document.querySelector("#q").value = ""; run(""); });
   await page.waitForTimeout(200);

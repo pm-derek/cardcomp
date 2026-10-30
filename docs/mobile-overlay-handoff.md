@@ -230,7 +230,7 @@ works like the browser extension and everything merges into one log.
    then holds Whatnot alone, without our overlay, so no crop tricks. Reduced size (about 720 px wide) into an
    ImageReader. Every 0.7 s a 32x40 thumbnail of the card region (same constants as `recog-whatnot.js`) decides
    "new card held still"; a full frame goes to the bridge for a read. Consent is asked once per session (Android
-   14+), with the capture notification.
+   14+), with the capture notification. See "capture lost" below for one-tap re-consent from the bubble.
 8. Overlay layout (Derek, 2026-10-23: "it can't cover up damage"; he reads the card's condition off the stream
    before deciding the bid). Rule: the card band, y 22 to 72%, is never covered, except while the keyboard is up.
    Two bands, both remembered:
@@ -550,3 +550,113 @@ NM market each): one tap picks it in the open card, so the pills, the fast read,
 follow. When a read names the finish (automatch.js `finishKey`: reverse, holo, Poké Ball, Master Ball, non-holo), the
 card starts on that printing and its chip has a dashed edge; a chip Derek tapped is never overridden. Only cards with
 2+ printings get the row (161 px tall at 250 px wide with it). Bridge 0.13.0, no APK change (the live bridge loads).
+
+## 0.14 (2026-10-29): reading feedback, printing buttons, Custom fill gate
+
+- Reading feedback (Derek: "clearer feedback when a search is happening, sometimes I tap too many times"): one read
+  at a time. While it runs, a gold bar on the small card says "taking the picture / reading the card / found X,
+  checking the rest" with a timer, and the card under it dims and takes no taps. Another tap only shows "still reading,
+  one tap is enough" (25 s cap). The bubble (APK, NATIVE_API 7, `Bridge.reading`) turns solid gold and pulses until
+  the reply, buzzes on every tap, and ignores taps meanwhile. Pulse is scale, not alpha (the capture hides the bubble
+  with alpha 0).
+- Printing buttons (Derek: "hard to navigate between first edition, shadow, unlimited and non-holo"): a full-width
+  row of equal buttons under the card, never scrolling, plain words in a fixed order: 1st Ed, Shadowless, Unlimited
+  (TCGplayer's Normal / Holofoil on a card with 1st Ed or Shadowless printings), Holo, Non-holo, Reverse, Poké Ball,
+  Master Ball; NM price under each; the chosen one solid gold, the one the read saw dashed. 173 px tall at 250 wide.
+- Custom fill: 28 of 31 failed fills in phone-dumps had Custom and "Bid $N" on screen and stopped at "Whatnot live
+  screen not in front", because the gate wanted the chat box ("Say something"), which is often not readable. Now only
+  Whatnot's own window is searched (split screen once matched Chrome's "Customize and control" as Custom) and live
+  means its bid row or sheet is on screen. Replayed on every failed dump: 19 now open Custom, 9 are sold lots (enter
+  nothing, as before), 2 had the sheet opening late (now waits up to 1 s). Needs the new APK.
+
+## 0.14.1 (2026-10-29): faster reads
+
+Derek: "search is taking 5s each". 71 phone reads in the log: the model call median 2.8 s (p90 5.0 s, all Sonnet),
+the picture match median 0.8 s (p90 2.7 s; downloading up to 80 photos, median 15 usable), the capture ~0.3 s, and
+0.14's dim kept the card hidden until all of it was done. Now the likely cards are usable at the partial reading
+(name and number streamed, ~1 s before the full reply; the bar says "found X, checking the rest"), the photos of every
+printing of that name start downloading at the partial (in-flight downloads shared with the picture match), and the
+frame is decoded for the match while the model reads. Haiku stays an option on the setup screen (1-2.7 s) but it
+invents collector numbers on 720p streams, so Sonnet stays the default. phone-check 3c covers it.
+
+## 0.15 (2026-10-29): Chinese copy prices on the phone, update dialog
+
+- PR #85 (Chinese copy price: sold and listed averages of TCGplayer listings / sales that say Chinese, on the EN and
+  JP products) merged in with current main. In the phone app it needs no Cloudflare proxy: the bridge answers
+  `cardcomp-tcg-post` through `Android.http` (listings / latest sales of one product only). A Chinese read shows
+  "中 Chinese sold ≈ $X ... [bid $N]" on the small card (`.pzh`, mirrored from the auto line's `.zhauto`; the bid button
+  clicks the original, so the lot is not labeled as the English card), and "checking Chinese copy prices" while it runs.
+- In-app update: Derek's "update cancelled" (Android 17, One UI) with no dialog. The installer's confirm screen was started
+  from the broadcast receiver; it now starts from the CardComp screen when it is in front, and the cancel message says to
+  install from the browser if no dialog appeared.
+
+## 0.15.1 (2026-10-29): Chinese price per card
+
+Derek: "it's not showing me which card it is calculating against; nest the Chinese part in each card art and I select
+the correct card." A Chinese read now turns the small card into a picker of every product the lookup checked (the card
+read, its JP / EN twin, other printings), each with its art and its own Chinese price (sold average, else listed
+average, "no CN", or "checking…" while it runs), priced ones first. A tap shows that card: its 3 latest Chinese sales,
+cheapest Chinese listings and a bid from them (sent with `data-nolabel`); ≡ goes back. auto-ui publishes the lookup as
+`window.ZH_LAST` (+ a `cardcomp-zh` event); a new read or typing a search leaves the view. The one-line aggregate stays
+on desktop.
+Revised the same day (Derek: "not every card's Chinese price, once I pick the card"): no lookups on the read. The small
+card shows only the candidates' pictures; the one tapped is looked up alone (that card + its other-language twin of the
+same tier, `zhCandsOne`), with "checking…" until it lands. Desktop: opening a candidate runs the same single lookup.
+
+## 0.15.4 (2026-10-29): read journal, "Submit Exact Bid", lots with the chat minimized
+
+- Read journal (Derek: "the last few scans on Latios were terrible, take a look"; none of them was kept: a read reaches
+  the auction log only as the last read of a lot that got logged, and he was switching streams). Every phone read is
+  now saved ~25 s later (or when the next read starts) to `cardcomp-data/phone-reads/YYYY-MM-DD/HHMMSS-name.json`, text
+  only (~1 KB; Derek: no pictures, they eat space): the reading and the zoomed re-read, CardComp's match (kind, suggestion, listed ids), the picture match
+  (top 5), the card on the small card, the last bid tapped, the Chinese pick. Needs the GitHub token.
+- Custom fill: the Custom sheet's button reads "Submit Exact Bid" when its Max Bid switch is off (2 of 5 dumps), and
+  only "Submit Max Bid" was known, so the sheet looked closed ("Whatnot refused the tap on Custom", "Custom sheet did
+  not open"). Both labels count now. Max bids only (Derek: "I'll never want an exact bid; check it and correct it"): with
+  the switch off the fill taps it (`#wds.toggle`, else the "Max Bid" row), waits for "Submit Max Bid", then enters the
+  amount and checks the label again; if it stays off the small card warns before Submit.
+- The screen push to the page (lot tracking) required the chat box or "Submit Max Bid": with the chat minimized no lot
+  was read. It now uses the same live test as the fill (bid row, sheet, sold, or chat). Needs the new APK.
+
+## APK (2026-10-29): shrink button
+
+Derek: "the button for minimizing the overlay when it's expanded is hard to find, a very small button". In the full
+view the panel's top bar is now 40 dp tall (26 on the small card) and its left button is a gold "▾ shrink" pill
+(112 dp wide, `styleCollapse`); on the small card it stays the plain – that folds the panel into the bubble. Also:
+PR #91 (English / Japanese Chinese prices apart) was closed unmerged; Derek prefers the pooled price.
+Max Bid signal (Derek, 2026-10-29: he set Exact by hand, tapped a bid and "nothing happened... we shouldn't put in the
+price for me to accidentally bid incorrectly; give me a signal"): when the switch cannot be turned on, the fill now
+enters nothing (`no("exact")`) and the small card shows a big red "⚠ Max Bid is OFF in Whatnot. Nothing entered" banner
+for 20 s (`WARN` in `#phonealert`); when the app switched it on itself, a gold note says so. His test ran on the old APK
+(the dump says "live screen not in front"), so the switch itself still waits for the first run on the new APK.
+
+## Capture lost (2026-10-29): "start" on the bubble
+
+Derek: "I often have to stop and restart the overlay because the scanning isn't working anymore, when I switch screens a
+bit too much". Android ends a screen capture on its own: a "single app" capture stops or goes blank when that app's
+screen changes, and the app then only said "start again from the CardComp app" (or failed with "no frame" every read).
+Now:
+- The consent dialog stays Android's usual choice. Forcing the entire screen was tried and dropped the same day (Derek
+  works in split screen at times: the frame would hold the other app's half and the card would shrink; "A single app"
+  reads well). While Whatnot is off screen (`onCapturedContentVisibilityChanged`, Android 14+) a read says so at once
+  and does not count toward a lost capture.
+- When the capture ends (`MediaProjection` onStop) or two grabs in a row return no frame with Whatnot on screen, it is released and the bubble
+  turns red "start" (`bubbleIdle`). A tap opens `ConsentActivity` (invisible, excluded from recents): the system dialog
+  only, then `ACTION_START` with the new token and `EXTRA_READ`, and the read runs 0.7 s later. No stop / restart.
+- The page gets `__phone.captureLost()`: the reading bar clears and the small card says to tap start. Bridge 0.15.7.
+Needs the new APK.
+
+## Read button redesign (2026-10-29)
+
+Derek: "make the read button look cool and thoughtfully designed". The bubble is now `ReadButton` (60 dp, drawn on a
+Canvas, no assets): dark glass disc with a gold ring, a card-shaped viewfinder (corner brackets, 5:7) and a small
+label. READ: resting scan line. READING: the scan line sweeps the viewfinder, a gold comet circles the ring, a ping on
+start (replaces the shrink pulse). START (capture off): red, a play mark, the ring breathes. A copied bid flashes large
+with "COPIED". Pressing squishes it to 90% with an overshoot back. It animates only while something moves.
+
+## Chinese bids with break-even (2026-10-29, bridge 0.15.8)
+
+Derek: "Chinese bids should follow the same UI where I can see breakeven, so I can work out my profit at the suggested
+bid". The picked Chinese card now shows two pills like the condition pills: 中 SOLD and 中 LISTED, each with the bid,
+mkt (the averaged Chinese price) and b/e. The one the price uses comes first and is solid; the other is dashed and can
+be tapped too. Above them, one line each of the sales / listings they come from. Desktop: "b/e $X" beside the bid.

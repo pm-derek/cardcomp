@@ -40,7 +40,7 @@ Vintage JP (Expansion Pack through Neo, Gym, VS) prints no collector number, so 
 - **Carry forward**: TCGplayer has no price row some days for pricey illiquid cards (Gold Stars, $1k+ vintage), so they used to vanish from search for a day. A card whose product got no price today keeps yesterday's entry up to 30 days with `ps` set; the app shows "⚠ no TCGplayer price since <date>". Cards present but under the floor, or whose product reappeared under a new id, are not carried.
 - **Trend** (`d7`/`d30`): read from git history (the workflow fetches 40 days; every daily commit is a snapshot, so full history already exists for free). Compares the same printing on both days (top printing with a real market price both days; m == l is a lone listing and skipped), drops moves > 200% as artifacts. Collapsed card shows the 30d move at 15%+ (about 1 card in 6); the detail line shows both.
 
-Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings. Folded printings (Shadowless, Master Ball / Poké Ball patterns) are separate TCGplayer products, so each keeps its own product id in `px[k].p`; every TCGplayer link uses the selected printing's `p` (falling back to `pid`) and strips the prefix for the Printing filter. Without it the link opens the base card (shipped once: 1st Ed Shadowless Machop opened regular Machop).
+Shadowless: a TCGCSV `"... (Shadowless)"` group folds onto its base card as `"Shadowless …"` printing keys, so Base Set Charizard is one entry with Unlimited / 1st Edition / Shadowless / Shadowless 1st Edition printings. Folded printings (Shadowless, Master Ball / Poké Ball patterns) are separate TCGplayer products, so each keeps its own product id in `px[k].p`; every TCGplayer link uses the selected printing's `p` (falling back to `pid`) and strips the prefix for the Printing filter. Without it the link opens the base card (shipped once: 1st Ed Shadowless Machop opened regular Machop). Two products with one number in a Shadowless group (Base Set Shadowless #58: "Pikachu" $48 and "Pikachu Red Cheeks" $102, 2026-10-29): only the product named like the card folds onto it; the other becomes its own card ("Pikachu Red Cheeks", set "Base Set (Shadowless)", printings still prefixed "Shadowless"). Before, the last one overwrote the fold, so Shadowless Pikachu priced and linked as Red Cheeks (DMG $21 vs $11.66 real).
 
 ## The card object
 
@@ -168,9 +168,9 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
   newest sales, the 3 cheapest listings), any more than 1.5x (`ZH_FAR`) from their middle one left out and named. The
   bid ("bid $9", `wholeBid` at the target margin) uses the sales when the newest is under 90 days old, else the
   listings; it copies / sends with `data-nolabel`, so the lot is not labeled as the English card at its English market.
-  Rows under it: the 3 newest sales and 3 cheapest listings with titles and products. Transport (`tcgPost`): the
+  Rows under it: the 3 newest sales and 3 cheapest listings with titles and products. Break-even beside the bid (Derek, 2026-10-29: "same UI, so I can see breakeven and work out my profit"): desktop "bid $9 b/e $10.03"; the phone's picked card shows the Chinese bids as the condition pills (`zhPills` in bridge.js: 中 SOLD / 中 LISTED, each bid / mkt / b/e, the one the price uses first and solid, the other dashed and tappable too), above one line each of the prices they come from. Transport (`tcgPost`): the
   extension on desktop (`cardcomp-tcg-post`, relay `tcgPostRelay` in tcgfast.js, only those two TCGplayer addresses;
-  extension 0.9.3); on the phone the proxy address in settings ("Chinese copy prices on the phone", a Cloudflare Worker,
+  extension 0.9.3); in the phone app the bridge relays it through the app (`cardcomp-tcg-post` -> `Android.http`, same two addresses; no proxy needed) and the small card shows the price line with its bid (`.pzh` in `#phonealert`, mirrored from `#automsg .zhauto`); in a plain phone browser the proxy address in settings ("Chinese copy prices on the phone", a Cloudflare Worker,
   `tools/tcg-proxy-worker.js`, setup steps at its top), else a direct request, which works only if TCGplayer allows
   this site (unknown; the cloud sandbox cannot reach TCGplayer). Field names of listings / sales are unverified: "copy
   debug" gives what each product returned (row counts, language / listing type counts, field names). Tested with mocked
@@ -215,7 +215,7 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
 - Not building: auto-pressing Place bid. Whatnot's terms bar automated bidding and synthetic clicks are detectable (`isTrusted`); the human tap is also the last check against a wrong fill. Derek agreed to hold off.
 - Header: no subtitle. Search row (Derek, 2026-10-21: "search bar too narrow"): the box, its ✕ / ⟳, and one EN/JP button (`#langbtn`, flips, gold on JP, as tall as the box). The game `<select id="gamesel">` moved to the Filters row (gold text and border when off Pokémon), since nearly all bids are Pokémon. Box width went 431 -> 580 px at 660 wide and 151 -> 300 px at 380 (6 -> 24 characters of "umbreon prismatic evolutions sir"). A query wider than the box drops to 14.5 px (`#q.long`, `fitQ`, also run from `run()` so chip / auto fills refit).
 - Headroom (checked 2026-10, Derek asked to be reminded when it matters): Pages 100 GB/mo soft (12 MB a load, ~300 loads/mo used), Pages 10 builds/hr soft (live branch never builds), API 5k/hr per token (~40 per stream), Actions unlimited on a public repo, live.json grows a few KB/mo. Tell Derek before any change that writes to `main` per click, loads the catalog far more often, or moves the app off GitHub, since those are the only ways to reach a limit.
-- Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it. Phone app over the Whatnot app (2026-10-23, competitor PalletTrade does this on Android): plan, constraints and what to reuse in `docs/mobile-overlay-handoff.md`.
+- Mobile stays clipboard: the Whatnot app cannot be typed into from a browser (iOS no path, Android would need an accessibility service). Don't build that unless Derek moves to desktop bidding and it proves worth it. Phone app over the Whatnot app (2026-10-23, competitor PalletTrade does this on Android): plan, constraints and what to reuse in `docs/mobile-overlay-handoff.md`. Capture lost (Derek, 2026-10-29: "I have to restart the overlay when I switch screens"): consent stays Android's usual choice (Derek picks "A single app": the entire screen would put the other app in a split-screen frame and shrink the card); when Android ends the capture (or two grabs in a row return no frame while Whatnot is on screen) the bubble turns red "start" and one tap re-asks through the invisible `ConsentActivity`, then reads.
 
 <!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
 ## Auto-recognition (experiment, removable)
@@ -308,10 +308,12 @@ is empty or fails, the other fills (`fallback`). The log row carries `recog.src`
 lots (before the picture match, which only runs on the shown one). Undocumented for us until a live call: the exact
 Pokemon `setName` / `number` format; `recog.cs` keeps the raw reply so the mapping can be checked from the log.
 Extension 0.9.0 (host api.cardsight.ai). The key stays in chrome.storage.local, never in the repo or chat.
-Chinese card read (Derek, 2026-10-28): a reading of kind `foreign` / Chinese runs the Chinese copy price below on the
-Japanese card with the number read (Traditional Chinese follows the Japanese numbering), the English one, their twins
-and the other printings; the auto line shows one compact line (sold or listed estimate + bid), results get a red
-"CN $X" badge, the log row's reading carries `zh {n, est, low, id, checked, ids}`.
+Chinese card read (Derek, 2026-10-28; 2026-10-29: "not every card's Chinese price, once I pick the card"): a reading of
+kind `foreign` / Chinese looks nothing up. It publishes the candidates (`window.ZH_LAST` + a `cardcomp-zh` event: the
+Japanese card with the number read first, since Traditional Chinese follows the Japanese numbering, then the English
+one, their twins, the other printings) and the line says "open the right card for its Chinese price". The phone shows
+their pictures to pick from; the card picked (phone) or opened (desktop, `zhB.click()` on open) is looked up alone with
+its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

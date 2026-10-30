@@ -1993,7 +1993,7 @@ function zhHTML(res, opt){
   const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
   const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `avg of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
   const left=s=>s.out.length?` <span style="color:var(--faint)">(${s.out.map(zhMoney).join(", ")} left out, too far off)</span>`:"";
-  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button>`:"";
+  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button> <span class="zhbe" style="color:var(--dim);font-size:12px;white-space:nowrap" title="break-even: the most you can pay before losing money at ${zhMoney(est)}">b/e $${(bidForMargin(est,0)||0).toFixed(2)}</span>`:"";
   const line=(k, s, lab, list)=>{ const on=pk.use===k;
     return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
   if(opt.compact){   // the auto line sits in the sticky header: one line
@@ -2020,10 +2020,15 @@ function zhWire(el, res){
     try{ navigator.clipboard.writeText(t).then(()=>x.textContent="copied", ()=>copyFallback(t, ()=>x.textContent="copied")); }catch(_){ copyFallback(t, ()=>x.textContent="copied"); } });
 }
 // open card: "中 Chinese price" (works on the phone: no extension needed with the proxy set)
+// One card's Chinese price (Derek, 2026-10-29: "not every card's Chinese price, once I pick the card"): the card and its
+// other-language twin of the same tier (Chinese copies get listed on either), not the same name in other sets.
+function zhCandsOne(card){
+  return zhCands(card).filter(c=>c.id===card.id || ((c.lang||"en")!==(card.lang||"en") && zhTwinSet(card, c) && zhTier(c.r)===zhTier(card.r))).slice(0,3);
+}
 async function zhForCard(card, el){
   const hit=ZH_CACHE.get(card.id);
   if(hit && Date.now()-hit.at<10*60e3){ el.innerHTML=zhHTML(hit.res); zhWire(el, hit.res); return; }
-  const cands=zhCands(card);
+  const cands=zhCandsOne(card);
   el.innerHTML=`<span style="color:var(--faint)">checking ${cands.length} TCGplayer product${cands.length===1?"":"s"} (English + Japanese) for Chinese listings…</span>`;
   const res=await zhLookup(cands);
   ZH_CACHE.set(card.id, {res, at:Date.now()});
@@ -3071,6 +3076,7 @@ function renderPrices(host, data, prices, src){
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
   const zhB=host.querySelector(".zhbtn"); if(zhB){ const zo=host.querySelector(".zhout"); zhB.onclick=(e)=>{ e.stopPropagation(); zhB.style.display="none"; zhForCard(card, zo); };
     const hit=ZH_CACHE.get(card.id); if(hit && Date.now()-hit.at<10*60e3){ zhB.style.display="none"; zo.innerHTML=zhHTML(hit.res); zhWire(zo, hit.res); } }
+  if(zhB && zhB.style.display!=="none" && window.ZH_LAST && Date.now()-window.ZH_LAST.at<15*60e3 && (window.ZH_LAST.ids||[]).includes(card.id)) zhB.click();   // RECOG a Chinese read: the card opened from its candidates is looked up at once
   // your bid: follows the last bid tapped (copyAmt fills it), −1 / +1 step it, Enter or send puts it into Whatnot / clipboard
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
   const ovrSend=()=>{ if(!(parseFloat(ovrIn.value)>0)) return; copyAmt(ovrIn.value, ovrBtn); };

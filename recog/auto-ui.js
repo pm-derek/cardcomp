@@ -235,7 +235,7 @@
     askZh(d, m, a, ctxOf(d));
     if (d.manual) ENGAGED = Date.now();
     SHOW = touched ? { m, r } : null;
-    MSG = describe(m, r, d) + (touched ? ' &middot; <a id="autoshow">show</a>' : "") + (a.picAsk && a.picAsk.key === d.key && !a.pic ? ' &middot; <span class="wt" id="picwait">' + picWaitTxt() + '</span>' : "");
+    MSG = describe(m, r, d) + (a.zhAsk && a.zhAsk.key === d.key ? ' &middot; <span style="color:var(--gold)">中 open the right card for its Chinese price</span>' : "") + (touched ? ' &middot; <a id="autoshow">show</a>' : "") + (a.picAsk && a.picAsk.key === d.key && !a.pic ? ' &middot; <span class="wt" id="picwait">' + picWaitTxt() + '</span>' : "");
     paint();
     post({ type: "cardcomp-auto-match", key: d.key, n: d.n, kind: m.kind, strength: m.strength, suggestion: m.suggestion, printing: m.printing || "", note: m.note, why: m.why, cards, filled: !touched });
   }
@@ -276,8 +276,10 @@
     const extra = jpc.filter(hasNum).concat(en.filter(hasNum), en, jpc);
     const cands = window.zhCands(leads.length ? leads : en.slice(0, 1), extra);
     if (!cands.length) return;
-    const ask = a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
-    window.zhLookup(cands).then((res) => { if (a.zhAsk === ask) onZh(d.key, res); });
+    // No lookup yet (Derek, 2026-10-29: "not every card's Chinese price; once I pick the card"): publish the candidates;
+    // the phone shows their pictures to pick from, and the card picked (or opened on desktop) is looked up alone.
+    a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
+    window.ZH_LAST = { key: d.key, at: Date.now(), ids: cands.map((c) => c.id) }; window.dispatchEvent(new Event("cardcomp-zh"));
   }
   function zhBadges(z) {
     if (!z || !z.hits) return;
@@ -295,6 +297,7 @@
     if (!a || !a.best) return;
     a.zh = res;
     zhBadges(res);
+    if (window.ZH_LAST && window.ZH_LAST.key === key) { window.ZH_LAST = { key, at: Date.now(), ids: res.ids || window.ZH_LAST.ids, res }; window.dispatchEvent(new Event("cardcomp-zh")); }
     const bd = a.best.d; if ((bd.capAt || bd.key) < LATEST) return;
     ZH_SHOWN = res;
     MSG = describe(a.best.m, a.best.r, bd) + '<div class="zhauto" style="margin-top:3px">' + window.zhHTML(res, { compact: true }) + "</div>";

@@ -60,7 +60,7 @@ class WhatnotReader : AccessibilityService() {
         lastPush = System.currentTimeMillis()
         val svc = OverlayService.instance ?: return
         val all = try { nodes() } catch (_: Exception) { return }
-        if (all.none { it.text.startsWith("Say something") || it.text == "Submit Max Bid" }) return
+        if (all.none { it.pkg == WHATNOT && LIVE.containsMatchIn(it.text) }) return   // chat minimized: the bid row still says it is live
         val arr = org.json.JSONArray()
         for (n in all) {
             if (n.text.isEmpty() || n.r.width() <= 0 || n.r.height() <= 0) continue
@@ -72,7 +72,7 @@ class WhatnotReader : AccessibilityService() {
     }
 
     /** auction words on screen, as a signature: a new one means a new state worth a dump */
-    private val AUCTION = Regex("""^(Sold|Custom|Submit Max Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
+    private val AUCTION = Regex("""^(Sold|Custom|Submit (Max |Exact )?Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
     private fun autoDump() {
         try {
             val texts = nodes().map { it.text }.filter { it.isNotEmpty() }
@@ -96,18 +96,24 @@ class WhatnotReader : AccessibilityService() {
     // Rules as on desktop: a lot already sold / "Awaiting Next Item" enters nothing; a max under the next bid ("Bid $5")
     // does not open the sheet ({why:"under", min}). The amount goes in by ACTION_SET_TEXT when the sheet's amount is a
     // text field; else by the sheet's − / + buttons, reading the amount back after every press (works whatever the step).
-    private class N(val node: AccessibilityNodeInfo, val text: String, val r: Rect)
+    private val WHATNOT = "com.whatnot_mobile"
+    // The Custom sheet's button reads "Submit Max Bid" with its Max Bid switch on and "Submit Exact Bid" with it off
+    // (2026-10-28 dumps: both); only the first was known, so with the switch off the sheet looked closed.
+    private val SUBMIT = Regex("""^Submit (Max |Exact )?Bid$""", RegexOption.IGNORE_CASE)
+    // A Whatnot live screen: its bid row, the Custom sheet, a sold lot or the chat box (the chat can be minimized)
+    private val LIVE = Regex("""^(Custom|Submit (Max |Exact )?Bid|Awaiting Next Item|Sold|Bid \$[0-9,]+)$|^Say something|^Max bid added""", RegexOption.IGNORE_CASE)
+    private class N(val node: AccessibilityNodeInfo, val text: String, val r: Rect, val pkg: String = "")
     private fun nodes(): List<N> {
         val out = ArrayList<N>()
         val wins = try { windows } catch (_: Exception) { null } ?: emptyList()
         val roots = wins.mapNotNull { try { it.root } catch (_: Exception) { null } }.filter { it.packageName?.toString() != packageName }
-        fun walk(n: AccessibilityNodeInfo, d: Int) {
+        fun walk(n: AccessibilityNodeInfo, d: Int, pkg: String) {
             if (d > 60 || out.size > 4000) return
             val r = Rect(); n.getBoundsInScreen(r)
-            out.add(N(n, (n.text ?: n.contentDescription ?: "").toString().replace('\n', ' ').trim(), r))
-            for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; walk(c, d + 1) }
+            out.add(N(n, (n.text ?: n.contentDescription ?: "").toString().replace('\n', ' ').trim(), r, pkg))
+            for (i in 0 until n.childCount) { val c = try { n.getChild(i) } catch (_: Exception) { null } ?: continue; walk(c, d + 1, pkg) }
         }
-        for (r in (if (roots.isEmpty()) listOfNotNull(rootInActiveWindow) else roots)) walk(r, 0)
+        for (r in (if (roots.isEmpty()) listOfNotNull(rootInActiveWindow) else roots)) walk(r, 0, r.packageName?.toString() ?: "")
         return out
     }
     private fun clickable(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -132,22 +138,55 @@ class WhatnotReader : AccessibilityService() {
     }
     private fun fill(amount: Int): org.json.JSONObject {
         fun no(why: String) = org.json.JSONObject().put("ok", false).put("why", why)
-        var all = nodes()
-        if (all.none { it.text.startsWith("Say something") } && all.none { it.text == "Submit Max Bid" }) return no("Whatnot live screen not in front")
+        // Whatnot's window only (split screen puts Chrome or Claude beside it: Chrome's "Customize and control" once
+        // matched as Custom). Live = its bid row or sheet is on screen; the chat box is often not readable, so it is not
+        // required (28 of 31 failed fills before 2026-10-29 had Custom and "Bid $N" on screen and stopped here).
+        fun wn() = nodes().filter { it.pkg == WHATNOT }
+        var all = wn()
+        if (all.none { LIVE.containsMatchIn(it.text) }) return no(if (all.isEmpty()) "Whatnot not on screen" else "Whatnot live screen not in front")
         if (all.any { it.text.equals("Awaiting Next Item", true) || it.text == "Sold" }) return no("sold")
         val next = all.mapNotNull { Regex("""^Bid \$([0-9,]+)""").find(it.text)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() }.firstOrNull()
         if (next != null && amount < next) return no("under").put("min", next)
-        if (all.none { it.text == "Submit Max Bid" }) {
-            val custom = all.firstOrNull { it.text.equals("Custom", true) }
-                ?: all.firstOrNull { Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE).containsMatchIn(it.text) }
+        if (all.none { SUBMIT.matches(it.text) }) {
+            val customRx = Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE)
+            fun findCustom() = all.firstOrNull { it.text.equals("Custom", true) } ?: all.firstOrNull { customRx.containsMatchIn(it.text) }
+            var custom = findCustom()
+            var w = 0
+            while (custom == null && w < 10 && all.none { SUBMIT.matches(it.text) }) { Thread.sleep(100); all = wn(); custom = findCustom(); w++ }   // buttons still animating in
+        }
+        if (all.none { SUBMIT.matches(it.text) }) {
+            val custom = (all.firstOrNull { it.text.equals("Custom", true) } ?: all.firstOrNull { Regex("^(custom|max bid added|edit max|increase max|your max)", RegexOption.IGNORE_CASE).containsMatchIn(it.text) })
                 ?: return no("no Custom button on screen")
             val target = clickable(custom.node) ?: return no("Custom is not tappable")
-            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (!target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return no("Whatnot refused the tap on Custom")
             var t = 0
-            while (t < 20) { Thread.sleep(100); all = nodes(); if (all.any { it.text == "Submit Max Bid" }) break; t++ }
-            if (all.none { it.text == "Submit Max Bid" }) return no("Custom sheet did not open")
+            while (t < 20) { Thread.sleep(100); all = wn(); if (all.any { SUBMIT.matches(it.text) }) break; t++ }
+            if (all.none { SUBMIT.matches(it.text) }) return no("Custom sheet did not open")
         }
-        val submit = all.first { it.text == "Submit Max Bid" }
+        var submit = all.first { SUBMIT.matches(it.text) }
+        // Max bids only (Derek, 2026-10-29: "I'll never want an exact bid; check it is a max bid and correct it"): the sheet's
+        // Max Bid switch off reads "Submit Exact Bid". Turn it on (the switch, else its row) and wait for "Submit Max Bid";
+        // if it stays off the amount is still entered and the result says exact, so the small card warns before Submit.
+        var exact = submit.text.contains("Exact", true)
+        var switched = false
+        if (exact) {
+            val zone = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+            val toggle = zone.firstOrNull { (it.node.viewIdResourceName ?: "").contains("toggle", true) }?.let { clickable(it.node) }
+                ?: zone.firstOrNull { it.text.equals("Max Bid", true) }?.let { clickable(it.node) }
+            if (toggle != null && toggle.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                var t = 0
+                while (t < 12) {
+                    Thread.sleep(100); all = wn()
+                    val s2 = all.firstOrNull { SUBMIT.matches(it.text) }
+                    if (s2 != null) submit = s2
+                    if (s2 != null && !s2.text.contains("Exact", true)) { exact = false; switched = true; break }
+                    t++
+                }
+            }
+            // still off: enter nothing (Derek, 2026-10-29: "we shouldn't put in the price for me to accidentally bid incorrectly,
+            // give me a signal"); the small card shows a red warning instead
+            if (exact) return no("exact")
+        }
         // the sheet: everything between its title row and Submit; the amount is the biggest "$N" there
         val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
         val edit = sheet.firstOrNull { it.node.isEditable }
@@ -155,7 +194,8 @@ class WhatnotReader : AccessibilityService() {
             val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, amount.toString()) }
             if (edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
                 Thread.sleep(150)
-                return org.json.JSONObject().put("ok", true).put("how", "typed")
+                val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
+                return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
             }
         }
         fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
@@ -166,15 +206,15 @@ class WhatnotReader : AccessibilityService() {
         if (minus == null || plus == null) return no("no − / + in the Custom sheet")
         var stuck = 0; var last = dollars(am.text) ?: return no("amount unreadable")
         for (i in 0 until 60) {
-            if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped")
+            if (last == amount) return org.json.JSONObject().put("ok", true).put("how", "stepped").put("exact", exact).put("maxOn", switched)
             (if (last < amount) plus else minus).node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             Thread.sleep(90)
-            val now = nodes().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
+            val now = wn().filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
             am = amountNode(now) ?: return no("amount gone")
             val v = dollars(am.text) ?: return no("amount unreadable")
             if (v == last) { if (++stuck >= 3) return no("the amount does not move: set it by hand") } else stuck = 0
             // overshoot on a coarse step: stop at the highest value not above the max (never bid over it)
-            if (last < amount && v > amount) { minus.node.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(90); return org.json.JSONObject().put("ok", true).put("how", "stepped, below max (step)") }
+            if (last < amount && v > amount) { minus.node.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(90); return org.json.JSONObject().put("ok", true).put("how", "stepped, below max (step)").put("exact", exact).put("maxOn", switched) }
             last = v
         }
         return no("too many steps: set it by hand")

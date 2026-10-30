@@ -39,6 +39,8 @@ class Capture(private val ctx: Context, private val onStopped: () -> Unit) {
     var height = 0
         private set
     val running: Boolean get() = projection != null
+    @Volatile var contentVisible = true
+        private set
     val busy: Boolean get() = pending != null
 
     fun start(resultCode: Int, data: Intent, screenW: Int, screenH: Int, dpi: Int): Boolean {
@@ -48,6 +50,9 @@ class Capture(private val ctx: Context, private val onStopped: () -> Unit) {
         height = (screenH / 2) * 2
         mp.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { val mine = !stopping; release(); if (mine) main.post { onStopped() } }
+            // Android 14+, "A single app": false while that app is off screen (another app in front); frames stop then,
+            // which is not a lost capture
+            override fun onCapturedContentVisibilityChanged(isVisible: Boolean) { contentVisible = isVisible }
         }, main)
         val r = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         r.setOnImageAvailableListener({ rd ->

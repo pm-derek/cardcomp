@@ -37,13 +37,18 @@ class InstallReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = (if (android.os.Build.VERSION.SDK_INT >= 34) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                     else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_INTENT)) ?: return   // the typed overload is broken on 33
-                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                try { ctx.startActivity(confirm) } catch (e: Exception) { toast(ctx, "could not open the installer: ${e.message}") }
+                // From the CardComp screen when it is in front: newer Android (and Samsung) may drop an activity started from
+                // a broadcast receiver, which then reads as "update cancelled" with no dialog ever shown (Derek, 2026-10-29).
+                val act = MainActivity.front?.get()
+                try {
+                    if (act != null && !act.isFinishing) act.startActivity(confirm)
+                    else { confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); ctx.startActivity(confirm) }
+                } catch (e: Exception) { toast(ctx, "could not open the installer: ${e.message}") }
             }
             PackageInstaller.STATUS_SUCCESS -> toast(ctx, "CardComp updated")
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
                 toast(ctx, "update signed with a different key: uninstall CardComp once and install the new build by hand")
-            PackageInstaller.STATUS_FAILURE_ABORTED -> toast(ctx, "update cancelled")
+            PackageInstaller.STATUS_FAILURE_ABORTED -> toast(ctx, "update cancelled. No install dialog? Install it from the browser: github.com/pm-derek/cardcomp/releases (phone-latest)")
             else -> toast(ctx, "update failed: ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "unknown"}")
         }
     }
