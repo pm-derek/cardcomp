@@ -660,3 +660,14 @@ Derek: "Chinese bids should follow the same UI where I can see breakeven, so I c
 bid". The picked Chinese card now shows two pills like the condition pills: 中 SOLD and 中 LISTED, each with the bid,
 mkt (the averaged Chinese price) and b/e. The one the price uses comes first and is solid; the other is dashed and can
 be tapped too. Above them, one line each of the sales / listings they come from. Desktop: "b/e $X" beside the bid.
+
+## 2026-10-30: lots read from other apps
+
+Derek's dashboard said $11,257 spent today (85 wins). 62 phone "wins" worth $10,650 were text from the other half of
+the split screen: the lot reader (`WhatnotReader.pushScreen`) sent every window's nodes whenever a Whatnot live screen
+was up, so Chrome on eBay ("Ungraded" $1,500, "Ad" $835), TCGplayer product pages ("Forbidden Light Booster Box" $526,
+"3 Month Snapshot" $170 x8), a wall-decal shop and CardComp's own result lines became lots, and bridge.js marked them won.
+Now only Whatnot's own window (`com.whatnot_mobile`) is sent, as the Custom fill already did. Needs the new APK.
+Log cleanup (a hand-run script, not shipped): phone rows whose title has no "#N" and is rare for the stream, and the
+same seller + title + price again within 3 min with no bids; 117 rows Oct 23-30.
+
