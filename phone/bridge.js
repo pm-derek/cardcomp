@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.8";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.9";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -231,7 +231,7 @@
     money: /^\$\s?([\d,]+(?:\.\d{2})?)$/, timer: /^\d{1,2}:\d{2}$/, ship: /\$([\d.]+)\s*shipping/i, free: /^free shipping/i,
     win: /^(\S+)\s+is\s+winning!?$/i, winTail: /^is\s+winning!?$/i, me: /you(?:'re| are)\s+winning/i, next: /^bid:?\s*\$([\d,]+)/i,
     sold1: /^(\S+)\s+won!?$/i, wonTail: /^won!?$/i, auction: /^won the auction!?$/i, meWon: /^you won/i, joinedTail: /^joined\b/i,
-    skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|won!?$|won the auction|^you won|^sold$|^qty\.|^bid\b|^custom$|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max|^submit max|^say something|^\+ship|^earn more|^check here|^share$|^clip$|^boost$|^more$|^wallet$|^shop$|^giveaway$|^entries$|^show notes$|joined/i
+    skip: /shipping|\bbids?$|^\$\s?[\d,.]+$|^\d{1,2}:\d{2}$|winning|won!?$|won the auction|^you won|^sold$|^qty\.|^bid\b|^custom$|^follow(ing)?$|^awaiting next item|^pre-bid|^max bid|^set max|^submit max|^say something|^\+ship|^earn more|^check here|^share$|^clip$|^boost$|^more$|^wallet$|^shop$|^giveaway$|^entries$|^show notes$|joined|^open features menu|keyboard|does not support images/i
   };
   const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products|more|boost|clip|share|wallet)$/i;
   const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);
@@ -308,8 +308,10 @@
   function endLot(st) {
     if (!lot || lot.ended) return;
     lot.ended = true;
-    // a sold screen that flickers can restart the same lot; with no bid seen since and the same price, it is that lot again
-    const ghost = prevEnd && prevEnd.title === lot.title && prevEnd.final === st.cur && !lot.hist.length && lot.startedAt - prevEnd.at < 60000;
+    // a sold screen that flickers (or comes back after the app is switched away and back) can restart the same lot; with
+    // no bid seen since and the same price, it is that lot again. 3 min: domvault_card 2026-10-29 logged "#200 $4" twice
+    // 90 s apart, and "#205 $20" three times
+    const ghost = prevEnd && prevEnd.title === lot.title && prevEnd.final === st.cur && !lot.hist.length && lot.startedAt - prevEnd.at < 180000;
     if ((st.cur == null && st.bids == null) || ghost) { sendApp({ type: "cardcomp-lot-end", rec: { empty: true, at: Date.now() } }); return; }
     prevEnd = { title: lot.title, final: st.cur, at: Date.now() };
     sendApp({ type: "cardcomp-lot-end", rec: {
@@ -868,7 +870,7 @@
   // price in the card art and I select the right one" -> "not every card's Chinese price, once I pick the card"): the
   // small card shows the candidates' pictures; the one Derek taps is looked up alone (that card + its other-language twin,
   // index.html zhCandsOne) and shows its Chinese sales, listings and bid. The bid is sent like the Chinese line's
-  // (data-nolabel: the lot is not labeled as the English card at its English price).
+  // (data-zh: the lot is logged as that card at the Chinese price, not the English market).
   let ZH_PICK = null, ZH_KEY = null;
   const ZH_ONE = {};   // card id -> {res} or {pending}
   const zhActive = () => { const Z = window.ZH_LAST; return !!Z && Date.now() - Z.at < 15 * 60e3; };
@@ -893,7 +895,7 @@
     const one = (k) => {
       const s = k === "sold" ? pk.sold : pk.list; if (!s) return "";
       const b = zhBidOf(s.est), on = pk.use === k;
-      return `<span class="pb${on ? "" : " alt"}"${b ? ` data-t="zhbid" data-nolabel="1" data-bid="${b}"` : ""} title="max bid at ${zm(s.est)} from the Chinese ${k === "sold" ? "sales" : "listings"}">` +
+      return `<span class="pb${on ? "" : " alt"}"${b ? ` data-t="zhbid" data-zh="${esc(ZH_PICK || "")}" data-mkt="${(+s.est).toFixed(2)}" data-zhsrc="${k}" data-bid="${b}"` : ""} title="max bid at ${zm(s.est)} from the Chinese ${k === "sold" ? "sales" : "listings"}">` +
         `<em>${k === "sold" ? "中 SOLD" : "中 LISTED"}</em><b>${b ? "$" + b : "–"}</b>` +
         `<small><i>mkt</i>${zm(s.est)}</small><small><i>b/e</i>${esc(beOf(s.est))}</small></span>`;
     };

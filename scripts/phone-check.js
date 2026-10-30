@@ -322,11 +322,12 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.screenshot({ path: path.join(OUT, "phone-zh-card.png") });
   await page.evaluate(() => document.querySelector('#phonebar [data-t="zhbid"]').click());
   await page.waitForTimeout(300);
+  zv.tap = await page.evaluate(() => LAST_TAP && { id: LAST_TAP.id, n: LAST_TAP.n, m: LAST_TAP.condMarket, zh: LAST_TAP.zh });
   const nb = (await calls()).filter((x) => x.n === "bid");
   ok(/checking Chinese sales and listings for this card/.test(zw) && zv.calls.length === 1 && zv.calls[0][0] === zids[1], "tap a card: only that card is looked up (" + JSON.stringify(zv.calls) + ")");
   const zpl = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .prow.zp .pb")).map((x) => ({ t: x.textContent, alt: x.classList.contains("alt") })));
   ok(zpl.length === 2 && /SOLD/.test(zpl[0].t) && !zpl[0].alt && zpl[1].alt && zpl.every((x) => /mkt\$[\d.]+b\/e\$\d+\.\d\d/.test(x.t)), "Chinese bids as pills like the conditions: sold first (used), listed dashed, each bid / mkt / b/e: " + zpl.map((x) => x.t).join(" | "));
-  ok(/sold\s*\$12\.00 Oct/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
+  ok(/sold\s*\$12\.00 Oct/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.zh === zids[1] && zv.bid.mkt === "12.50" && zv.tap && zv.tap.id === zids[1] && zv.tap.m === 12.5 && /^中 /.test(zv.tap.n) && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, labeled as the Chinese copy at $12.50: ${JSON.stringify(zv.tap)})`);
   await page.evaluate(() => { window.zhLookup = window.__zhOrig; });
   await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
 

@@ -746,10 +746,10 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
   ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
     "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
-  // the bid sends without labeling the lot as the English card
-  const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
+  // the bid labels the lot as the Chinese copy of this card at the Chinese price, not the English market
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);
-  ok(await ap.evaluate((t0) => JSON.stringify(LAST_TAP) === t0, tap0), "Chinese bid: sent without labeling the lot as the English card");
+  const zt = await ap.evaluate(() => LAST_TAP && { id: LAST_TAP.id, n: LAST_TAP.n, m: LAST_TAP.condMarket, mk: LAST_TAP.market, zh: LAST_TAP.zh, bid: LAST_TAP.bid });
+  ok(zt && zt.id === "sv8-238" && /^中 /.test(zt.n) && zt.m === 12.5 && zt.mk === 12.5 && zt.zh === "sold", "Chinese bid: lot labeled as the Chinese copy at the Chinese price: " + JSON.stringify(zt));
   await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card.png") });
   await ap.setViewportSize({ width: 380, height: 800 }); await ap.waitForTimeout(200);
   await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8-238"] .zhout').scrollIntoView({ block: "end" })); await ap.waitForTimeout(100);

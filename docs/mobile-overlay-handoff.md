@@ -596,7 +596,7 @@ Derek: "it's not showing me which card it is calculating against; nest the Chine
 the correct card." A Chinese read now turns the small card into a picker of every product the lookup checked (the card
 read, its JP / EN twin, other printings), each with its art and its own Chinese price (sold average, else listed
 average, "no CN", or "checking…" while it runs), priced ones first. A tap shows that card: its 3 latest Chinese sales,
-cheapest Chinese listings and a bid from them (sent with `data-nolabel`); ≡ goes back. auto-ui publishes the lookup as
+cheapest Chinese listings and a bid from them (sent with `data-zh`, logged as the Chinese copy); ≡ goes back. auto-ui publishes the lookup as
 `window.ZH_LAST` (+ a `cardcomp-zh` event); a new read or typing a search leaves the view. The one-line aggregate stays
 on desktop.
 Revised the same day (Derek: "not every card's Chinese price, once I pick the card"): no lookups on the read. The small
@@ -660,3 +660,11 @@ Derek: "Chinese bids should follow the same UI where I can see breakeven, so I c
 bid". The picked Chinese card now shows two pills like the condition pills: 中 SOLD and 中 LISTED, each with the bid,
 mkt (the averaged Chinese price) and b/e. The one the price uses comes first and is solid; the other is dashed and can
 be tapped too. Above them, one line each of the sales / listings they come from. Desktop: "b/e $X" beside the bid.
+
+## Chinese wins logged, ghost repeats (2026-10-30, bridge 0.15.9)
+
+Derek: "mobile purchases weren't carrying over onto desktop stats". They were (the log had every phone win), but 22 of
+29 domvault_card wins had no card: Chinese reads never pick a card and the Chinese bid went out unlabeled. Now a
+Chinese bid labels the lot "中 <card>" at the Chinese estimate (`data-zh`, `card.zh`). Also from that stream: "#200 $4"
+logged twice 90 s apart and "#205 $20" three times (one titled "Open features menu", the keyboard's toolbar). The ghost
+window is 3 min (was 60 s) and keyboard toolbar text is never a title.
