@@ -456,7 +456,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(3500);
   const me = await page.evaluate(() => ({ lots: window.__lots.filter((r) => !r.empty), user: localStorage.getItem("cardcomp_wn_user") }));
   const L2 = me.lots[1] || {};
-  ok(L2.me === true && L2.final === 9 && me.user === "rewired", `own win counted, username learned: ${JSON.stringify({ me: L2.me, final: L2.final, user: me.user })}`);
+  ok(L2.me === true && L2.final === 9 && me.user == null, `own win counted from "You won", no username learned (2026-10-31: the phone once stored another bidder as Derek): ${JSON.stringify({ me: L2.me, final: L2.final, user: me.user })}`);
   // automatic read: once, ~1 s after a new lot's timer starts, only in auto mode
   const g0 = (await calls()).filter((x) => x.n === "grab").length;
   await feed(live(142, 2, "00:12", "", 3)); await page.waitForTimeout(1400);
