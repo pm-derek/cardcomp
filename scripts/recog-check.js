@@ -927,6 +927,61 @@ async function appPage(browser, base, blockRecog) {
     return { svgs, strip, cols, tip };
   });
   ok(dch.svgs === 3 && dch.strip && dch.cols === 2 && /running net/.test(dch.tip), "dashboard: daily spent / net / running net charts and the where-lots-sell strip (" + dch.tip.replace(/\s+/g, " ").slice(0, 60) + ")");
+  // stats audit 2026-10-31: likely another printing, stale "this stream", worth today, rival, left on table, one net
+  // (after coupons and shipping), calendar days, junk buyer names, parse once, failed log days
+  const au = await ap.evaluate(async () => {
+    const keep = localStorage.getItem("cardcomp_lots"), o = {}, now = Date.now(), d0 = new Date(), mid = (n) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() - n).getTime();
+    const card = (x) => Object.assign({ id: "sv8pt5-40", n: "Sylveon", cond: "NM", printing: "Master Ball Holofoil", label: "tap" }, x);
+    const mk = (x) => lotRow(Object.assign({ startedAt: x.at - 20000, bids: 4, seller: "sAud" }, x));
+    localStorage.setItem("cardcomp_lots", "[]");
+    const t = now - 20 * 60000;
+    storeLotRows([
+      mk({ at: t, final: 10, me: true, ship: 2, card: card({ condMarket: 20, market: 40, myMax: 14 }) }),               // real win
+      mk({ at: t + 60000, final: 26, me: true, ship: 0, card: card({ n: "Vaporeon ex", condMarket: 315, market: 315, label: "view" }) }),   // 8% of market: another printing
+      mk({ at: t + 120000, final: 12, me: false, winner: "rivalx", placedMax: 14, card: card({ condMarket: 20, market: 40 }) }),   // under your max, lost
+      mk({ at: t + 180000, final: 5, me: false, winner: "rivalx", placedMax: 14, card: card({ condMarket: 20, market: 40 }) }),    // 25% of market: not left on table
+      mk({ at: t + 240000, final: 9, me: false, winner: "I", card: card({ condMarket: 20, market: 40 }) }),
+    ]);
+    const L = loadLots(), win = L.find((r) => r.f === 10), vap = L.find((r) => r.f === 26), ship = shipOf(win), np = win.np;
+    o.parse = (() => { let n = 0; const P = JSON.parse; JSON.parse = function () { n++; return P.apply(this, arguments); }; try { for (let i = 0; i < 50; i++) { loadLots(); shipOf(win); shipOfBuyer(L[2]); } } finally { JSON.parse = P; } return n; })();
+    o.same = loadLots() === loadLots();
+    o.likely = likelyOther(vap) && !likelyOther(win);
+    const H = haul(streamRows("sAud")), S = dashSum(L), St = lotStats("sAud", "stream");
+    o.haul = H.n === 2 && H.off === 1 && Math.abs(H.net - (np - 10 - ship)) < 0.01 && Math.abs(H.margin - (np - 10 - ship) / (10 + ship)) < 0.001;
+    o.dash = S.off.length === 1 && S.priced.length === 1 && Math.abs(S.net - (np - 10 - ship)) < 0.01 && S.spent === 36;
+    o.sheet = St.off.length === 1 && Math.abs(St.winNet - (np - 10 - ship)) < 0.01 && St.under.length === 1 && St.above.length === 0;
+    const lh = document.createElement("div"); lh.innerHTML = leaderHTML(L); const you = [...lh.querySelectorAll("tbody tr")].find((r) => /you/.test(r.innerText));
+    o.lead = !!you && /1\/2/.test(you.innerText) && ![...lh.querySelectorAll("tbody td")].some((td) => td.innerText.trim() === "I");
+    BUYERS = null; const B = buyerProfiles(); o.buyers = !B.has("I") && B.get("rivalx").beat === 0;   // under your max both times: never beat you
+    // worth today: price then x NM move (NM then 40, NM now = catalog), not NM x tier today
+    const nmNow = bestMarket(BY_ID.get("sv8pt5-40")); o.worth = Math.abs(dashNow(win) - 20 * nmNow / 40) < 0.01;
+    // the dashboard names the left-out win and tags it
+    DASH.per = "7"; DASH.seller = "sAud"; dashOpen(true); const tx = document.querySelector("#dash").innerText;
+    o.dashTxt = /1 win left out of net: under 40% of market, likely another printing/.test(tx) && /likely another printing/.test(tx) && !/After shipping/.test(tx);
+    // calendar days: 7 days starts at local midnight 6 days ago
+    storeLotRows([mk({ seller: "sCal", at: mid(6) + 60000, final: 3, me: true }), mk({ seller: "sCal", at: mid(6) - 60000, final: 4, me: true })]);
+    DASH.seller = "sCal"; o.cal = dashData().rows.length === 1; DASH.seller = ""; dashOpen(false);
+    // stale stream: the seller's newest lot is 2 h old -> "this stream" is empty
+    storeLotRows([mk({ seller: "sOld", at: now - 7200e3, final: 3, me: true })]);
+    const So = lotStats("sOld", "stream"); o.stale = So.rows.length === 0 && So.idle > 0 && haul(streamRows("sOld")).n === 0 && lotStats("sOld", "all").rows.length === 1;
+    // removeLot resets buyer profiles (cached 60 s): rivalx drops from 2 wins to 1 at once
+    const w0 = buyerProfiles().get("rivalx").wins; removeLot(L.find((r) => r.f === 12).at); o.reset = w0 === 2 && buyerProfiles().get("rivalx").wins === 1;
+    // log read with failed day files: this browser's rows on those UTC days (+/- 1) stay, others are replaced by the log
+    localStorage.setItem("cardcomp_lots", "[]"); clearTimeout(RESYNC_T); LOTS_SINCE = 0;   // a full read, not a pending 2-day refresh
+    const day = (n) => new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate() - n, 12)).getTime();
+    storeLotRows([mk({ seller: "sF", at: day(10), final: 7, me: true }), mk({ seller: "sF", at: day(20), final: 8, me: true })]);
+    const ack = (failed) => new Promise((res) => { window.postMessage(Object.assign({ type: "cardcomp-log-read-ack", ok: true, rows: [{ seller: "sF", startedAt: day(3) - 20000, at: day(3), final: 9, me: true }] }, failed ? { failed } : {}), location.origin); setTimeout(res, 150); });
+    await ack([new Date(day(9)).toISOString().slice(0, 10)]);
+    o.failed = loadLots().map((r) => r.f).sort().join(",");
+    await ack(null);
+    o.noFailed = loadLots().map((r) => r.f).sort().join(",");
+    localStorage.setItem("cardcomp_lots", keep);
+    return o;
+  });
+  ok(au.parse <= 1 && au.same, "stats: lots parsed once per stored version (" + au.parse + " parses for 150 calls)");
+  ok(au.likely && au.haul && au.dash && au.sheet && au.lead && au.dashTxt, "stats: a win under 40% of market is spent only, not net / margin; nets after coupons and shipping " + JSON.stringify(au));
+  ok(au.buyers && au.worth && au.cal && au.stale && au.reset, "stats: no rival without a beaten max, no 'I' buyer, worth today by NM move, 7 days from midnight, stale stream empty, removeLot resets buyers");
+  ok(au.failed === "7,9" && au.noFailed === "9", "log read: rows on failed day files kept (" + au.failed + "), replaced without failed (" + au.noFailed + ")");
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);
