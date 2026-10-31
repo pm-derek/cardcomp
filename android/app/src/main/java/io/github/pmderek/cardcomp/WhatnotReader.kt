@@ -66,6 +66,9 @@ class WhatnotReader : AccessibilityService() {
             // Whatnot's own window only (2026-10-30: in split screen the other half, Chrome on eBay / TCGplayer / CardComp,
             // was sent too, and its prices and headings were logged as $1,500 "wins")
             if (n.pkg != WHATNOT) continue
+            // on screen only (2026-10-31 audit: 300 hidden nodes with a size in 159 dumps, a stale "Sold" / "X won!" under the
+            // keyboard among them, read as a sale)
+            if (!n.node.isVisibleToUser) continue
             if (n.text.isEmpty() || n.r.width() <= 0 || n.r.height() <= 0) continue
             arr.put(org.json.JSONObject().put("t", n.text.take(160)).put("l", n.r.left).put("y", n.r.top).put("r", n.r.right).put("b", n.r.bottom)
                 .put("c", if (n.node.isClickable) 1 else 0))
