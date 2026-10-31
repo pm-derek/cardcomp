@@ -13,6 +13,8 @@
 // 5. auto, extension side: lot timer -> frame -> API (mocked) -> CardComp message, second frame rules, errors, records;
 //    reading a card held up before the timer, skipping a sold card still held, reusing the reading at timer start.
 // 6. auto, CardComp side: the auto line, switch, filled results with the mark, typing respected, outcome reported.
+// 7. extension log store (store.js, fake GitHub API: stored queue, prune / read / edit failures, the other device's copy)
+//    and the lot reader (whatnot.js, mock page: chat and giveaway text, learning Derek's name, orphaned after a reload).
 // Needs playwright (preinstalled in the cloud session; locally: npm i playwright && npx playwright install chromium).
 const fs = require("fs"), path = require("path"), http = require("http"), os = require("os"), { execSync } = require("child_process");
 let chromium; try { ({ chromium } = require("playwright")); } catch (_) { ({ chromium } = require("/opt/node22/lib/node_modules/playwright")); }
@@ -934,6 +936,143 @@ async function appPage(browser, base, blockRecog) {
   ok(ap.errors.length === 0, "no page errors (" + (ap.errors[0] || "") + ")");
   console.log("  app screenshot: " + path.join(OUT, "recog-app-auto.png"));
   await ap.close();
+
+  // ---------- 7. extension log store (store.js) against a fake GitHub contents API, and the lot reader (whatnot.js) on a
+  // mock Whatnot page: queue survives a worker stop, no token keeps rows, prune / read / edit report what failed, an edit
+  // reaches the other device's copy of a lot, chat and giveaway text never end a lot, an orphaned script says so.
+  console.log("7. extension log store + lot reader");
+  {
+    const vm = require("vm");
+    const gh = { files: {}, n: 0, failGet: new Set(), failPut: new Set(), conflict: new Set(), calls: [] };
+    const resp = (status, body) => ({ status, ok: status >= 200 && status < 300, json: async () => body, text: async () => JSON.stringify(body) });
+    const fakeFetch = async (url, o) => {
+      o = o || {}; const method = o.method || "GET", name = decodeURIComponent(/\/contents\/([^?]*)/.exec(String(url))[1]);
+      gh.calls.push(method + " " + name);
+      if (method === "GET" && name === "") return resp(200, Object.keys(gh.files).map((n) => ({ name: n })));
+      if (method === "GET") { if (gh.failGet.has(name)) return resp(500, {}); const f = gh.files[name]; return f ? resp(200, { sha: f.sha, size: f.text.length, content: Buffer.from(f.text).toString("base64") }) : resp(404, {}); }
+      const body = JSON.parse(o.body), f = gh.files[name];
+      if (gh.conflict.has(name)) { gh.conflict.delete(name); if (f) f.sha = "moved" + (++gh.n); return resp(409, {}); }   // another write landed first
+      if (gh.failPut.has(name)) return resp(500, {});
+      if (f && body.sha !== f.sha) return resp(409, {});
+      if (method === "DELETE") { delete gh.files[name]; return resp(200, {}); }
+      gh.files[name] = { sha: "s" + (++gh.n), text: Buffer.from(body.content, "base64").toString("utf8") }; return resp(200, {});
+    };
+    const put = (name, rows) => { gh.files[name] = { sha: "s" + (++gh.n), text: JSON.stringify(rows) }; };
+    const rowsOf = (name) => (gh.files[name] ? JSON.parse(gh.files[name].text) : null);
+    const disk = {}, auth = { tok: "" };   // chrome.storage.local, kept across "worker restarts"
+    const worker = () => {   // a fresh service worker: store.js loaded again, same storage
+      const ctx = vm.createContext({ console: { warn() {}, log() {} }, fetch: fakeFetch, setTimeout: () => 0, clearTimeout() {}, btoa, atob, unescape, escape, encodeURIComponent, decodeURIComponent, Date, JSON, Math, Promise, Object, Array, Set, Map, Error,
+        chrome: { runtime: { lastError: null }, storage: { local: {
+          get: (k, cb) => { const o = {}; [].concat(k).forEach((x) => { if (x === "ghToken") o.ghToken = auth.tok; else if (x in disk) o[x] = JSON.parse(JSON.stringify(disk[x])); }); Promise.resolve().then(() => cb(o)); },
+          set: (obj, cb) => { for (const x in obj) disk[x] = JSON.parse(JSON.stringify(obj[x])); if (cb) Promise.resolve().then(cb); } } } } });
+      vm.runInContext(fs.readFileSync(path.join(ROOT, "extension/store.js"), "utf8") + "\n;this.S = { queueLog, flushLog, readLog, editLog, pruneLog, mergeRows, restoreLog, saveLog, pend: () => pendingLog };", ctx);
+      return ctx.S;
+    };
+    const today = new Date().toISOString().slice(0, 10), todayF = "log-" + today + ".json", stored = () => (disk.cardcomp_pendingLog || []).length;
+    const T0 = Date.UTC(2026, 9, 30, 12, 0, 0), F30 = "log-2026-10-30.json", F29 = "log-2026-10-29.json";
+    const lotA = (o) => Object.assign({ v: 3, title: "#7", final: 5, bids: 3, winner: "me", me: true, seller: "sellr", startedAt: T0 - 20000, at: T0 }, o);
+
+    // 2. queue survives the worker stopping; no token keeps rows; a failed write keeps them stored
+    let S = worker(); await S.restoreLog();
+    S.queueLog(lotA({ startedAt: 1, at: Date.now() - 5000, title: "#1" })); await S.saveLog();
+    await S.flushLog();
+    ok(stored() === 1 && S.pend().length === 1 && !gh.calls.some((c) => c.startsWith("PUT")), "log queue: no token keeps the row (memory + chrome.storage), nothing dropped");
+    auth.tok = "t0k"; S = worker(); await S.restoreLog(); await new Promise((r) => setImmediate(r));
+    ok(S.pend().length === 1, "log queue: a new worker restores the stored row");
+    gh.failPut.add(todayF); await S.flushLog();
+    ok(stored() === 1 && !gh.files[todayF], "log queue: a failed GitHub write keeps the row stored");
+    gh.failPut.clear(); S = worker(); await S.restoreLog(); await S.flushLog();
+    ok(stored() === 0 && (rowsOf(todayF) || []).length === 1, "log queue: written after the restart, storage emptied");
+    delete gh.files[todayF];
+
+    // 5. readLog: a day that cannot be read is named, the rest still comes back
+    put(F29, [lotA({ at: T0 - 864e5, startedAt: T0 - 864e5 - 9000, title: "#2" })]); put(F30, [lotA()]);
+    gh.failGet.add(F30);
+    let rl = await S.readLog(T0 - 2 * 864e5);
+    ok(rl.ok === true && JSON.stringify(rl.failed) === '["2026-10-30"]' && rl.rows.length === 1, "readLog: unreadable day reported as failed: [\"2026-10-30\"], other days still read");
+    gh.failGet.add(F29); rl = await S.readLog(T0 - 2 * 864e5);
+    ok(rl.ok === false && rl.failed.length === 2, "readLog: nothing readable -> ok:false (the app keeps its rows)");
+    gh.failGet.clear();
+
+    // 4. pruneLog: retries a sha conflict, reports a file it could not write
+    put(F29, [lotA({ at: T0 - 864e5, startedAt: T0 - 864e5 - 9000, title: "#2" }), lotA({ at: T0 - 864e5 + 60000, startedAt: T0 - 864e5, title: "#3" })]);
+    put(F30, [lotA(), lotA({ at: T0 + 60000, startedAt: T0 + 40000, title: "#8" })]);
+    gh.conflict.add(F29); gh.failPut.add(F30);
+    let pr = await S.pruneLog(T0 - 864e5 + 30000);
+    ok(pr.ok === false && pr.removed === 1 && pr.files === 1 && pr.failed.length === 1 && /log-2026-10-30\.json: GitHub (PUT|DELETE) 500/.test(pr.failed[0]) && rowsOf(F29).length === 1 && rowsOf(F30).length === 2,
+      "pruneLog: a sha conflict is re-read and retried (1 removed), a failed write is reported, not counted (" + (pr.why || "") + ")");
+    gh.failPut.clear();
+
+    // 6. the other device's copy: one lot logged by desktop (F30) and phone (F30, 40 s later)
+    const desk = lotA({ card: { id: "x1", n: "Ralts", label: "tap", cond: "NM" } }), phone = lotA({ src: "phone", startedAt: T0 + 20000, at: T0 + 40000, card: { id: "x1", n: "Ralts", label: "tap", cond: "NM" } });
+    const keyD = { seller: desk.seller, startedAt: desk.startedAt, at: desk.at };
+    put(F30, [desk, phone, lotA({ at: T0 + 300000, startedAt: T0 + 280000, title: "#9", final: 2, winner: "zed" })]);
+    let ed = await S.editLog(keyD, null, true);
+    const both = () => rowsOf(F30).filter((r) => r.title === "#7");
+    ok(ed.ok && both().every((r) => r.card === null && r.cardCleared), "editLog clear: both devices' rows lose the card (" + JSON.stringify(ed) + ")");
+    let m = S.mergeRows(rowsOf(F30).concat([lotA({ src: "phone", startedAt: T0 + 21000, at: T0 + 41000, card: { id: "x1", n: "Ralts", label: "tap" }, bidsSent: [{ bid: 5 }] })]));
+    ok(m.filter((r) => r.title === "#7").length === 1 && m.find((r) => r.title === "#7").card === null, "a late phone copy with a tapped card does not refill a cleared card");
+    ed = await S.editLog(keyD, { id: "x2", n: "Kirlia", cond: "LP" });
+    ok(ed.ok && both().every((r) => r.card && r.card.n === "Kirlia" && r.card.label === "fixed" && !r.cardCleared), "editLog card: both rows get the hand-picked card, label fixed");
+    m = S.mergeRows([lotA({ src: "phone", startedAt: T0 + 21000, at: T0 + 41000, card: { id: "x1", n: "Ralts", label: "tap" }, bidsSent: [{ bid: 5 }] })].concat(both().slice(0, 1)));
+    ok(m.length === 1 && m[0].card.n === "Kirlia", "a hand-picked card beats an older tapped card from the other device (" + (m[0].card && m[0].card.n) + ")");
+    put(F30, [lotA(), phone]);   // desktop row with no card, phone row with the card: a condition change still works
+    ed = await S.editLog(keyD, null, false, { cond: "MP", condFixedAt: 5 });
+    ok(ed.ok && both().every((r) => r.card && r.card.n === "Ralts" && r.card.cond === "MP"), "editLog patch: the card shown from the phone copy gets the condition, on both rows");
+    ed = await S.editLog(keyD, null, false, null, { coupon: 2 });
+    ok(ed.ok && both().every((r) => r.coupon === 2), "editLog coupon: on both rows");
+    pr = await S.pruneLog(desk.at, desk.at + 1);
+    ok(pr.ok && pr.removed === 2 && !gh.files[F30], "pruneLog one lot: the other device's copy goes too (" + pr.removed + " rows, empty file deleted)");
+  }
+  {
+    const MOCK = `<!doctype html><html><body style="font:14px sans-serif">
+      <div id="hdr"><span>sellr</span><button>Follow</button></div>
+      <div id="lead"><span id="ln">bidderone</span><span id="lt">is Winning!</span></div>
+      <div id="lot"><div><div data-testid="show-product-title">Card on Screen #5</div><div>Near Mint · Card</div><div>3 Bids</div><div>Shipping is $0.78 + Taxes</div></div>
+        <div id="pc"><span>$4</span><span id="tm">00:07</span></div></div>
+      <div id="pop"></div>
+      <div id="chat"><div id="list">${"<i>.</i>".repeat(70)}</div><input placeholder="Say something..."></div>
+      <script>window.__sent = []; window.__store = {}; window.__dead = false;
+      window.chrome = { runtime: { id: "ext", lastError: null, onMessage: { addListener() {} },
+        sendMessage(msg, cb) { if (window.__dead) throw new Error("Extension context invalidated."); window.__sent.push(msg); if (cb) cb(); } },
+        storage: { local: { get(k, cb) { cb(Object.assign({}, window.__store)); }, set(o) { Object.assign(window.__store, o); } } } };</script></body></html>`;
+    const wp = await browser.newPage(); const werr = []; wp.on("pageerror", (e) => werr.push(e.message));
+    await wp.setContent(MOCK); await wp.addScriptTag({ path: path.join(ROOT, "extension/whatnot.js") }); await wp.waitForTimeout(700);
+    const sent = () => wp.evaluate(() => window.__sent);
+    const ends = async () => (await sent()).filter((x) => x.type === "cardcomp-lot-end").map((x) => x.rec);
+    const chat = (html) => wp.evaluate((h) => { document.getElementById("list").insertAdjacentHTML("beforeend", h); }, html);
+    await chat('<div data-testid="chat-message"><span>pal_22</span><span>I won!</span></div><div data-testid="chat-message"><span>you won!</span></div>');
+    await chat("<div><span>Finally won one</span></div><div><span>It won lol</span></div><div><span>you're winning bro</span></div>");
+    await wp.waitForTimeout(700);
+    let lots = (await sent()).filter((x) => x.type === "cardcomp-lot"), last = lots[lots.length - 1];
+    ok((await ends()).length === 0 && last && last.title === "Card on Screen #5" && !last.ended && !last.me && last.lead === "bidderone", "lot reader: chat \"I won!\" / \"Finally won one\" / \"you won!\" / \"you're winning\" end nothing and are not Derek");
+    await wp.evaluate(() => { document.querySelector('[data-testid="show-product-title"]').textContent = "Selecting Winner"; document.getElementById("pop").innerHTML = "<span>bigfloyd won the giveaway!</span>"; });
+    await wp.waitForTimeout(700);
+    await wp.evaluate(() => { document.querySelector('[data-testid="show-product-title"]').textContent = "Randomizing spot for bigfloyd..."; });
+    await wp.waitForTimeout(700);
+    lots = (await sent()).filter((x) => x.type === "cardcomp-lot");
+    ok((await ends()).length === 0 && !lots.some((x) => /selecting|randomizing/i.test(x.title || "")), "lot reader: giveaway screens (Selecting Winner, won the giveaway, Randomizing spot) are no lot and no lot end");
+    // the lot sells: "You won" in the middle + a stranger's "won!" (not this lot's leader): ended, but never learned as Derek
+    await wp.evaluate(() => { document.querySelector('[data-testid="show-product-title"]').textContent = "Card on Screen #5"; document.getElementById("pop").innerHTML = "<div><span>You won</span></div><div><span>strangr</span><span>won!</span></div>"; });
+    await wp.waitForTimeout(700);
+    let e = await ends(), store = await wp.evaluate(() => window.__store);
+    ok(e.length === 1 && e[0].title === "Card on Screen #5" && e[0].me === true && !store.wnUser, "lot reader: a real end is still logged, a non-leader's name is never saved as Derek (wnUser " + (store.wnUser || "empty") + ", " + JSON.stringify(e.map((x) => [x.title, x.winner, x.me])) + ")");
+    // next lot, Derek leads and wins: now his name is learned
+    await wp.evaluate(() => { document.getElementById("pop").innerHTML = ""; document.querySelector('[data-testid="show-product-title"]').textContent = "Card on Screen #6"; document.getElementById("ln").textContent = "rewired"; });
+    await wp.waitForTimeout(700);
+    await wp.evaluate(() => { document.getElementById("pop").innerHTML = "<div><span>You won</span></div><div><span>rewired</span><span>won!</span></div>"; });
+    await wp.waitForTimeout(700);
+    store = await wp.evaluate(() => window.__store);
+    ok(store.wnUser === "rewired", "lot reader: the leader's own \"X won!\" with \"You won\" is learned as Derek (" + store.wnUser + ")");
+    // the extension is reloaded: this copy is orphaned, says so once, stops sending
+    await wp.evaluate(() => { window.__dead = true; document.querySelector('[data-testid="show-product-title"]').textContent = "Card on Screen #7"; document.getElementById("pop").innerHTML = ""; });
+    await wp.waitForTimeout(700);
+    const toastTxt = await wp.evaluate(() => [...document.documentElement.children].map((x) => x.textContent).join(" | "));
+    await wp.evaluate(() => { window.__dead = false; window.chrome.runtime.id = undefined; document.querySelector('[data-testid="show-product-title"]').textContent = "Card on Screen #8"; });
+    await wp.waitForTimeout(2500);
+    ok(/reload this tab to keep logging/.test(toastTxt) && !(await sent()).some((x) => x.title === "Card on Screen #8") && werr.length === 0, "orphaned after an extension reload: toast \"CardComp extension updated: reload this tab to keep logging\", reading stops (" + (werr[0] || "") + ")");
+    await wp.close();
+  }
 
   await browser.close(); srv.close();
   console.log(fails ? `\n${fails} check(s) FAILED` : "\nall checks passed");
