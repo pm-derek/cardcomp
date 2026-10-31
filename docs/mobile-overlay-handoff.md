@@ -668,3 +668,13 @@ Derek: "mobile purchases weren't carrying over onto desktop stats". They were (t
 Chinese bid labels the lot "中 <card>" at the Chinese estimate (`data-zh`, `card.zh`). Also from that stream: "#200 $4"
 logged twice 90 s apart and "#205 $20" three times (one titled "Open features menu", the keyboard's toolbar). The ghost
 window is 3 min (was 60 s) and keyboard toolbar text is never a title.
+## 2026-10-30: lots read from other apps
+
+Derek's dashboard said $11,257 spent today (85 wins). 62 phone "wins" worth $10,650 were text from the other half of
+the split screen: the lot reader (`WhatnotReader.pushScreen`) sent every window's nodes whenever a Whatnot live screen
+was up, so Chrome on eBay ("Ungraded" $1,500, "Ad" $835), TCGplayer product pages ("Forbidden Light Booster Box" $526,
+"3 Month Snapshot" $170 x8), a wall-decal shop and CardComp's own result lines became lots, and bridge.js marked them won.
+Now only Whatnot's own window (`com.whatnot_mobile`) is sent, as the Custom fill already did. Needs the new APK.
+Log cleanup (a hand-run script, not shipped): phone rows whose title has no "#N" and is rare for the stream, and the
+same seller + title + price again within 3 min with no bids; 117 rows Oct 23-30.
+
