@@ -746,10 +746,10 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
   ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
     "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
-  // the bid sends without labeling the lot as the English card
-  const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
+  // the bid labels the lot as the Chinese copy of this card at the Chinese price, not the English market
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);
-  ok(await ap.evaluate((t0) => JSON.stringify(LAST_TAP) === t0, tap0), "Chinese bid: sent without labeling the lot as the English card");
+  const zt = await ap.evaluate(() => LAST_TAP && { id: LAST_TAP.id, n: LAST_TAP.n, m: LAST_TAP.condMarket, mk: LAST_TAP.market, zh: LAST_TAP.zh, bid: LAST_TAP.bid });
+  ok(zt && zt.id === "sv8-238" && /^中 /.test(zt.n) && zt.m === 12.5 && zt.mk === 12.5 && zt.zh === "sold", "Chinese bid: lot labeled as the Chinese copy at the Chinese price: " + JSON.stringify(zt));
   await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card.png") });
   await ap.setViewportSize({ width: 380, height: 800 }); await ap.waitForTimeout(200);
   await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8-238"] .zhout').scrollIntoView({ block: "end" })); await ap.waitForTimeout(100);
@@ -901,6 +901,26 @@ async function appPage(browser, base, blockRecog) {
   await ap.waitForTimeout(200);
   ok(/Changing the card on your \$21 win \(now Sylveon\)/.test(await ap.textContent("#pickbar")), "change: pick mode names the card it replaces");
   await ap.click("#pickbar .pickx"); await ap.evaluate(() => dashOpen(false));
+  // Chinese seller (Derek, 2026-10-30: domvault_card wins priced at the English market): flagged, its wins wait as unpriced,
+  // then are repriced at the Chinese estimate and saved to the log
+  const zs = await ap.evaluate(async () => {
+    window.__edits = []; window.__zhOrig2 = window.zhLookup; WN_EXT = true;
+    const now = Date.now();
+    window.zhLookup = async (cands) => ({ ok: true, ids: cands.map((c) => c.id), checked: cands.length, errs: [], dbg: [], hits: [{ id: cands[0].id, pid: 1, p: 6 }],
+      sold: [{ id: cands[0].id, pid: 1, p: 5, at: now - 864e5 }, { id: cands[0].id, pid: 1, p: 6, at: now - 2 * 864e5 }, { id: cands[0].id, pid: 1, p: 7, at: now - 3 * 864e5 }] });
+    const fake = (e) => { if (e.data && e.data.type === "cardcomp-log-edit") setTimeout(() => window.postMessage({ type: "cardcomp-log-edit-ack", ok: true }, location.origin), 20); };
+    window.addEventListener("message", fake);
+    setZhSeller("sellerA", true);
+    const before = viewLots().find((r) => r.s === "sellerA" && r.me);
+    DASH.per = "7"; DASH.seller = "sellerA"; dashOpen(true);
+    const waitTxt = document.querySelector("#dash").innerText;
+    for (let i = 0; i < 40 && (ZH_RUN || !/repriced/.test(ZH_NOTE)); i++) await new Promise((r) => setTimeout(r, 100));
+    const after = loadLots().find((r) => r.s === "sellerA" && r.me), txt = document.querySelector("#dash").innerText;
+    window.removeEventListener("message", fake); window.zhLookup = window.__zhOrig2; setZhSeller("sellerA", false); dashOpen(false);
+    return { wait: before.zhWait === 1 && before.m === 0, waitTxt: /waiting for a Chinese price/.test(waitTxt) || /repricing/.test(waitTxt), m: after.m, n: after.n, zh: after.zh, ed: window.__edits.find((x) => x.patch && x.patch.zh), note: ZH_NOTE, toggle: /中 Chinese seller ✓/.test(txt) };
+  });
+  ok(zs.wait && zs.waitTxt && zs.m === 6 && /^中 Sylveon/.test(zs.n) && zs.zh === 1 && zs.ed && zs.ed.patch.condMarket === 6 && zs.ed.patch.zh === "sold" && zs.toggle && /2 of 2 lots repriced/.test(zs.note),
+    "Chinese seller: wins wait as unpriced, then repriced at the Chinese price ($" + zs.m + ") and saved to the log: " + zs.note);
   // buyers: 3 known-card wins at ~80% of market -> sharp; in the room and leading -> the strip says so
   const by = await ap.evaluate(() => {
     const t = Date.now() - 7200e3, rows = [0, 1, 2].map((i) => lotRow({ seller: "s9", startedAt: t + i * 60000 - 20000, at: t + i * 60000, final: 8, bids: 6, winner: "sharpie", me: false, card: { id: "sv8pt5-40", n: "Sylveon", cond: "NM", condMarket: 10, label: "view" } }));

@@ -1790,10 +1790,16 @@ function cardSnap(r, cond, printing, rowMkt, name){
 let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
 function sendToWhatnot(s, el, show, labelOnly){
   let name=""; try{ const c=el&&el.closest(".card"), n=c&&c.querySelector(".nm"); name=n?n.textContent.trim():""; }catch(_){ }
-  const nolabel=!!(el && el.dataset && el.dataset.nolabel);   // Chinese copy bid: not the English card at its English market, so the lot is not labeled
-  if(!nolabel) try{
+  // Chinese copy bid (data-zh = the card picked): the lot is that card at the estimated Chinese price, not the English
+  // market (Derek, 2026-10-30: phone Chinese wins logged with no card)
+  const zel=el && el.closest ? el.closest("[data-zh]") : null;
+  try{
     const ds=(el&&el.dataset)||{};
-    if(ds.keep && LAST_TAP){   // strip nudge ("bid $15"): same card as the max it raises
+    if(zel){
+      const r=(typeof BY_ID!=="undefined" && BY_ID.get(zel.dataset.zh)) || CARDS.find(x=>x.id===zel.dataset.zh), est=+zel.dataset.mkt||0;
+      LAST_TAP=Object.assign(cardSnap(r, "NM", topPrint(r), est, name), { n:"中 "+(r?r.n:name), market:est, zh:zel.dataset.zhsrc||"zh", bid:+s, at:Date.now() });
+      name=LAST_TAP.n;
+    } else if(ds.keep && LAST_TAP){   // strip nudge ("bid $15"): same card as the max it raises
       LAST_TAP=Object.assign(cardFields(LAST_TAP), { bid:+s, at:Date.now() }); name=LAST_TAP.n||"";
     } else if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
       const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
@@ -1997,7 +2003,8 @@ function zhHTML(res, opt){
   const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
   const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `avg of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
   const left=s=>s.out.length?` <span style="color:var(--faint)">(${s.out.map(zhMoney).join(", ")} left out, too far off)</span>`:"";
-  const bidB=b>=1?` <button class="zhbid" data-nolabel="1" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; not logged as the English card" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button> <span class="zhbe" style="color:var(--dim);font-size:12px;white-space:nowrap" title="break-even: the most you can pay before losing money at ${zhMoney(est)}">b/e $${(bidForMargin(est,0)||0).toFixed(2)}</span>`:"";
+  const zid=opt.id||res.forId||(res.ids||[])[0]||"";
+  const bidB=b>=1?` <button class="zhbid" data-zh="${escH(zid)}" data-mkt="${est.toFixed(2)}" data-zhsrc="${pk.use}" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; logged as the Chinese copy at ${zhMoney(est)}" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button> <span class="zhbe" style="color:var(--dim);font-size:12px;white-space:nowrap" title="break-even: the most you can pay before losing money at ${zhMoney(est)}">b/e $${(bidForProfit(est,0)||0).toFixed(2)}</span>`:"";
   const line=(k, s, lab, list)=>{ const on=pk.use===k;
     return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
   if(opt.compact){   // the auto line sits in the sticky header: one line
@@ -2031,12 +2038,12 @@ function zhCandsOne(card){
 }
 async function zhForCard(card, el){
   const hit=ZH_CACHE.get(card.id);
-  if(hit && Date.now()-hit.at<10*60e3){ el.innerHTML=zhHTML(hit.res); zhWire(el, hit.res); return; }
+  if(hit && Date.now()-hit.at<10*60e3){ el.innerHTML=zhHTML(hit.res, {id:card.id}); zhWire(el, hit.res); return; }
   const cands=zhCandsOne(card);
   el.innerHTML=`<span style="color:var(--faint)">checking ${cands.length} TCGplayer product${cands.length===1?"":"s"} (English + Japanese) for Chinese listings…</span>`;
   const res=await zhLookup(cands);
   ZH_CACHE.set(card.id, {res, at:Date.now()});
-  if(el.isConnected){ el.innerHTML=zhHTML(res); zhWire(el, res); }
+  if(el.isConnected){ el.innerHTML=zhHTML(res, {id:card.id}); zhWire(el, res); }
 }
 window.zhLookup=zhLookup; window.zhCands=zhCands; window.zhHTML=zhHTML; window.zhWire=zhWire; window.zhSummary=zhSummary; window.zhPick=zhPick;
 // Fast read reply: apply every condition that came back; on failure the page read (already loading) takes over.
@@ -2112,7 +2119,7 @@ let BUYERS=null, BUYERS_AT=0, ROOM={seller:"", users:new Map()};
 function buyerProfiles(){
   if(BUYERS && Date.now()-BUYERS_AT<60000) return BUYERS;
   const M=new Map();
-  for(const r of loadLots()){
+  for(const r of viewLots()){
     const w=r.w; if(!w || r.me || w==="me" || w==="?" || w===r.s) continue;
     const u=M.get(w)||{wins:0, lab:0, pcts:[], beat:0, sellers:new Set()};
     u.wins++; u.sellers.add(r.s);
@@ -2233,12 +2240,53 @@ window.addEventListener("message", e=>{
   paintLot(); if(LOTSTATS_OPEN) paintLotStats(); if(DASH.on) paintDash();
 });
 function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
+// Chinese sellers (Derek, 2026-10-30: "these margins are broken, the market here is English; everything for Dom"): every
+// card from these sellers is a Chinese copy. Their wins logged at the English market read as +$236 on a $26 Vaporeon ex.
+// Stats and the dashboard read rows through viewLots: a row from a Chinese seller not yet repriced (no card.zh) counts as
+// unpriced; zhReprice looks up its Chinese price (zhLookup through the extension) and saves it to the row and the log.
+const ZH_SELLERS_KEY="cardcomp_zh_sellers";
+function zhSellers(){ try{ const v=localStorage.getItem(ZH_SELLERS_KEY); return new Set(v==null?["domvault_card"]:JSON.parse(v)); }catch(_){ return new Set(); } }
+function setZhSeller(s, on){ const z=zhSellers(); if(on) z.add(s); else z.delete(s); try{ localStorage.setItem(ZH_SELLERS_KEY, JSON.stringify([...z])); }catch(_){ } BUYERS=null; }
+const zhWaits=r=>r && r.id && !r.zh && r.m>0;   // a card from a Chinese seller still priced as the English / Japanese card
+function viewLots(){
+  const z=zhSellers(), all=loadLots(); if(!z.size) return all;
+  return all.map(r=>z.has(r.s) && zhWaits(r) ? Object.assign({}, r, {m:0, np:null, zhWait:1}) : r);
+}
+let ZH_RUN=null, ZH_NOTE="", ZH_ACK=null, ZH_FAIL_AT=0;
+async function zhReprice(seller){
+  if(ZH_RUN || !WN_EXT || typeof zhLookup!=="function") return;
+  const todo=loadLots().filter(r=>r.s===seller && zhWaits(r)); if(!todo.length) return;
+  ZH_RUN=seller; let done=0, priced=0, fail="";
+  const paint=()=>{ ZH_NOTE=`中 repricing ${seller} at Chinese prices: ${done}/${todo.length}${priced<done?` · ${done-priced} with no Chinese sale or listing`:""}`; if(DASH.on) paintDash(); };
+  paint();
+  for(const r of todo){
+    const card=BY_ID.get(r.id); if(!card){ done++; continue; }
+    let res; try{ res=await zhLookup(zhCandsOne(card)); }catch(e){ res={ok:false, errs:[e.message]}; }
+    if(!res.ok){ fail=(res.errs||[])[0]||"lookup failed"; break; }
+    const pk=zhPick(res), nm=pk.use ? (pk.use==="sold"?pk.sold.est:pk.list.est) : 0;
+    const m=nm>0 && r.c && r.c!=="NM" && CONDS.includes(r.c) ? nm*condMult(r.c, card.y, nm) : nm;   // Chinese copies list as NM: played ones by the usual ratio
+    const n=/^中 /.test(r.n||"") ? r.n : "中 "+(r.n||card.n);
+    try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n, m:+m.toFixed(2), np:m>0?+netProceeds(listSale(m)).toFixed(2):null, zh:1 }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+    const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
+    if(st!=="" && st!=null){
+      const ack=new Promise(ok=>{ ZH_ACK=ok; setTimeout(()=>ok(null), 20000); });
+      extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, patch:{n, market:+m.toFixed(2), condMarket:+m.toFixed(2), zh:pk.use||"none", zhAt:Date.now()}});
+      await ack; ZH_ACK=null;
+    }
+    done++; if(m>0) priced++; paint();
+  }
+  ZH_RUN=null; BUYERS=null; if(fail) ZH_FAIL_AT=Date.now();
+  ZH_NOTE=fail ? `中 repricing stopped at ${done}/${todo.length}: ${fail}` : `中 ${seller}: ${priced} of ${todo.length} lots repriced at Chinese prices${priced<todo.length?`, ${todo.length-priced} with no Chinese sale or listing (left unpriced)`:""} · saved to your log`;
+  try{ refreshVerdict(seller); }catch(_){ } if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats(); paintLot();
+}
+// after a failed lookup, not again on every repaint for 10 min
+function zhRepriceAll(){ if(ZH_RUN || Date.now()-ZH_FAIL_AT<10*60e3) return; for(const s of zhSellers()) if(loadLots().some(r=>r.s===s && zhWaits(r))){ zhReprice(s); return; } }
 function lotRow(rec){
     const c=rec.card||null, multi=c&&c.multi&&c.cards;
     const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
     const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
-      n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
+      n:c?(c.n||""):"", c:c?(c.cond||""):"", zh:c&&c.zh?1:0, lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null,
       id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
       t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"" };   // t / src: the same lot from the phone and this browser is one lot
@@ -2264,6 +2312,7 @@ function storeLotRows(add){   // merge rows into this browser's stats by lot key
 }
 function recordLotStat(rec){
   try{ storeLotRows([lotRow(rec)]); }catch(_){ }
+  try{ if(rec.seller && zhSellers().has(rec.seller)) setTimeout(()=>zhReprice(rec.seller), 3000); }catch(_){ }   // a Chinese seller's lot: its Chinese price
   resyncSoon();
   try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
@@ -2271,7 +2320,7 @@ function recordLotStat(rec){
 }
 const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
 function lotStats(seller, scope){
-  let rows=loadLots().filter(r=>r.s===seller).sort((a,b)=>a.at-b.at);
+  let rows=viewLots().filter(r=>r.s===seller).sort((a,b)=>a.at-b.at);
   if(scope==="stream"){   // this sitting: walk back from the latest lot while gaps stay under 45 min
     let i=rows.length-1; while(i>0 && rows[i].at-rows[i-1].at<45*60000) i--; rows=rows.slice(Math.max(0,i));
   }
@@ -2379,6 +2428,8 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .dchips span,#dash .dsel{cursor:pointer;padding:6px 11px;border-radius:999px;border:1px solid var(--line);color:var(--dim);font-size:12px;white-space:nowrap}
   #dash .dchips span.on{border-color:var(--gold);color:var(--ink);background:rgba(245,179,1,.10)}
   #dash .dsel{border-color:var(--gold);color:var(--ink)}
+  #dash .dzh{border-color:var(--line);color:var(--dim)}#dash .dzh.on{border-color:var(--red);color:var(--ink);background:rgba(230,103,103,.12)}
+  #dash .dzhnote{flex-basis:100%;font-size:12px;color:var(--gold);margin-top:4px}
   #dash .dx{margin-left:auto;display:flex;gap:6px;align-items:center}
   #dash .dx a,#dash .dx button{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:12.5px;padding:6px 11px;cursor:pointer;text-decoration:none}
   #dash .dtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin-bottom:16px}
@@ -2435,14 +2486,14 @@ function dashOpen(on){
   else if(location.hash==="#dash") history.replaceState(null, "", location.pathname+location.search);
 }
 function dashNow(r){   // today's price for a won card at its printing and condition, or null
-  if(!r.id || typeof CARDS==="undefined") return null;
+  if(!r.id || r.zh || r.zhWait || typeof CARDS==="undefined") return null;   // a Chinese copy: the catalog price is the English / Japanese card's
   if(!DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
   const c=DASH_IDX.get(r.id); if(!c || !c.px) return null;
   const k=r.pr && c.px[r.pr] ? r.pr : topPrint(c), v=c.px[k], nm=v ? (v.m!=null?v.m:v.l)||0 : 0; if(!(nm>0)) return null;
   return c.sealed || r.c==="sealed" || !r.c ? nm : nm*condMult(r.c, c.y, nm);
 }
 function dashData(){
-  const all=loadLots().filter(r=>r && r.at), now=new Date(), day0=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const all=viewLots().filter(r=>r && r.at), now=new Date(), day0=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const from=DASH.per==="1" ? day0 : DASH.per==="all" ? 0 : Date.now()-(+DASH.per)*86400000;
   // streams: one seller, gaps under 45 min (same rule as "this stream" in the stats sheet)
   const last={}; let sid=0;
@@ -2455,7 +2506,8 @@ function dashSum(rows){
   const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f,0), net=priced.reduce((a,r)=>a+(r.np-r.f),0);
   const ship=wins.reduce((a,r)=>a+shipOf(r),0), shipP=priced.reduce((a,r)=>a+shipOf(r),0), streams=new Set(wins.filter(r=>shipOf(r)>0).map(r=>r.s+"|"+r._st)).size;
   const lab=rows.filter(r=>r.m>0 && r.f>0);
-  return { wins, priced, spent, pSpent, net, margin:pSpent>0?net/pSpent:null, mkt:priced.reduce((a,r)=>a+r.m,0), unl:wins.length-priced.length,
+  const zw=wins.filter(r=>r.zhWait).length;
+  return { wins, priced, spent, pSpent, net, margin:pSpent>0?net/pSpent:null, mkt:priced.reduce((a,r)=>a+r.m,0), unl:wins.length-priced.length-zw, zw,
     ship, shipP, shipStreams:streams, buyPct:med(priced.map(r=>r.f/r.m)), sellPct:med(lab.map(r=>r.f/r.m)), lab, seen:rows.length };
 }
 function paintDash(){
@@ -2467,7 +2519,8 @@ function paintDash(){
   const per=[["1","today"],["7","7 days"],["30","30 days"],["all","all"]];
   const head=`<div class="dh"><b class="t">Dashboard</b>
     <span class="dchips">${per.map(([k,l])=>`<span data-per="${k}" class="${DASH.per===k?"on":""}">${l}</span>`).join("")}</span>
-    ${DASH.seller?`<span class="dsel" data-clr="1" title="show every seller">${escH(DASH.seller)} ✕</span>`:""}
+    ${DASH.seller?`<span class="dsel" data-clr="1" title="show every seller">${escH(DASH.seller)} ✕</span><span class="dsel dzh${zhSellers().has(DASH.seller)?" on":""}" data-zhs="1" title="this seller sells Chinese copies: price their cards at Chinese sales / listings, not the English market">中 Chinese seller ${zhSellers().has(DASH.seller)?"✓":"off"}</span>`:""}
+    ${ZH_NOTE?`<div class="dzhnote">${escH(ZH_NOTE)}</div>`:""}
     <span class="dx">${window.parent!==window?`<a href="./#dash" target="_blank" rel="noopener">new tab ↗</a>`:""}<button class="dclose" title="close (Esc)">✕</button></span></div>`;
   if(!rows.length){
     el.innerHTML=`<div class="dw">${head}<div class="empty">No lots ${DASH.per==="1"?"today":"in this period"}${DASH.seller?" for "+escH(DASH.seller):""}.<br>Lots are logged on desktop while a Whatnot tab is open with the extension.${sellers.length?"":"<br>This device has none yet."}</div></div>`;
@@ -2478,7 +2531,7 @@ function paintDash(){
   const nowSum=nowRows.reduce((a,x)=>a+x.v,0), nowWas=nowRows.reduce((a,x)=>a+(x.r.m||0),0);
   const tile=(l,v,s,c)=>`<div class="dt"><div class="dl">${l}</div><div class="dv ${c||""}">${v}</div><div class="ds">${s}</div></div>`;
   const tiles=
-    tile("Won", String(S.wins.length), `${D(S.spent)} spent${S.unl?` · <span class="neg">${S.unl} without a card</span>`:""}`)+
+    tile("Won", String(S.wins.length), `${D(S.spent)} spent${S.unl?` · <span class="neg">${S.unl} without a card</span>`:""}${S.zw?` · <span class="neg">${S.zw} waiting for a Chinese price</span>`:""}`)+
     tile("Net if listed", S.priced.length?D(S.net):"–", `margin <b class="${S.margin!=null&&S.margin<tgt?"neg":"pos"}">${P(S.margin)}</b> · target ${P(tgt)}`, S.priced.length?cls(S.net):"")+
     tile("After shipping", S.priced.length?D(S.net-S.shipP):"–", `${D(S.ship)} shipping over ${S.shipStreams} stream${S.shipStreams===1?"":"s"}, split across each stream's wins`, S.priced.length?cls(S.net-S.shipP):"")+
     tile("Bought at", P(S.buyPct), `of market (median) · rooms sold at ${P(S.sellPct)}`)+
@@ -2619,6 +2672,8 @@ function dashWire(el){
   el.querySelectorAll("[data-per]").forEach(c=>c.onclick=()=>{ DASH.per=c.dataset.per; paintDash(); });
   el.querySelectorAll("tr[data-s]").forEach(t=>t.onclick=()=>{ DASH.seller=t.dataset.s; paintDash(); el.scrollTop=0; });
   const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
+  const zs=el.querySelector("[data-zhs]"); if(zs) zs.onclick=()=>{ const on=!zhSellers().has(DASH.seller); setZhSeller(DASH.seller, on); ZH_NOTE=on?"":`中 ${DASH.seller}: priced at the English market again (cards already repriced stay Chinese)`; paintDash(); if(on) zhReprice(DASH.seller); };
+  setTimeout(zhRepriceAll, 500);   // Chinese sellers' wins still at the English market
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
   const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
@@ -2808,6 +2863,7 @@ function clearLotCard(r){   // a card added to the wrong win: back to "no card",
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-edit-ack" || !lotFromExt(e)) return;
+  if(ZH_ACK){ ZH_ACK(d); return; }   // a Chinese reprice is waiting on this edit
   if(!d.ok && d.why==="bad request") d.why="reload the extension (0.8.1 or newer)";   // 0.8.0 and older cannot change only the condition
   const st=document.querySelector("#pickbar .pickst"); if(st) st.textContent=d.ok?"· saved to your log ✓":"· not saved to the log: "+(d.why||"error");
   if(PICK_MSG) PICK_MSG=PICK_MSG.replace(/<span class="pickst">.*?<\/span>/, `<span class="pickst">${d.ok?"· saved to your log ✓":"· not saved to the log: "+escH(d.why||"error")}</span>`);
@@ -3079,7 +3135,7 @@ function renderPrices(host, data, prices, src){
     ${card && (card.game||"pkmn")==="pkmn" ? `<div class="zhrow" style="margin:6px 0 2px;font-size:12px;line-height:1.5"><button class="zhbtn" title="cheapest TCGplayer listings that say Chinese, on this card's English and Japanese products" style="background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);cursor:pointer;font:inherit;font-size:12px;padding:7px 10px">中 Chinese copy price</button><div class="zhout"></div></div>` : ""}`;
   const chipsEl=host.querySelector(".pchips"), mbEl=host.querySelector(".maxbid"), cgEl=host.querySelector(".condgrid"), lnkEl=host.querySelector(".tcglink");
   const zhB=host.querySelector(".zhbtn"); if(zhB){ const zo=host.querySelector(".zhout"); zhB.onclick=(e)=>{ e.stopPropagation(); zhB.style.display="none"; zhForCard(card, zo); };
-    const hit=ZH_CACHE.get(card.id); if(hit && Date.now()-hit.at<10*60e3){ zhB.style.display="none"; zo.innerHTML=zhHTML(hit.res); zhWire(zo, hit.res); } }
+    const hit=ZH_CACHE.get(card.id); if(hit && Date.now()-hit.at<10*60e3){ zhB.style.display="none"; zo.innerHTML=zhHTML(hit.res, {id:card.id}); zhWire(zo, hit.res); } }
   if(zhB && zhB.style.display!=="none" && window.ZH_LAST && Date.now()-window.ZH_LAST.at<15*60e3 && (window.ZH_LAST.ids||[]).includes(card.id)) zhB.click();   // RECOG a Chinese read: the card opened from its candidates is looked up at once
   // your bid: follows the last bid tapped (copyAmt fills it), −1 / +1 step it, Enter or send puts it into Whatnot / clipboard
   const ovrIn=host.querySelector(".ovrin"), ovrBtn=host.querySelector(".ovrsend");
