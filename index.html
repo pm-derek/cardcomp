@@ -2308,6 +2308,27 @@ function shipAlloc(){
   SHIP_CACHE={sig, map}; return map;
 }
 function shipOf(r){ const x=r && r.me && shipAlloc().get(r.k); return x ? x.share : 0; }
+// Other buyers' shipping (Derek, 2026-10-31: "apply our shipping assumptions to others so the leaderboard is fair"):
+// per stream, the shipping each of your wins added, in order (first win $0.78, 5th +$0.31, 6th +$6.66...), is charged
+// to every other buyer for their own wins in that stream, split evenly over them. A stream you won nothing in charges
+// its first-win shipping (what the lots showed you) once; one with no shipping seen, the median first-win charge.
+let SHIPM_CACHE=null;
+function shipModel(){
+  const all=loadLots(), sig=all.length+"|"+(all.length?all[all.length-1].k:"")+"|"+all.reduce((a,r)=>a+(r.sh>0?r.sh:0)+(r.me?r.at%997:0),0);
+  if(SHIPM_CACHE && SHIPM_CACHE.sig===sig) return SHIPM_CACHE;
+  const last={}, st={}, sidOf=new Map(); let sid=0;
+  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{ const L=last[r.s]; if(!L || r.at-L.at>=45*60000) last[r.s]={at:r.at, id:++sid}; else L.at=r.at;
+    const id=last[r.s].id, x=st[id]=st[id]||{sched:[], base:null, buyers:new Map()}; sidOf.set(r.k, id);
+    if(r.me && r.f>0) x.sched.push(r.sh>0?r.sh:0);
+    else { if(x.base==null && !x.sched.length && r.sh!=null) x.base=r.sh;
+      if(r.f>0 && r.w && r.w!=="me" && r.w!=="?" && r.w!==r.s) x.buyers.set(r.w, (x.buyers.get(r.w)||0)+1); } });
+  const firsts=Object.values(st).map(x=>x.sched.length?x.sched[0]:x.base).filter(v=>v!=null).sort((a,b)=>a-b);
+  const dflt=firsts.length?firsts[Math.floor(firsts.length/2)]:0, share=new Map();
+  for(const id in st){ const x=st[id], sched=x.sched.length?x.sched:[x.base!=null?x.base:dflt];
+    for(const [w,n] of x.buyers){ let tot=0; for(let i=0;i<n && i<sched.length;i++) tot+=sched[i]; share.set(id+"|"+w, tot/n); } }
+  SHIPM_CACHE={sig, sidOf, share, dflt}; return SHIPM_CACHE;
+}
+function shipOfBuyer(r){ if(!r) return 0; if(r.me) return shipOf(r); const M=shipModel(); return M.share.get(M.sidOf.get(r.k)+"|"+r.w)||0; }
 function haul(rows){
   const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
   const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f+shipOf(r),0), ship=wins.reduce((a,r)=>a+shipOf(r),0);
@@ -2702,19 +2723,19 @@ function leaderHTML(rows){
   for(const r of rows){
     if(!(r.f>0)) continue;
     const who=r.me ? "you" : r.w; if(!who || who==="me" || who==="?" || who===r.s) continue;
-    const u=M.get(who)||{who, won:0, spent:0, net:0, known:0};
+    const u=M.get(who)||{who, won:0, spent:0, net:0, known:0, ship:0};
     u.won++; u.spent+=r.f;
-    if(r.m>0 && r.np!=null){ u.known++; u.net+=r.np-r.f-(r.me?shipOf(r):0); }
+    if(r.m>0 && r.np!=null){ const sh=shipOfBuyer(r); u.known++; u.ship+=sh; u.net+=r.np-r.f-sh; }
     M.set(who, u);
   }
   if(!M.size) return "";
   const all=[...M.values()].sort((a,b)=>b.spent-a.spent||b.won-a.won), top=all.slice(0,10), me=M.get("you");
   if(me && !top.includes(me)) top.push(me);
   const B=buyerProfiles(), D=v=>(v<0?"−":"+")+"$"+Math.abs(v).toFixed(2);
-  return `<div class="lsx" style="margin:12px 0 4px;color:var(--dim)"><b style="color:var(--ink)">Leaderboard</b> · ${all.length} buyer${all.length===1?"":"s"} · net = resale at market after fees, on wins with a known card</div>
+  return `<div class="lsx" style="margin:12px 0 4px;color:var(--dim)"><b style="color:var(--ink)">Leaderboard</b> · ${all.length} buyer${all.length===1?"":"s"} · net = resale at market after fees and shipping, on wins with a known card (others pay your shipping schedule for that stream)</div>
   <table class="lstab lslead"><thead><tr><th>#</th><th>buyer</th><th>won</th><th>spent</th><th>net</th></tr></thead><tbody>${top.map(u=>{
     const rank=all.indexOf(u)+1, b=u.who!=="you"?B.get(u.who):null, tg=b&&b.tags&&b.tags[0];
-    return `<tr class="${u.who==="you"?"me":""}"><td>${rank}</td><td>${u.who==="you"?'<span class="lsyou">✓ you</span>':escH(u.who.slice(0,18))}${tg?` <span style="color:${TAG_COL[tg]};font-size:10px">${tg}</span>`:""}</td><td>${u.won}</td><td>$${Math.round(u.spent).toLocaleString()}</td><td style="color:${!u.known?"var(--dim)":u.net>=0?"var(--green)":"var(--red)"}">${u.known?D(u.net):"–"}${u.known&&u.known<u.won?` <span class="lsmuted" style="font-size:10px">${u.known}/${u.won}</span>`:""}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${u.who==="you"?"me":""}"><td>${rank}</td><td>${u.who==="you"?'<span class="lsyou">✓ you</span>':escH(u.who.slice(0,18))}${tg?` <span style="color:${TAG_COL[tg]};font-size:10px">${tg}</span>`:""}</td><td>${u.won}</td><td>$${Math.round(u.spent).toLocaleString()}</td><td style="color:${!u.known?"var(--dim)":u.net>=0?"var(--green)":"var(--red)"}"${u.ship>0?` title="after $${u.ship.toFixed(2)} shipping${u.who==="you"?"":" (estimated: your schedule for that stream)"}"`:""}>${u.known?D(u.net):"–"}${u.known&&u.known<u.won?` <span class="lsmuted" style="font-size:10px">${u.known}/${u.won}</span>`:""}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
