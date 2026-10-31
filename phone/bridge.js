@@ -236,9 +236,27 @@
   const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products|more|boost|clip|share|wallet)$/i;
   const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);
   const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG", "mint": "NM", "new": "NM" };
-  let ME = ""; try { ME = (localStorage.getItem("cardcomp_wn_user") || "").toLowerCase(); } catch (_) {}
+  // Never learned on the phone (2026-10-31 audit): Derek's own wins show only "You won!" with no name beside it, so the
+  // first screen with "you won" and someone's "X won!" stored X as Derek (goldenboyztcg, 10-29: ~12 of their wins logged
+  // as his). "You won" / "You're winning" already mean Derek; a name is only matched when the app's settings carry one.
+  let ME = ""; try { ME = String(cfg().wnUser || "").toLowerCase(); localStorage.removeItem("cardcomp_wn_user"); } catch (_) {}
   const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
   const members = new Map();
+  // Condition by its first word (2026-10-31 audit: "Light Played • Card" on 114 lots, 79 desktop + 35 phone, was not in
+  // COND_TXT, so the condition was blank and priced as NM). Whatnot spells it Light / Lightly, Moderately, Heavily.
+  const COND_WORD = { light: "LP", lightly: "LP", moderate: "MP", moderately: "MP", heavy: "HP", heavily: "HP", damaged: "DMG" };   // "Mint" / "New" stay exact (COND_TXT): "New without box" is not a card
+  function condOf(sub) {
+    const s = (String(sub || "").split(/[·∙•|]/)[0] || "").trim().toLowerCase();
+    if (COND_TXT[s]) return COND_TXT[s];
+    const w = s.split(/\s+/);
+    if (w.length > 3) return "";   // a description, not a condition
+    if (w[0] === "near" && w[1] === "mint") return "NM";
+    return COND_WORD[w[0]] || "";
+  }
+  // Timers: sudden death renders "💀 00:14" / "00:12 💀" (43+ dumps); only digits and a colon, no letters around them
+  const timerOf = (t) => { const m = /^[^\p{L}\p{N}]*(\d{1,2}:\d{2})[^\p{L}\p{N}]*$/u.exec(t || ""); return m ? m[1] : ""; };
+  // the Custom sheet's own lines ("What is Max Bid?" was logged as the condition line of 4 lots, "+1s" / "+0s" of others)
+  const SHEET_TXT = /^what is max bid\??$|^when on, we'll|^\+\d+s$/i;
   function seen(user, how) { const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0, chats: 0, lastJoin: 0 }; m.last = Date.now(); if (how === "joins") { if (Date.now() - m.lastJoin < 5 * 60e3) { members.set(user, m); return; } m.lastJoin = Date.now(); } m[how] = (m[how] || 0) + 1; members.set(user, m); }
   function roomSnapshot() { const cut = Date.now() - 30 * 60000, out = {}; for (const [u, m] of members) if (m.last >= cut) out[u] = { leads: m.leads, joins: m.joins, min: Math.round((Date.now() - m.first) / 60000), ago: Math.round((Date.now() - m.last) / 60000) }; return out; }
   let SELLER = "";
@@ -268,20 +286,20 @@
     for (const x of blk) {
       let m;
       if (LRX.money.test(x.t) && x.l > W * 0.62) { if (st.cur == null) st.cur = parseFloat(LRX.money.exec(x.t)[1].replace(/,/g, "")); }
-      else if (LRX.timer.test(x.t)) st.timer = x.t;
+      else if (timerOf(x.t)) st.timer = timerOf(x.t);
       else if ((m = LRX.ship.exec(x.t))) st.ship = parseFloat(m[1]);
       else if (LRX.free.test(x.t)) st.ship = 0;
       else if (/^sold$/i.test(x.t)) st.ended = true;
-      else if (x.l < W * 0.62 && x.t.length > 1 && x.t.length < 120 && /[A-Za-z0-9]/.test(x.t) && !LRX.skip.test(x.t) && !leadRow.some((w) => w === x || sameRow(x, w))) texts.push(x.t);
+      else if (x.l < W * 0.62 && x.t.length > 1 && x.t.length < 120 && /[A-Za-z0-9]/.test(x.t) && !LRX.skip.test(x.t) && !SHEET_TXT.test(x.t) && !leadRow.some((w) => w === x || sameRow(x, w))) texts.push(x.t);
     }
     st.title = texts[0] || ""; st.sub = texts[1] || "";
-    st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";
+    st.cond = condOf(st.sub);
     let wonBy = "", meWon = false, wonUser = "";
     for (let i = 0; i < it.length; i++) {
       const x = it[i], t = x.t; let m;
       const left = it.slice(Math.max(0, i - 3), i).reverse().find((p) => sameRow(x, p) && p.r <= x.l + 8);   // the name beside it, same line
       const up = it.slice(Math.max(0, i - 4), i).reverse().find((p) => above(x, p));                         // the line right above
-      if (LRX.me.test(t)) st.me = true;
+      if (LRX.me.test(t)) { st.me = true; st.meLead = true; }   // "You're winning!": Derek leads (not "You won!", which only says he won)
       else if (LRX.meWon.test(t)) { meWon = true; st.me = true; }   // before "X won!": "You won" is not a user named You
       else if ((m = LRX.win.exec(t)) && userLike(m[1])) st.lead = m[1];
       else if (LRX.winTail.test(t) && left && userLike(left.t)) st.lead = left.t;
@@ -296,7 +314,6 @@
       else if (/^entries$/i.test(t) && left && /^\d{1,6}$/.test(left.t)) st.giveaway = +left.t;
     }
     if (isMe(st.lead)) st.me = true;
-    if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { localStorage.setItem("cardcomp_wn_user", wonUser); } catch (_) {} }
     if (meWon) wonBy = "me";
     if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
     return st;
@@ -314,15 +331,32 @@
     prevEnd = { title: lot.title, final: st.cur, at: Date.now() };
     sendApp({ type: "cardcomp-lot-end", rec: {
       v: 3, src: "phone", title: lot.title, sub: st.sub || lot.sub, sellerCond: st.cond || lot.cond, start: lot.start, final: st.cur, bids: st.bids,
-      winner: st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!(st.me || st.sold === "me"),
+      winner: !st.ended ? "" : st.sold && st.sold !== "me" && st.sold !== "?" ? st.sold : (st.me ? "me" : (st.lead || lot.lastLead || "")), me: !!st.ended && !!(st.me || st.sold === "me"),
       sold: !!st.ended, iLed: lot.iLed, placedMax: lot.placedMax != null ? lot.placedMax : null,
       leaders: [...lot.leaders], hist: lot.hist,
       ship: st.ship, seller: st.seller, url: st.url, viewers: st.viewers, viewers0: lot.viewers0, giveaway: st.giveaway,
-      room: roomSnapshot(), startedAt: lot.startedAt, at: Date.now(), hour: new Date().getHours(), dow: new Date().getDay()
+      room: roomSnapshot(), startedAt: lot.startedAt, at: endAt(st), hour: new Date(endAt(st)).getHours(), dow: new Date(endAt(st)).getDay()
     } });
+  }
+  // No "Sold" / "won!" seen (Derek switched streams, left the app, or the title changed first): who won is unknown, so the
+  // row says no winner and not his (sold:false), and ends when the lot was last on screen, not when he came back (2026-10-31
+  // audit: 30 phone rows carried the last leader as winner; one ran 35 min).
+  const endAt = (st) => (st.ended || !lot.seenAt ? Date.now() : lot.seenAt);
+  // A new title on a live lot counts only once it has held HOLD_MS (2026-10-31 audit: opening the Custom sheet gave one read
+  // another title, which ended the lot unsold and started a new one; the old title came back and renamed it, so 8 lots were
+  // logged twice, the tap on the unsold half, the win with no card: domvault_card #83, rudeboi75404 #110). Reads during the
+  // wait are dropped, so a short-lived title never touches the lot. A Sold screen counts at once.
+  const HOLD_MS = 1000;
+  let titleWait = null;   // {t, at}
+  function titleHeld(st) {
+    if (!lot || lot.ended || st.sold || !st.title || st.title === lot.title) { titleWait = null; return true; }
+    if (!titleWait || titleWait.t !== st.title) titleWait = { t: st.title, at: Date.now() };
+    if (Date.now() - titleWait.at < HOLD_MS) return false;
+    titleWait = null; return true;
   }
   const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
   function lotTick(st) {
+    if (!titleHeld(st)) return;
     const tSec = secs(st.timer);
     const lkey = st.title || (lot ? lot.title : ((st.cur != null || st.bids != null) ? "(untitled lot)" : ""));
     const rolled = lot && lkey === lot.title && (
@@ -337,15 +371,18 @@
       if (st.lead) lot.lastLead = st.lead;
       if (st.bids != null && st.bids > lot.maxBids) lot.maxBids = st.bids;
       if (tSec != null) lot.lastSec = tSec;
-      if (st.me) lot.iLed = true;
+      if (st.meLead || isMe(st.lead)) lot.iLed = true;   // led at some point (2026-10-31: "You won!" set it too, so all phone wins had it)
       if (st.placedMax != null) lot.placedMax = st.placedMax;
+      lot.seenAt = Date.now();
     }
-    if (lot && st.lead) {
-      lot.leaders.add(st.lead);
+    // Derek's own leads ("You're winning!", no name) go in the hand history as "me", like the winner field
+    const leadU = st.lead || (st.meLead && !st.ended ? "me" : "");
+    if (lot && leadU) {
+      lot.leaders.add(leadU);
       const h = lot.hist, last = h[h.length - 1];
-      if (!last || last.u !== st.lead || last.a !== st.cur) {
-        h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: st.lead, a: st.cur });
-        if (!last || last.u !== st.lead) seen(st.lead, "leads");
+      if (!last || last.u !== leadU || last.a !== st.cur) {
+        h.push({ t: Math.round((Date.now() - lot.startedAt) / 1000), u: leadU, a: st.cur });
+        if ((!last || last.u !== leadU) && leadU !== "me") seen(leadU, "leads");
       }
       if (h.length > 400) h.shift();
     }

@@ -66,6 +66,9 @@ class WhatnotReader : AccessibilityService() {
             // Whatnot's own window only (2026-10-30: in split screen the other half, Chrome on eBay / TCGplayer / CardComp,
             // was sent too, and its prices and headings were logged as $1,500 "wins")
             if (n.pkg != WHATNOT) continue
+            // on screen only (2026-10-31 audit: 300 hidden nodes with a size in 159 dumps, a stale "Sold" / "X won!" under the
+            // keyboard among them, read as a sale)
+            if (!n.node.isVisibleToUser) continue
             if (n.text.isEmpty() || n.r.width() <= 0 || n.r.height() <= 0) continue
             arr.put(org.json.JSONObject().put("t", n.text.take(160)).put("l", n.r.left).put("y", n.r.top).put("r", n.r.right).put("b", n.r.bottom)
                 .put("c", if (n.node.isClickable) 1 else 0))
@@ -75,7 +78,7 @@ class WhatnotReader : AccessibilityService() {
     }
 
     /** auction words on screen, as a signature: a new one means a new state worth a dump */
-    private val AUCTION = Regex("""^(Sold|Custom|Submit (Max |Exact )?Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
+    private val AUCTION = Regex("""^(Sold|Custom|Submit (Max |Exact )?Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*|.*\b(coupons?|promo code|discount)\b.*)$""", RegexOption.IGNORE_CASE)   // coupon: dump the screen so its switch can be read (2026-10-31)
     private fun autoDump() {
         try {
             val texts = nodes().map { it.text }.filter { it.isNotEmpty() }
@@ -194,12 +197,28 @@ class WhatnotReader : AccessibilityService() {
         val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
         val edit = sheet.firstOrNull { it.node.isEditable }
         if (edit != null) {
-            val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, amount.toString()) }
-            if (edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                Thread.sleep(150)
-                val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
-                return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
+            // Clear, type, read back (2026-10-31 audit: $19 sent became a $1,919 max, $16 became $116: the box kept what was
+            // in it, the fill said ok without looking, and the amount was pasted on top). Only an exact read-back is ok; a box
+            // that will not hold the amount is cleared, so a wrong number never waits behind Submit.
+            fun setBox(v: String) = edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
+                android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, v) })
+            fun boxAmount(): Int? {
+                val e = wn().firstOrNull { it.node.isEditable && it.r.bottom <= submit.r.bottom && it.r.top >= submit.r.top - submit.r.height() * 12 } ?: return null
+                return e.text.replace(Regex("[^0-9]"), "").toIntOrNull()
             }
+            var got: Int? = null
+            for (attempt in 0 until 3) {
+                setBox(""); Thread.sleep(80)
+                if (!setBox(amount.toString())) continue
+                Thread.sleep(150)
+                got = boxAmount()
+                if (got == amount) {
+                    val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
+                    return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
+                }
+            }
+            setBox("")
+            return no("the box would not hold $" + amount + (if (got != null) " (it showed $" + got + ")" else "") + ": cleared it, type the amount")
         }
         fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
         var am = amountNode(sheet) ?: return no("no amount in the Custom sheet")

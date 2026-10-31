@@ -2113,11 +2113,12 @@ function buyerProfiles(){
   if(BUYERS && Date.now()-BUYERS_AT<60000) return BUYERS;
   const M=new Map();
   for(const r of loadLots()){
-    const w=r.w; if(!w || r.me || w==="me" || w==="?" || w===r.s) continue;
+    const w=r.w; if(!w || w.length<3 || r.me || w==="me" || w==="?" || w===r.s) continue;   // "I", "It": reader fragments, not buyers
     const u=M.get(w)||{wins:0, lab:0, pcts:[], beat:0, sellers:new Set()};
     u.wins++; u.sellers.add(r.s);
     if(r.m>0 && r.f>0){ u.lab++; u.pcts.push(r.f/r.m); }
-    if(Math.max(r.mx||0, r.pm||0)>0) u.beat++;
+    const myMax=r.pm>0 ? r.pm : (r.mx||0);   // the max you set in Whatnot, else the one you tapped
+    if(myMax>0 && r.f>myMax) u.beat++;       // beat you = paid past your max (a lot you had a max on but nobody outbid is not one)
     M.set(w, u);
   }
   for(const u of M.values()){
@@ -2170,7 +2171,7 @@ function paintLot(){
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
   const H=VERDICT.haul;   // this stream, from the stats store: "won 3 · $24 · +$4.20"
-  if(H && H.n) parts.push(`<span style="color:var(--ink)" title="spent on wins + this stream's shipping, net after shipping">won ${H.n} · $${Math.round(H.spent)}${H.ship>0?` <span style="color:var(--dim)">+ $${H.ship.toFixed(2)} ship</span>`:""}${H.n>H.unl?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}</span>`);
+  if(H && H.n) parts.push(`<span style="color:var(--ink)" title="spent on wins + this stream's shipping, net after coupons and shipping${H.off?`; ${H.off} win${H.off===1?"":"s"} left out of net: under 40% of market, likely another printing`:""}${H.unl?`; ${H.unl} without a card`:""}">won ${H.n} · $${Math.round(H.spent)}${H.coupons>0?` <span style="color:var(--dim)">after $${H.coupons.toFixed(2)} coupons</span>`:""}${H.ship>0?` <span style="color:var(--dim)">+ $${H.ship.toFixed(2)} ship</span>`:""}${H.priced?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}</span>`);
   else if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won 0</span>`);
   parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
   // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
@@ -2226,22 +2227,34 @@ window.addEventListener("message", e=>{
   if(!d.ok || !Array.isArray(d.rows)){ if(!since) LOTS_SYNCED=false; return; }
   try{   // the log is the record: replace this browser's rows with it (from `since` on, for a refresh), keeping local lots newer than the log (not flushed yet)
     const logRows=d.rows.filter(r=>r && r.at && !r.empty).map(lotRow), newest=logRows.reduce((m,r)=>Math.max(m,r.at),0);
-    const local=loadLots().filter(r=>r.at>newest || (since && r.at<since));
-    localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(local.filter(r=>r.at<since).concat(logRows, local.filter(r=>r.at>newest)));
+    // day files the extension could not read (d.failed, UTC dates: files are named by the UTC date of the flush, which
+    // can be the day after the lot): keep this browser's rows from those days, +/- 1, instead of dropping them
+    const failed=new Set(Array.isArray(d.failed)?d.failed:[]), utc=t=>new Date(t).toISOString().slice(0,10);
+    const onFailed=r=>failed.size>0 && [r.at-86400000, r.at, r.at+86400000].some(t=>failed.has(utc(t)));
+    const local=loadLots().filter(r=>r.at>newest || (since && r.at<since) || onFailed(r));
+    localStorage.setItem(LOTS_KEY, "[]"); storeLotRows(local.filter(r=>r.at<since).concat(logRows, local.filter(r=>!(r.at<since))));
   }catch(_){ }
   try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ }
   paintLot(); if(LOTSTATS_OPEN) paintLotStats(); if(DASH.on) paintDash();
 });
-function loadLots(){ try{ return JSON.parse(localStorage.getItem(LOTS_KEY)||"[]")||[]; }catch(_){ return []; } }
+// Parsed once per stored version (the dashboard asks ~3,400 times a paint: shipping per win, buyers). Callers share the
+// array: copy before sorting in place, and save (setItem) after changing a row, which makes the next call re-read.
+let LOTS_MEMO={raw:null, rows:[]};
+function loadLots(){
+  let raw; try{ raw=localStorage.getItem(LOTS_KEY)||"[]"; }catch(_){ return []; }
+  if(raw===LOTS_MEMO.raw) return LOTS_MEMO.rows;
+  let rows; try{ rows=JSON.parse(raw)||[]; }catch(_){ rows=[]; }
+  LOTS_MEMO={raw, rows}; return rows;
+}
 function lotRow(rec){
     const c=rec.card||null, multi=c&&c.multi&&c.cards;
     const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
     const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
-      mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null,
+      mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null, nm:c&&!multi&&c.market>0?+(+c.market).toFixed(2):null,   // nm: the card's NM market when bought (top printing), for "worth today"
       id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
-      t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"" };   // t / src: the same lot from the phone and this browser is one lot
+      t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"", cp:rec.coupon>0?+rec.coupon:0 };   // cp: coupon on your win   // t / src: the same lot from the phone and this browser is one lot
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2257,7 +2270,8 @@ function storeLotRows(add){   // merge rows into this browser's stats by lot key
     let i=row.k!=null ? at.get(row.k) : undefined;
     if(i==null){ const j=rows.findIndex(r=>across(r,row)); if(j>=0) i=j; }
     if(i==null){ at.set(row.k, rows.length); rows.push(row); }
-    else if(!rows[i].n && row.n){ const o=rows[i]; rows[i]=Object.assign({}, row, { me:o.me||row.me, b:row.b!=null?row.b:o.b, pm:row.pm||o.pm, sh:row.sh!=null?row.sh:o.sh }); at.set(row.k, i); }
+    else if(!rows[i].n && row.n){ const o=rows[i]; rows[i]=Object.assign({}, row, { me:o.me||row.me, b:row.b!=null?row.b:o.b, pm:row.pm||o.pm, sh:row.sh!=null?row.sh:o.sh, cp:row.cp||o.cp||0 }); at.set(row.k, i); }
+    else if(row.cp>0 && !(rows[i].cp>0)) rows[i].cp=row.cp;   // a coupon typed on the other copy
   }
   rows.sort((a,b)=>a.at-b.at);
   localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
@@ -2271,21 +2285,28 @@ function recordLotStat(rec){
 }
 const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
 function lotStats(seller, scope){
-  let rows=loadLots().filter(r=>r.s===seller).sort((a,b)=>a.at-b.at);
+  let rows=loadLots().filter(r=>r.s===seller).sort((a,b)=>a.at-b.at), idle=0;
   if(scope==="stream"){   // this sitting: walk back from the latest lot while gaps stay under 45 min
-    let i=rows.length-1; while(i>0 && rows[i].at-rows[i-1].at<45*60000) i--; rows=rows.slice(Math.max(0,i));
+    // none when the seller's latest lot is 45+ min old: rejoining a seller is a new stream, not the one from last week
+    const lastAt=rows.length?rows[rows.length-1].at:0;
+    if(rows.length && Date.now()-lastAt>=STREAM_GAP){ idle=lastAt; rows=[]; }
+    else { let i=rows.length-1; while(i>0 && rows[i].at-rows[i-1].at<STREAM_GAP) i--; rows=rows.slice(Math.max(0,i)); }
   }
-  const lab=rows.filter(r=>r.m>0 && r.f>0), pct=r=>r.f/r.m, net=r=>(r.np!=null?r.np-r.f:null);
+  const lab=rows.filter(r=>r.m>0 && r.f>0), pct=r=>r.f/r.m, net=r=>(r.np!=null?r.np-costOf(r):null);
   const mine=r=>Math.max(r.mx||0, r.pm||0);
-  const wins=lab.filter(r=>r.me), bidLost=lab.filter(r=>!r.me && mine(r)>0);
-  const winNet=wins.reduce((s,r)=>s+(net(r)||0),0), winCost=wins.reduce((s,r)=>s+r.f,0);
-  const under=bidLost.filter(r=>r.f<=mine(r) && net(r)>0), above=bidLost.filter(r=>r.f>mine(r) && net(r)>0);   // under: you'd have taken it at that price; above: profitable, but past your margin target
+  const { priced, off }=winSplit(lab), wins=lab.filter(r=>r.me), bidLost=lab.filter(r=>!r.me && mine(r)>0);
+  // your margin: after coupons and shipping, on wins with a card that is not likely another printing
+  const winNet=priced.reduce((s,r)=>s+winNetOf(r),0), winCost=priced.reduce((s,r)=>s+costOf(r)+shipOf(r),0);
+  // left on table: lots you put a max on and lost, profitable at the price they sold for; under 40% of market is
+  // likely another printing (same rule as passed lots and your wins), not a missed deal
+  const real=r=>r.f>=OFF_PCT*r.m && net(r)>0;
+  const under=bidLost.filter(r=>r.f<=mine(r) && real(r)), above=bidLost.filter(r=>r.f>mine(r) && real(r));   // under: you'd have taken it at that price; above: profitable, but past your margin target
   const mf=getNum("tgtmargin",10)/100;
   const withMax=lab.filter(r=>r.mx>0);
   const maxPct=withMax.length>=3 ? med(withMax.map(r=>r.mx/r.m)) : med(lab.filter(r=>r.np>0).map(r=>r.np/(1+mf)/r.m));
-  return { rows, seen:rows.length, lab, n:lab.length, sold:med(lab.map(pct)), wins, winPct:med(wins.map(pct)), winNet, winMargin:winCost>0?winNet/winCost:null,
+  return { rows, idle, seen:rows.length, lab, n:lab.length, sold:med(lab.map(pct)), wins, priced, off, winPct:med(wins.map(pct)), winNet, winMargin:winCost>0?winNet/winCost:null,
     lostPct:med(bidLost.map(pct)), bidLost, under, above, underSum:under.reduce((s,r)=>s+net(r),0), aboveSum:above.reduce((s,r)=>s+net(r),0),
-    maxPct, target:mf, roomMargin:med(lab.filter(r=>r.np!=null).map(r=>net(r)/r.f)) };
+    maxPct, target:mf };
 }
 let LOTSTATS_SELLER="", LOTSTATS_SCOPE="stream";
 let VERDICT={seller:"", txt:"", col:""};   // strip summary: "hot 77%" for this stream, so the sheet rarely needs opening
@@ -2296,23 +2317,77 @@ let VERDICT={seller:"", txt:"", col:""};   // strip summary: "hot 77%" for this 
 // then $3.69 when it outgrows it (0.78 + 3.69 = 4.47). So a stream's shipping = the sum of the line on your wins (a blank
 // line on a win counts as $0: older logs could not read "FREE"), split evenly over that stream's wins.
 // Stream = one seller, gaps under 45 min (same as the stats sheet). -> Map lot key -> {share, paid, n}
+// Streams: one seller, gaps under 45 min. One id per row, worked out once per stored version of the rows.
+const STREAM_GAP=45*60000;
+let STREAM_MEMO={all:null, ids:null};
+function streamIds(){
+  const all=loadLots(); if(STREAM_MEMO.all===all) return STREAM_MEMO.ids;
+  const ids=new Map(), last={}; let sid=0;
+  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{ const L=last[r.s]; if(!L || r.at-L.at>=STREAM_GAP) last[r.s]={at:r.at, id:++sid}; else L.at=r.at; ids.set(r, last[r.s].id); });
+  STREAM_MEMO={all, ids}; return ids;
+}
+const stOf=r=>streamIds().get(r);
 let SHIP_CACHE=null;
 function shipAlloc(){
-  const all=loadLots(), sig=all.length+"|"+(all.length?all[all.length-1].k:"")+"|"+all.reduce((a,r)=>a+(r.me?(r.sh||0)+r.at%997:0),0);
-  if(SHIP_CACHE && SHIP_CACHE.sig===sig) return SHIP_CACHE.map;
-  const last={}, streams={}; let sid=0;
-  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{ const L=last[r.s]; if(!L || r.at-L.at>=45*60000) last[r.s]={at:r.at, id:++sid}; else L.at=r.at;
-    if(r.me && r.f>0){ const st=streams[last[r.s].id]=streams[last[r.s].id]||{paid:0, wins:[]}; st.paid+=(r.sh>0?r.sh:0); st.wins.push(r.k); } });
+  const all=loadLots(); if(SHIP_CACHE && SHIP_CACHE.all===all) return SHIP_CACHE.map;
+  const ids=streamIds(), streams={};
+  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{
+    if(r.me && r.f>0){ const id=ids.get(r), st=streams[id]=streams[id]||{paid:0, wins:[]}; st.paid+=(r.sh>0?r.sh:0); st.wins.push(r.k); } });
   const map=new Map();
   for(const id in streams){ const st=streams[id], share=st.paid/st.wins.length; st.wins.forEach(k=>map.set(k, {share, paid:st.paid, n:st.wins.length})); }
-  SHIP_CACHE={sig, map}; return map;
+  SHIP_CACHE={all, map}; return map;
 }
 function shipOf(r){ const x=r && r.me && shipAlloc().get(r.k); return x ? x.share : 0; }
+// What a win cost you (Derek, 2026-10-31: "sometimes I use coupons, it should register in the log"): the price minus the
+// coupon used on it. Coupons only sit on your wins, so every other lot costs its price. Room stats (sale % of market)
+// stay on the price.
+const costOf=r=>Math.max(0, (+r.f||0)-(r.me?(+r.cp||0):0));
+// Likely another printing (audit 2026-10-31: 7-day net $872 at 88% margin, $677 of it from 17 wins under 40% of market,
+// e.g. Vaporeon ex won $26 at a $315 market, a card Derek only opened). A lot that sold under 40% of the labeled card's
+// market is most likely a cheaper printing than the one opened or tapped (the rule "passed" lots already used). Your
+// opened-only wins whose max set in Whatnot sat under half the margin bid count too (you knew it was the cheaper one).
+// They count toward spent, never toward net, margin or best buys, and are named so the card can be fixed.
+const OFF_PCT=0.4;
+function likelyOther(r){
+  if(!(r && r.m>0 && r.f>0)) return false;
+  if(r.f<OFF_PCT*r.m) return true;
+  return !!(r.me && r.lab==="view" && r.pm>0 && r.pm<0.5*bidForMargin(r.m, getNum("tgtmargin",10)/100));
+}
+// A win's net if listed at market: proceeds after fees, minus what it cost you (coupons in) and its share of the
+// stream's shipping. Every money net in the stats, the strip, the dashboard and the leaderboard uses it.
+const winNetOf=r=>r.np-costOf(r)-shipOf(r);
+// Other buyers' shipping (Derek, 2026-10-31: "apply our shipping assumptions to others so the leaderboard is fair"):
+// per stream, the shipping each of your wins added, in order (first win $0.78, 5th +$0.31, 6th +$6.66...), is charged
+// to every other buyer for their own wins in that stream, split evenly over them. A stream you won nothing in charges
+// its first-win shipping (what the lots showed you) once; one with no shipping seen, the median first-win charge.
+let SHIPM_CACHE=null;
+function shipModel(){
+  const all=loadLots(); if(SHIPM_CACHE && SHIPM_CACHE.all===all) return SHIPM_CACHE;
+  const ids=streamIds(), st={}, sidOf=new Map();
+  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{
+    const id=ids.get(r), x=st[id]=st[id]||{sched:[], base:null, buyers:new Map()}; sidOf.set(r.k, id);
+    if(r.me && r.f>0) x.sched.push(r.sh>0?r.sh:0);
+    else { if(x.base==null && !x.sched.length && r.sh!=null) x.base=r.sh;
+      if(r.f>0 && r.w && r.w!=="me" && r.w!=="?" && r.w!==r.s) x.buyers.set(r.w, (x.buyers.get(r.w)||0)+1); } });
+  const firsts=Object.values(st).map(x=>x.sched.length?x.sched[0]:x.base).filter(v=>v!=null).sort((a,b)=>a-b);
+  const dflt=firsts.length?firsts[Math.floor(firsts.length/2)]:0, share=new Map();
+  for(const id in st){ const x=st[id], sched=x.sched.length?x.sched:[x.base!=null?x.base:dflt];
+    for(const [w,n] of x.buyers){ let tot=0; for(let i=0;i<n && i<sched.length;i++) tot+=sched[i]; share.set(id+"|"+w, tot/n); } }
+  SHIPM_CACHE={all, sidOf, share, dflt}; return SHIPM_CACHE;
+}
+function shipOfBuyer(r){ if(!r) return 0; if(r.me) return shipOf(r); const M=shipModel(); return M.share.get(M.sidOf.get(r.k)+"|"+r.w)||0; }
+// Wins split three ways: priced (a card, in net and margin), off (a card, likely another printing: spent only),
+// no card (spent only). Net and margin are after coupons and shipping.
+function winSplit(rows){
+  const wins=rows.filter(r=>r.me && r.f>0), card=wins.filter(r=>r.m>0 && r.np!=null);
+  const off=card.filter(likelyOther), priced=card.filter(r=>!off.includes(r));
+  return { wins, priced, off, unl:wins.length-card.length };
+}
 function haul(rows){
-  const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
-  const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f+shipOf(r),0), ship=wins.reduce((a,r)=>a+shipOf(r),0);
-  const net=priced.reduce((a,r)=>a+(r.np-r.f-shipOf(r)),0), mkt=priced.reduce((a,r)=>a+r.m,0);   // net after each win's share of shipping
-  return { n:wins.length, spent, ship, net, mkt, margin:pSpent>0?net/pSpent:null, unl:wins.length-priced.length };
+  const { wins, priced, off, unl }=winSplit(rows);
+  const spent=wins.reduce((a,r)=>a+costOf(r),0), pSpent=priced.reduce((a,r)=>a+costOf(r)+shipOf(r),0), ship=wins.reduce((a,r)=>a+shipOf(r),0), coupons=wins.reduce((a,r)=>a+(+r.cp||0),0);
+  const net=priced.reduce((a,r)=>a+winNetOf(r),0), mkt=priced.reduce((a,r)=>a+r.m,0);
+  return { n:wins.length, spent, ship, net, mkt, margin:pSpent>0?net/pSpent:null, unl, off:off.length, priced:priced.length, coupons };
 }
 function streamRows(seller){ return lotStats(seller, "stream").rows; }
 function refreshVerdict(seller){
@@ -2320,6 +2395,13 @@ function refreshVerdict(seller){
   try{ VERDICT.haul=haul(streamRows(seller)); }catch(_){ }
   try{ const S=lotStats(seller, "stream"); if(S.n>=5 && S.sold!=null && S.maxPct!=null){ const d=(S.sold-S.maxPct)*100, p=Math.round(S.sold*100)+"%";
     Object.assign(VERDICT, d<=-5 ? {txt:"soft "+p, col:"var(--green)"} : d<=5 ? {txt:"even "+p, col:"var(--gold)"} : {txt:"hot "+p, col:"var(--red)"}); } }catch(_){ }
+}
+function agoTxt(t){ const m=Math.round((Date.now()-t)/60000); return m<90 ? m+" min ago" : m<48*60 ? Math.round(m/60)+" h ago" : Math.round(m/1440)+" days ago"; }
+// one line naming your wins left out of net as likely another printing (likelyOther), so the card can be fixed
+function offLine(off, how){
+  if(!off || !off.length) return "";
+  const paid=off.reduce((a,r)=>a+costOf(r),0), names=off.slice().sort((a,b)=>b.m-a.m).slice(0,4).map(r=>`${escH((r.n||"?").slice(0,22))} $${r.f}`).join(", ");
+  return `<div class="lsx lsoff" style="color:var(--gold)">${off.length} win${off.length===1?"":"s"} left out of net: under 40% of market, likely another printing ($${paid.toFixed(2)} paid): ${names}${off.length>4?` and ${off.length-4} more`:""}. ${how}.</div>`;
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && LOTSTATS_OPEN){ LOTSTATS_OPEN=false; paintLot(); paintLotStats(); } });
 function paintLotStats(){
@@ -2343,7 +2425,7 @@ function paintLotStats(){
   const tiles=
     tile("Selling at", P(S.sold), `of market · ${S.n} lot${S.n===1?"":"s"}`)+
     tile("You win at", P(S.winPct), `${S.wins.length} win${S.wins.length===1?"":"s"}${S.lostPct!=null?` · lose at ${P(S.lostPct)}`:""}`)+
-    tile("Your margin", S.winMargin==null?"–":P(S.winMargin), `${S.wins.length?D(S.winNet)+" net · ":""}target ${P(S.target)}`)+
+    tile("Your margin", S.winMargin==null?"–":P(S.winMargin), `${S.priced.length?D(S.winNet)+" net after shipping · ":""}target ${P(S.target)}`)+
     tile("Left on table", S.under.length+S.above.length?D(S.underSum+S.aboveSum):"$0", `${S.under.length} under your max · ${S.above.length} past it`);
   el.innerHTML=`
     <div class="lshead"><b>Stream stats</b> <a class="lsdash" title="every stream: buys, net, streamers">dashboard</a>
@@ -2353,7 +2435,8 @@ function paintLotStats(){
     ${(()=>{ const here=seller===ROOM.seller?taggedHere():[]; return here.length?`<div class="lsx" style="color:var(--dim);margin:-4px 0 9px">In this stream: ${here.map(b=>`<b style="color:${TAG_COL[b.tags[0]]}">${escH(b.u)}</b> ${b.tags.join("/")}${b.med!=null?` ${Math.round(b.med*100)}%`:""}${b.beat?` · beat you ${b.beat}x`:""}`).join(" · ")}</div>`:""; })()}
     <div class="lstiles">${tiles}</div>
     <div class="lschart"></div>
-    <div class="lsx">${S.seen} lots seen · ${S.n} labeled with a card</div>
+    <div class="lsx">${S.idle?`No lots from ${escH(seller)} in the last 45 min (last one ${agoTxt(S.idle)}), so no stream now. <a class="lsall" style="color:var(--blue);cursor:pointer">all time</a>`:`${S.seen} lots seen · ${S.n} labeled with a card`}</div>
+    ${offLine(S.off, "Tap the row to change the card")}
     ${lotTable(S)}
     ${leaderHTML(S.rows)}
     ${clearRowHTML()}`;
@@ -2362,6 +2445,7 @@ function paintLotStats(){
   el.querySelector(".lssel").onchange=(e)=>{ LOTSTATS_SELLER=e.target.value; paintLotStats(); };
   const db=el.querySelector(".lsdash"); if(db) db.onclick=(e)=>{ e.stopPropagation(); dashOpen(true); };
   el.querySelectorAll(".lschips span").forEach(c=>c.onclick=()=>{ LOTSTATS_SCOPE=c.dataset.sc; paintLotStats(); });
+  const la=el.querySelector(".lsall"); if(la) la.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_SCOPE="all"; paintLotStats(); };
   lotDotStrip(el.querySelector(".lschart"), S);
 }
 // ---- Dashboard (Derek, 2026-10: "daily cards bought, biggest wins, biggest losses, average margin, total margin,
@@ -2407,6 +2491,7 @@ let DASH={on:false, per:"7", seller:""}, DASH_IDX=null;
   #dash .note li b{color:var(--ink)}
   #dash .pos{color:var(--green)} #dash .neg{color:var(--red)} #dash .mut{color:var(--faint)}
   #dash .dcond{background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--dim);font:inherit;font-size:12px;padding:2px 4px;margin-left:2px;cursor:pointer}
+  #dash .dcp{background:none;border:1px dashed var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:12.5px;padding:8px 10px;cursor:pointer}
   #dash .dclr{background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);font:inherit;font-size:13px;padding:8px 10px;cursor:pointer}
   #dash .dadd{background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
   #dash .empty{padding:40px 0;text-align:center;color:var(--faint);line-height:1.6}
@@ -2438,24 +2523,25 @@ function dashNow(r){   // today's price for a won card at its printing and condi
   if(!r.id || typeof CARDS==="undefined") return null;
   if(!DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
   const c=DASH_IDX.get(r.id); if(!c || !c.px) return null;
+  // NM market when bought known (log rows since 2026-10-31): the price then times the card's NM move since, so a
+  // verified LP read then is not compared with NM x tier today (Deoxys DMG "+207%" was a method change, not a move)
+  if(r.nm>0 && r.m>0){ const nmNow=bestMarket(c); return nmNow>0 ? r.m*nmNow/r.nm : null; }
   const k=r.pr && c.px[r.pr] ? r.pr : topPrint(c), v=c.px[k], nm=v ? (v.m!=null?v.m:v.l)||0 : 0; if(!(nm>0)) return null;
   return c.sealed || r.c==="sealed" || !r.c ? nm : nm*condMult(r.c, c.y, nm);
 }
 function dashData(){
-  const all=loadLots().filter(r=>r && r.at), now=new Date(), day0=new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const from=DASH.per==="1" ? day0 : DASH.per==="all" ? 0 : Date.now()-(+DASH.per)*86400000;
-  // streams: one seller, gaps under 45 min (same rule as "this stream" in the stats sheet)
-  const last={}; let sid=0;
-  all.slice().sort((a,b)=>a.at-b.at).forEach(r=>{ const L=last[r.s]; if(!L || r.at-L.at>=45*60000) last[r.s]={at:r.at, id:++sid}; else L.at=r.at; r._st=last[r.s].id; });
+  const all=loadLots().filter(r=>r && r.at), now=new Date();
+  // calendar days, like By day and the charts: 7 days = today and the 6 before it, from local midnight
+  const from=DASH.per==="all" ? 0 : new Date(now.getFullYear(), now.getMonth(), now.getDate()-((+DASH.per||1)-1)).getTime();
   const rows=all.filter(r=>r.at>=from && (!DASH.seller || r.s===DASH.seller));
   return { rows, sellers:[...new Set(all.map(r=>r.s))] };
 }
-function dashSum(rows){
-  const wins=rows.filter(r=>r.me && r.f>0), priced=wins.filter(r=>r.m>0 && r.np!=null);
-  const spent=wins.reduce((a,r)=>a+r.f,0), pSpent=priced.reduce((a,r)=>a+r.f,0), net=priced.reduce((a,r)=>a+(r.np-r.f),0);
-  const ship=wins.reduce((a,r)=>a+shipOf(r),0), shipP=priced.reduce((a,r)=>a+shipOf(r),0), streams=new Set(wins.filter(r=>shipOf(r)>0).map(r=>r.s+"|"+r._st)).size;
+function dashSum(rows){   // net and margin after coupons and shipping, on wins with a card that is not likely another printing
+  const { wins, priced, off, unl }=winSplit(rows);
+  const spent=wins.reduce((a,r)=>a+costOf(r),0), pSpent=priced.reduce((a,r)=>a+costOf(r)+shipOf(r),0), net=priced.reduce((a,r)=>a+winNetOf(r),0), coupons=wins.reduce((a,r)=>a+(+r.cp||0),0);
+  const ship=wins.reduce((a,r)=>a+shipOf(r),0), shipP=priced.reduce((a,r)=>a+shipOf(r),0), streams=new Set(wins.filter(r=>shipOf(r)>0).map(r=>r.s+"|"+stOf(r))).size;
   const lab=rows.filter(r=>r.m>0 && r.f>0);
-  return { wins, priced, spent, pSpent, net, margin:pSpent>0?net/pSpent:null, mkt:priced.reduce((a,r)=>a+r.m,0), unl:wins.length-priced.length,
+  return { wins, priced, off, spent, pSpent, net, coupons, margin:pSpent>0?net/pSpent:null, mkt:priced.reduce((a,r)=>a+r.m,0), unl,
     ship, shipP, shipStreams:streams, buyPct:med(priced.map(r=>r.f/r.m)), sellPct:med(lab.map(r=>r.f/r.m)), lab, seen:rows.length };
 }
 function paintDash(){
@@ -2474,13 +2560,12 @@ function paintDash(){
     dashWire(el); return;
   }
   // tiles
-  const nowRows=S.wins.map(r=>({r, v:dashNow(r)})).filter(x=>x.v!=null);
+  const nowRows=S.priced.map(r=>({r, v:dashNow(r)})).filter(x=>x.v!=null);
   const nowSum=nowRows.reduce((a,x)=>a+x.v,0), nowWas=nowRows.reduce((a,x)=>a+(x.r.m||0),0);
   const tile=(l,v,s,c)=>`<div class="dt"><div class="dl">${l}</div><div class="dv ${c||""}">${v}</div><div class="ds">${s}</div></div>`;
   const tiles=
-    tile("Won", String(S.wins.length), `${D(S.spent)} spent${S.unl?` · <span class="neg">${S.unl} without a card</span>`:""}`)+
-    tile("Net if listed", S.priced.length?D(S.net):"–", `margin <b class="${S.margin!=null&&S.margin<tgt?"neg":"pos"}">${P(S.margin)}</b> · target ${P(tgt)}`, S.priced.length?cls(S.net):"")+
-    tile("After shipping", S.priced.length?D(S.net-S.shipP):"–", `${D(S.ship)} shipping over ${S.shipStreams} stream${S.shipStreams===1?"":"s"}, split across each stream's wins`, S.priced.length?cls(S.net-S.shipP):"")+
+    tile("Won", String(S.wins.length), `${D(S.spent)} spent${S.coupons>0?` (after ${D(S.coupons)} coupons)`:""}${S.ship>0?` + ${D(S.ship)} shipping`:""}${S.unl?` · <span class="neg">${S.unl} without a card</span>`:""}`)+
+    tile("Net if listed", S.priced.length?D(S.net):"–", `margin <b class="${S.margin!=null&&S.margin<tgt?"neg":"pos"}">${P(S.margin)}</b> · target ${P(tgt)} · at market after fees, coupons and ${D(S.shipP)} shipping${S.priced.length<S.wins.length?`, ${S.priced.length} of ${S.wins.length} wins`:""}`, S.priced.length?cls(S.net):"")+
     tile("Bought at", P(S.buyPct), `of market (median) · rooms sold at ${P(S.sellPct)}`)+
     tile("Worth today", nowRows.length?D(nowSum):"–", nowRows.length?`was ${D(nowWas)} when bought · <span class="${cls(nowSum-nowWas)}">${nowSum>=nowWas?"+":""}${D(nowSum-nowWas)}</span>`:"no priced wins");
   // by day
@@ -2488,32 +2573,33 @@ function paintDash(){
   const dayRows=Object.keys(days).sort((a,b)=>new Date(b)-new Date(a)).map(k=>{ const s=dashSum(days[k]);
     return `<tr><td>${day(new Date(k).getTime())}</td><td class="hide-s">${s.seen}</td><td>${s.wins.length}</td><td>${D(s.spent)}</td><td class="${cls(s.net)}">${s.priced.length?D(s.net):"–"}</td><td>${P(s.margin)}</td></tr>`; }).join("");
   // best / worst buys
-  const buy=r=>{ const n=r.np-r.f, v=dashNow(r), ch=v!=null&&r.m>0?(v-r.m)/r.m:null;
+  const buy=r=>{ const n=winNetOf(r), sh=shipOf(r), v=dashNow(r), ch=v!=null&&r.m>0?(v-r.m)/r.m:null;
     return `<div class="buy"><div style="min-width:0"><div class="n">${escH(r.n||"?")} <span class="mut">${escH(r.c||"")}</span></div>
-      <div class="m">paid ${D(r.f)} · market ${D(r.m)}${v!=null?` · today ${D(v)}${ch!=null&&Math.abs(ch)>=0.05?` <span class="${cls(ch)}">${ch>0?"↑":"↓"}${Math.round(Math.abs(ch)*100)}%</span>`:""}`:""}</div>
+      <div class="m">paid ${D(r.f)}${r.cp>0?` − ${D(r.cp)} coupon`:""}${sh>0?` + ${D(sh)} ship`:""} · market ${D(r.m)}${v!=null?` · today ${D(v)}${ch!=null&&Math.abs(ch)>=0.05?` <span class="${cls(ch)}">${ch>0?"↑":"↓"}${Math.round(Math.abs(ch)*100)}%</span>`:""}`:""}</div>
       <div class="m">${escH(r.s)} · ${day(r.at)}</div></div><div class="r"><b class="${cls(n)}">${n>=0?"+":""}${D(n)}</b><div class="m">${P(r.f/r.m)} of mkt</div></div></div>`; };
-  const byNet=S.priced.slice().sort((a,b)=>(b.np-b.f)-(a.np-a.f));
+  const byNet=S.priced.slice().sort((a,b)=>winNetOf(b)-winNetOf(a));
   const best=byNet.slice(0,5), worst=byNet.slice().reverse().filter(r=>!best.includes(r)).slice(0,5);
   // streamers
   const bySeller={}; rows.forEach(r=>{ (bySeller[r.s]=bySeller[r.s]||[]).push(r); });
   const mine=r=>Math.max(r.mx||0, r.pm||0);
   const sRows=Object.entries(bySeller).map(([s,rs])=>{ const x=dashSum(rs), bid=rs.filter(r=>mine(r)>0 && r.f>0), bw=bid.filter(r=>r.me).length;
-      return { s, x, streams:new Set(rs.map(r=>r._st)).size, bid:bid.length, bw }; })
+      return { s, x, streams:new Set(rs.map(stOf)).size, bid:bid.length, bw }; })
     .sort((a,b)=>(b.x.net-a.x.net) || (b.x.wins.length-a.x.wins.length) || (b.x.seen-a.x.seen));
   const minor=sRows.filter(o=>!o.x.wins.length && o.x.seen<5 && o.s!==DASH.seller);   // one line for drive-by sellers
   const sHtml=sRows.filter(o=>!minor.includes(o)).map(o=>`<tr class="click" data-s="${escH(o.s)}"><td>${escH(o.s)}</td><td class="hide-s">${o.streams}</td><td class="hide-s">${o.x.seen}</td><td>${o.x.wins.length}</td><td>${D(o.x.spent)}</td><td class="${cls(o.x.net)}">${o.x.priced.length?D(o.x.net):"–"}</td><td>${P(o.x.margin)}</td><td>${P(o.x.sellPct)}<span class="mut"> /${o.x.lab.length}</span></td><td class="hide-s">${o.bid?o.bw+" of "+o.bid:"–"}</td></tr>`).join("")+
     (minor.length?`<tr><td colspan="9" class="mut" style="color:var(--faint)">+ ${minor.length} seller${minor.length===1?"":"s"} with under 5 lots and no wins (${minor.reduce((a,o)=>a+o.x.seen,0)} lots)</td></tr>`:"");
   // discipline
-  const over=S.wins.filter(r=>r.mx>0 && r.f>r.mx), lostUnder=rows.filter(r=>!r.me && mine(r)>0 && r.f>0 && r.f<mine(r) && r.np!=null && r.np-r.f>0);
+  const over=S.wins.filter(r=>r.mx>0 && r.f>r.mx), lostUnder=rows.filter(r=>!r.me && mine(r)>0 && r.m>0 && r.f>0 && r.f>=0.4*r.m && r.f<mine(r) && r.np!=null && r.np-costOf(r)>0);
   // lots you only looked up: one that sold under 40% of market is most likely another printing than the one opened
   // (a $209 Cosmos Holo Gyarados "sold" at $66), so it is not a missed deal
-  const passed=rows.filter(r=>!r.me && !mine(r) && r.m>0 && r.f>0 && r.f>=0.4*r.m && r.np!=null && r.np-r.f>0);
-  const sumN=a=>a.reduce((s,r)=>s+(r.np-r.f),0);
+  const passed=rows.filter(r=>!r.me && !mine(r) && r.m>0 && r.f>0 && r.f>=0.4*r.m && r.np!=null && r.np-costOf(r)>0);
+  const sumN=a=>a.reduce((s,r)=>s+(r.np-costOf(r)),0);
   const notes=[];
   if(over.length) notes.push(`<b>Paid over your CardComp max</b> on ${over.length} win${over.length===1?"":"s"}, ${D(over.reduce((s,r)=>s+r.f-r.mx,0))} over in total (max raised in Whatnot).`);
-  if(lostUnder.length) notes.push(`<b>Lost under your max</b> ${lostUnder.length} time${lostUnder.length===1?"":"s"}, ${D(sumN(lostUnder))} of profit: the max was tapped but not in Whatnot in time.`);
+  if(lostUnder.length) notes.push(`<b>Lost under your max</b> ${lostUnder.length} time${lostUnder.length===1?"":"s"}, ${D(sumN(lostUnder))} of profit: the max was tapped but not in Whatnot in time (lots under 40% of market left out: likely another printing).`);
   if(passed.length) notes.push(`<b>Passed on ${passed.length} profitable lot${passed.length===1?"":"s"}</b> you looked up: ${D(sumN(passed))} net at the prices they sold for (lots under 40% of market left out: likely another printing).`);
-  if(S.unl) notes.push(`<b>${S.unl} win${S.unl===1?"":"s"} without a card</b> (${D(S.wins.filter(r=>!(r.m>0)).reduce((s,r)=>s+r.f,0))}): not in net or margin. Tap the bid or open the card during the lot.`);
+  if(S.off.length) notes.push(`<b>${S.off.length} win${S.off.length===1?"":"s"} left out of net</b>: under 40% of market, likely another printing (${D(S.off.reduce((s,r)=>s+costOf(r),0))} paid). Change the card in Your wins if it was right.`);
+  if(S.unl) notes.push(`<b>${S.unl} win${S.unl===1?"":"s"} without a card</b> (${D(S.wins.filter(r=>!(r.m>0)).reduce((s,r)=>s+costOf(r),0))}): not in net or margin. Tap the bid or open the card during the lot.`);
   // timing: softest hours (median sale % of market, 3+ labeled lots)
   const hrs={}; S.lab.forEach(r=>{ const h=new Date(r.at).getHours(); (hrs[h]=hrs[h]||[]).push(r.f/r.m); });
   const hl=h=>{ const a=h%12||12; return a+(h<12?" am":" pm"); };
@@ -2521,10 +2607,11 @@ function paintDash(){
   if(soft.length) notes.push(`<b>Softest hours</b>: ${soft.map(o=>`${hl(o.h)} ${P(o.p)} of market (${o.n} lots)`).join(" · ")}.`);
   el.innerHTML=`<div class="dw">${head}
     <div class="dtiles">${tiles}</div>
+    ${offLine(S.off, "Change the card in Your wins below")}
     <div id="ddaily"></div>
     <div id="dstripw"><h3>Where lots sell<span>every lot with a card, sale price as % of market</span></h3><div id="dstrip" style="position:relative"></div></div>
-    <div class="d2"><div><h3>Best buys<span>net if listed at market</span></h3>${best.map(buy).join("")||'<div class="mut">no priced wins</div>'}</div>
-      <div><h3>${worst.some(r=>r.np-r.f<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
+    <div class="d2"><div><h3>Best buys<span>net if listed at market, after shipping</span></h3>${best.map(buy).join("")||'<div class="mut">no priced wins</div>'}</div>
+      <div><h3>${worst.some(r=>winNetOf(r)<0)?"Worst buys":"Thinnest buys"}</h3>${worst.map(buy).join("")||'<div class="mut">none yet</div>'}</div></div>
     <h3>Streamers<span>tap one to filter${DASH.seller?"":", best net first"}</span></h3>
     <div class="scroll"><table class="dtab"><thead><tr><th>Seller</th><th class="hide-s">Streams</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th><th title="median sale price as a share of market, over lots with a card">Sells at</th><th class="hide-s" title="lots you put a max on that you won">Your bids won</th></tr></thead><tbody>${sHtml}</tbody></table></div>
     ${(()=>{ const B=[...buyerProfiles().entries()].filter(([u,b])=>!DASH.seller || b.sellers.has(DASH.seller)).map(([u,b])=>Object.assign({u},b)).filter(b=>b.lab>=1 || b.beat>=1)
@@ -2535,9 +2622,9 @@ function paintDash(){
     <div class="scroll"><table class="dtab"><thead><tr><th>Day</th><th class="hide-s">Lots</th><th>Won</th><th>Spent</th><th>Net</th><th>Margin</th></tr></thead><tbody>${dayRows}</tbody></table></div>
     ${S.wins.length?`<h3>Your wins<span>${S.unl?S.unl+" without a card · ":""}change or clear a card that is wrong</span></h3>${S.wins.slice().sort((a,b)=>b.at-a.at).slice(0, DASH.allWins?1e9:30).map(r=>{ const has=r.m>0||!!r.n;
       const sh=shipOf(r), shx=shipAlloc().get(r.k);
-      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f}${sh>0?` <span class="mut" title="this stream's shipping $${shx.paid.toFixed(2)} split over ${shx.n} win${shx.n===1?"":"s"}">+ $${sh.toFixed(2)} ship</span>`:""} · ${has?escH(r.n||"?")+` ${lotCondOK(r)?`<select class="dcond" data-k="${escH(r.k||"")}" title="change the condition">${(CONDS.includes(r.c)?[]:[""]).concat(CONDS).map(c=>`<option${c===r.c?" selected":""}>${c}</option>`).join("")}</select>`:`<span class="mut">${escH(r.c||"")}</span>`}<span class="mut">${r.lab==="fixed"?" · added later":""}</span>`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r">${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
+      return `<div class="buy"><div style="min-width:0"><div class="n">$${r.f}${r.cp>0?` <span class="mut" title="coupon used on this win">− $${(+r.cp).toFixed(2)} coupon</span>`:""}${sh>0?` <span class="mut" title="this stream's shipping $${shx.paid.toFixed(2)} split over ${shx.n} win${shx.n===1?"":"s"}">+ $${sh.toFixed(2)} ship</span>`:""} · ${has?escH(r.n||"?")+` ${lotCondOK(r)?`<select class="dcond" data-k="${escH(r.k||"")}" title="change the condition">${(CONDS.includes(r.c)?[]:[""]).concat(CONDS).map(c=>`<option${c===r.c?" selected":""}>${c}</option>`).join("")}</select>`:`<span class="mut">${escH(r.c||"")}</span>`}<span class="mut">${r.lab==="fixed"?" · added later":""}</span>${likelyOther(r)?` <span style="color:var(--gold)" title="won under 40% of this card's market: left out of net until the card is changed">likely another printing</span>`:""}`:`<span class="neg">no card</span>`}</div><div class="m">${escH(r.s)} · ${new Date(r.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}${has&&r.m>0?` · market ${D(r.m)}`:""}</div></div><div class="r"><button class="dcp" data-k="${escH(r.k||"")}" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button> ${has?`<button class="dadd dchg" data-k="${escH(r.k||"")}">change</button> <button class="dclr" data-k="${escH(r.k||"")}" title="remove the card from this win">✕ card</button>`:`<button class="dadd" data-k="${escH(r.k||"")}">+ card</button>`}</div></div>`; }).join("")}${S.wins.length>30&&!DASH.allWins?`<div style="padding:9px 0"><a class="dallw" style="color:var(--blue);cursor:pointer">show all ${S.wins.length} wins</a></div>`:""}`:""}
     ${notes.length?`<h3>Habits</h3><ul class="note">${notes.map(n=>`<li>${n}</li>`).join("")}</ul>`:""}
-    <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold.</div>
+    <div class="mut" style="margin-top:14px;font-size:11.5px">${S.seen} lots seen · ${S.lab.length} with a card · net uses your fee settings and the condition market when the lot sold, after coupons and your share of each stream's shipping.</div>
   </div>`;
   dashWire(el);
   try{ dashDaily(el.querySelector("#ddaily"), rows); }catch(_){ }
@@ -2599,7 +2686,7 @@ function dashDaily(host, rows){
     <text x="${last[0]-8}" y="${last[1]+(last[1]<t3+14?14:-8)}" text-anchor="end" class="dlab">${money(days[n-1].run)}</text>${xl}${hits(H3)}</svg>`;
   host.innerHTML=`<h3>Daily<span>hover a day for its numbers · table below</span></h3>
     <div class="dchart"><div class="cap"><b>Spent</b><span><i style="background:${GRAY}"></i>won lots</span></div>${svg1}</div>
-    <div class="dchart"><div class="cap"><b>Net if listed</b><span><i style="background:${UP}"></i>up day</span><span><i style="background:${DOWN}"></i>down day</span><span class="lsmuted">wins with a card, at market after fees</span></div>${svg2}</div>
+    <div class="dchart"><div class="cap"><b>Net if listed</b><span><i style="background:${UP}"></i>up day</span><span><i style="background:${DOWN}"></i>down day</span><span class="lsmuted">wins with a card, at market after fees, coupons and shipping</span></div>${svg2}</div>
     <div class="dchart"><div class="cap"><b>Running net</b><span class="lsmuted">net added up day by day</span></div>${svg3}</div>
     <div class="dtip" style="display:none"></div>`;
   const tip=host.querySelector(".dtip"), D=v=>(v<0?"−":"")+"$"+Math.abs(v).toFixed(2);
@@ -2623,6 +2710,7 @@ function dashWire(el){
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
   const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
   el.querySelectorAll(".dcond").forEach(sl=>sl.onchange=()=>{ const r=loadLots().find(x=>x.k===sl.dataset.k); if(r && sl.value) setLotCond(r, sl.value); });
+  el.querySelectorAll(".dcp").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) askCoupon(r); });
   el.querySelectorAll(".dclr").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r && confirm(`Remove ${r.n||"the card"} from your $${r.f} win?`)) clearLotCard(r); });
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
@@ -2652,7 +2740,7 @@ function clearLots(range){
   const what = range==="hour" ? "the last hour" : range==="today" ? "today" : "all time";
   if(!confirm(`Delete ${gone} lot${gone===1?"":"s"} logged in ${what} from stream stats, and the matching rows in your private GitHub log? This cannot be undone. Verified TCGplayer prices are kept.`)) return;
   try{ localStorage.setItem(LOTS_KEY, JSON.stringify(rows.filter(r=>r.at<since))); }catch(_){ }
-  LAST_TAP=null; LAST_VIEW=null; TAPS_THIS_LOT=[]; LOT_START=Date.now(); LOT_N=0;   // nothing stale carries into the next lot
+  BUYERS=null; LAST_TAP=null; LAST_VIEW=null; TAPS_THIS_LOT=[]; LOT_START=Date.now(); LOT_N=0;   // nothing stale carries into the next lot
   CLEAR_NOTE=`Cleared ${gone} from this browser. ${WN_EXT?"Clearing the GitHub log…":"GitHub log: open CardComp in the extension side panel to clear it there too."}`;
   if(WN_EXT) extPost({type:"cardcomp-log-prune", since});
   paintLot(); paintLotStats();
@@ -2687,7 +2775,7 @@ function lotDotStrip(host, S){
   host.innerHTML=`<div class="lslegend"><span><i style="background:${WIN}"></i>you won</span><span><i style="background:${OTHER}"></i>you bid, lost</span><span><i style="border:2px solid ${OTHER}"></i>others</span><span class="lsmuted">sale price as % of market</span></div>
     <div style="position:relative"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Lot sale prices as percent of market">${grid}${ref}${marks}</svg><div class="lstip" style="display:none"></div></div>`;
   const tip=host.querySelector(".lstip");
-  host.querySelectorAll(".lsdot").forEach(g=>{ const d=dots[+g.dataset.i], r=d.r, n=r.np!=null?r.np-r.f:null;
+  host.querySelectorAll(".lsdot").forEach(g=>{ const d=dots[+g.dataset.i], r=d.r, n=r.np!=null?r.np-costOf(r)-shipOf(r):null;
     const show=()=>{ tip.innerHTML=`<b>${escH(r.n||"card")}</b> ${escH(r.c||"")}<br>sold $${r.f} · ${Math.round(r.f/r.m*100)}% of $${r.m.toFixed(2)}<br>${r.me?"you won":"won by "+escH(r.w||"?")}${n!=null?` · ${n>=0?"+":"−"}$${Math.abs(n).toFixed(2)} at that price`:""}${Math.max(r.mx||0,r.pm||0)?` · your max $${Math.max(r.mx||0,r.pm||0)}`:""}`;
       tip.style.display="block"; const left=Math.min(Math.max(d.cx-90,0), W-190); tip.style.left=left+"px"; tip.style.top=(d.cy+12)+"px"; };
     g.addEventListener("mouseenter", show); g.addEventListener("click", (e)=>{ e.stopPropagation(); show(); }); g.addEventListener("mouseleave", ()=>{ tip.style.display="none"; }); });
@@ -2701,31 +2789,33 @@ function leaderHTML(rows){
   const M=new Map();
   for(const r of rows){
     if(!(r.f>0)) continue;
-    const who=r.me ? "you" : r.w; if(!who || who==="me" || who==="?" || who===r.s) continue;
-    const u=M.get(who)||{who, won:0, spent:0, net:0, known:0};
-    u.won++; u.spent+=r.f;
-    if(r.m>0 && r.np!=null){ u.known++; u.net+=r.np-r.f-(r.me?shipOf(r):0); }
+    const who=r.me ? "you" : r.w; if(!who || who==="me" || who==="?" || who===r.s || (!r.me && who.length<3)) continue;
+    const u=M.get(who)||{who, won:0, spent:0, net:0, known:0, ship:0};
+    u.won++; u.spent+=costOf(r);
+    // known = priced at market; a lot under 40% of market is likely another printing (likelyOther), for everyone
+    if(r.m>0 && r.np!=null && !likelyOther(r)){ const sh=shipOfBuyer(r); u.known++; u.ship+=sh; u.net+=r.np-costOf(r)-sh; }
     M.set(who, u);
   }
   if(!M.size) return "";
   const all=[...M.values()].sort((a,b)=>b.spent-a.spent||b.won-a.won), top=all.slice(0,10), me=M.get("you");
   if(me && !top.includes(me)) top.push(me);
   const B=buyerProfiles(), D=v=>(v<0?"−":"+")+"$"+Math.abs(v).toFixed(2);
-  return `<div class="lsx" style="margin:12px 0 4px;color:var(--dim)"><b style="color:var(--ink)">Leaderboard</b> · ${all.length} buyer${all.length===1?"":"s"} · net = resale at market after fees, on wins with a known card</div>
+  return `<div class="lsx" style="margin:12px 0 4px;color:var(--dim)"><b style="color:var(--ink)">Leaderboard</b> · ${all.length} buyer${all.length===1?"":"s"} · net = resale at market after fees, coupons and shipping, on wins with a known card (others pay your shipping schedule for that stream; wins under 40% of market left out: likely another printing)</div>
   <table class="lstab lslead"><thead><tr><th>#</th><th>buyer</th><th>won</th><th>spent</th><th>net</th></tr></thead><tbody>${top.map(u=>{
     const rank=all.indexOf(u)+1, b=u.who!=="you"?B.get(u.who):null, tg=b&&b.tags&&b.tags[0];
-    return `<tr class="${u.who==="you"?"me":""}"><td>${rank}</td><td>${u.who==="you"?'<span class="lsyou">✓ you</span>':escH(u.who.slice(0,18))}${tg?` <span style="color:${TAG_COL[tg]};font-size:10px">${tg}</span>`:""}</td><td>${u.won}</td><td>$${Math.round(u.spent).toLocaleString()}</td><td style="color:${!u.known?"var(--dim)":u.net>=0?"var(--green)":"var(--red)"}">${u.known?D(u.net):"–"}${u.known&&u.known<u.won?` <span class="lsmuted" style="font-size:10px">${u.known}/${u.won}</span>`:""}</td></tr>`; }).join("")}</tbody></table>`;
+    return `<tr class="${u.who==="you"?"me":""}"><td>${rank}</td><td>${u.who==="you"?'<span class="lsyou">✓ you</span>':escH(u.who.slice(0,18))}${tg?` <span style="color:${TAG_COL[tg]};font-size:10px">${tg}</span>`:""}</td><td>${u.won}</td><td>$${Math.round(u.spent).toLocaleString()}</td><td style="color:${!u.known?"var(--dim)":u.net>=0?"var(--green)":"var(--red)"}"${u.ship>0?` title="after $${u.ship.toFixed(2)} shipping${u.who==="you"?"":" (estimated: your schedule for that stream)"}"`:""}>${u.known?D(u.net):"–"}${u.known&&u.known<u.won?` <span class="lsmuted" style="font-size:10px">${u.known}/${u.won}</span>`:""}</td></tr>`; }).join("")}</tbody></table>`;
 }
 function lotTable(S){   // the table view: last labeled lots plus every win (labeled or not), newest first
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
-  return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-r.f:null, pick=LOT_PICK!=null && LOT_PICK===r.at;
-    const sh=shipOf(r), net2=n!=null?n-sh:null;
-    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button><button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
+  return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-costOf(r):null, pick=LOT_PICK!=null && LOT_PICK===r.at;
+    const sh=shipOf(r), net2=n!=null?n-sh:null, off=likelyOther(r);   // off: likely another printing, shown dim with "?" and left out of net
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${r.me&&r.cp>0?`<div class="lsmuted" style="font-size:10px" title="coupon used on this win">−${(+r.cp).toFixed(2)} coupon</div>`:""}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null||off?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${off?' title="under 40% of market: likely another printing, left out of net"':sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)+(off?"?":"")}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button>${r.me?`<button class="lsaddb lscpb" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button>`:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
 }
 function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
   el.querySelectorAll(".lstab:not(.lslead) tbody tr").forEach(tr=>tr.onclick=(e)=>{
     e.stopPropagation(); const at=+tr.dataset.at;
     if(e.target.closest(".lsdelb")){ removeLot(at); return; }
+    if(e.target.closest(".lscpb")){ const r=loadLots().find(x=>x.at===at); if(r) askCoupon(r); return; }
     if(e.target.closest(".lsaddb")){ const r=loadLots().find(x=>x.at===at); if(r) pickFor(r, "stats"); return; }
     const cb=e.target.closest(".lscb"); if(cb){ const r=loadLots().find(x=>x.at===at); if(r) setLotCond(r, cb.dataset.cond); return; }
     if(tr.classList.contains("lsact")) return;
@@ -2767,7 +2857,7 @@ function assignPick(card, cond, k){
   const snap=Object.assign(cardSnap(card, cond, k, condM), { label:"fixed", fixedAt:Date.now() });
   try{
     const rows=loadLots(), r=rows.find(x=>x.k===P.k);
-    if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
+    if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"", nm:snap.market>0?+(+snap.market).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
   }catch(_){ }
   PICK=null; BUYERS=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
   const net=condM>0?netProceeds(listSale(condM))-P.f:null;
@@ -2797,9 +2887,28 @@ function setLotCond(r, cond){
   clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
   paintPick(); try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ } paintLot(); if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats();
 }
+// Coupon on a win (Derek, 2026-10-31): typed once per win, up to that win's price. An order-wide coupon goes on one
+// win of that stream that has a card: on a win without a card it lowers spent but not net (that win has no market). Saved on the log row as "coupon", so every device and the dashboard see it.
+function askCoupon(r){
+  if(!r || !r.me) return;
+  const v=prompt(`Coupon used on your $${r.f} win${r.n?" ("+r.n+")":""}, in dollars (0 to remove).${r.n?"":" This win has no card, so the coupon lowers spent but not net; put an order-wide coupon on a win with a card."}`, r.cp>0?String(r.cp):"");
+  if(v==null) return;
+  const cp=Math.max(0, Math.min(+r.f||0, Math.round((parseFloat(String(v).replace(/[^0-9.]/g,""))||0)*100)/100));
+  setLotCoupon(r, cp);
+}
+function setLotCoupon(r, cp){
+  BUYERS=null;
+  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ x.cp=cp; localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+  const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
+  PICK_MSG=cp>0?`<b>$${cp.toFixed(2)} coupon</b> on your $${r.f} win${r.n?" ("+escH(r.n)+")":""}: it cost you $${(Math.max(0,r.f-cp)).toFixed(2)} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`
+    :`<b>Coupon removed</b> from your $${r.f} win <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
+  if(WN_EXT && st!=="" && st!=null) extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, rowPatch:{coupon:cp||null}});
+  clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
+  paintPick(); try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ } paintLot(); if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats();
+}
 function clearLotCard(r){   // a card added to the wrong win: back to "no card", here and in the log
   BUYERS=null;
-  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n:"", c:"", lab:"", m:0, np:null, id:"", pr:"" }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n:"", c:"", lab:"", m:0, np:null, id:"", pr:"", nm:null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
   const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
   PICK_MSG=`<b>Removed ${escH(r.n||"the card")}</b> from your $${r.f} win <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
   if(WN_EXT && st!=="" && st!=null) extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, card:null, clear:true});
@@ -2808,11 +2917,12 @@ function clearLotCard(r){   // a card added to the wrong win: back to "no card",
 }
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || d.type!=="cardcomp-log-edit-ack" || !lotFromExt(e)) return;
-  if(!d.ok && d.why==="bad request") d.why="reload the extension (0.8.1 or newer)";   // 0.8.0 and older cannot change only the condition
+  if(!d.ok && d.why==="bad request") d.why="reload the extension (0.9.4 or newer)";   // older ones cannot change only the condition (0.8.0) or save a coupon (0.9.3)
   const st=document.querySelector("#pickbar .pickst"); if(st) st.textContent=d.ok?"· saved to your log ✓":"· not saved to the log: "+(d.why||"error");
   if(PICK_MSG) PICK_MSG=PICK_MSG.replace(/<span class="pickst">.*?<\/span>/, `<span class="pickst">${d.ok?"· saved to your log ✓":"· not saved to the log: "+escH(d.why||"error")}</span>`);
 });
 function removeLot(at){
+  BUYERS=null;
   try{ localStorage.setItem(LOTS_KEY, JSON.stringify(loadLots().filter(r=>r.at!==at))); }catch(_){ }
   LOT_PICK=null;
   CLEAR_NOTE=`Removed 1 lot from this browser.${WN_EXT?"":" GitHub log: open CardComp in the extension side panel to remove it there too."}`;

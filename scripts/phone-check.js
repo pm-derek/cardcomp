@@ -456,7 +456,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(3500);
   const me = await page.evaluate(() => ({ lots: window.__lots.filter((r) => !r.empty), user: localStorage.getItem("cardcomp_wn_user") }));
   const L2 = me.lots[1] || {};
-  ok(L2.me === true && L2.final === 9 && me.user === "rewired", `own win counted, username learned: ${JSON.stringify({ me: L2.me, final: L2.final, user: me.user })}`);
+  ok(L2.me === true && L2.final === 9 && me.user == null, `own win counted from "You won", no username learned (2026-10-31: the phone once stored another bidder as Derek): ${JSON.stringify({ me: L2.me, final: L2.final, user: me.user })}`);
   // automatic read: once, ~1 s after a new lot's timer starts, only in auto mode
   const g0 = (await calls()).filter((x) => x.n === "grab").length;
   await feed(live(142, 2, "00:12", "", 3)); await page.waitForTimeout(1400);
@@ -474,6 +474,60 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.waitForTimeout(200);
   const g144 = await page.evaluate(() => window.__lots.filter((r) => !r.empty && r.title === "Card on screen #144").length);
   ok(g144 === 1, `same lot after a flicker of the sold screen: logged once (${g144})`);
+
+  // 2026-10-31 audit (fixtures from real phone dumps, names made up)
+  const rd = (items) => page.evaluate(([i, w, h]) => window.__phone.readLotPhone(i, w, h), [items, W, H]);
+  // sudden death: "💀 00:14" on the lot card, "00:02 💀" / "+0s" / "What is Max Bid?" on the Custom sheet
+  const sd = await rd(live(146, 2, "💀 00:14", "", 3));
+  ok(sd.timer === "00:14" && sd.sub === "Mint" && sd.cond === "NM", `sudden death timer read: ${JSON.stringify({ timer: sd.timer, sub: sd.sub, cond: sd.cond })}`);
+  const sheetSD = (title, price) => [...head, T(title, 45, 1554, 841, 1607), T("$" + price, 935, 1534, 987, 1587), T("+Ship/Tax", 886, 1587, 1035, 1626), T("+0s", 508, 1602, 572, 1649),
+    T("00:02 💀", 456, 1649, 625, 1702), T("Decrement bid", 133, 1784, 172, 1790), T("$" + (price + 1), 259, 1720, 821, 1855, 1), T("Increment bid", 900, 1759, 956, 1815),
+    T("Max Bid", 45, 1917, 165, 1964), T("What is Max Bid?", 165, 1873, 300, 1970, 1), T("When on, we'll automatically place bids for you, up to this price.", 45, 1970, 855, 2064), T("Submit Max Bid", 388, 2166, 693, 2219, 1)];
+  const ss = await rd(sheetSD("$3 Max Ship Sudden Death Singles #18", 2));
+  ok(ss.title === "$3 Max Ship Sudden Death Singles #18" && ss.sub === "" && ss.cond === "" && ss.timer === "00:02" && ss.cur === 2, `Custom sheet: timer, no sheet text as the condition line: ${JSON.stringify({ title: ss.title, sub: ss.sub, timer: ss.timer, cur: ss.cur })}`);
+  // condition line by its first word ("Light Played • Card" was blank, then priced as NM)
+  const condCases = [["Light Played • Card", "LP"], ["Lightly Played", "LP"], ["Moderately Played • Card", "MP"], ["Heavily Played", "HP"], ["Damaged • Card", "DMG"], ["Near Mint • Card", "NM"], ["New • Card", "NM"], ["Mint", "NM"], ["Card", ""], ["all sales final, condition shown on screen. Goodluck!", ""]];
+  const condGot = [];
+  for (const [c] of condCases) condGot.push((await rd(live(146, 2, "00:08", "", 3).map((x) => x.t === "Mint" ? Object.assign({}, x, { t: c }) : x))).cond);
+  ok(condCases.every(([, want], i) => condGot[i] === want), "conditions: " + condCases.map(([c], i) => `${c.slice(0, 20)} -> ${condGot[i] || "-"}`).join(" | "));
+
+  // opening the Custom sheet: one read with another title must not split the lot (domvault_card #83, rudeboi75404 #110)
+  const meLead = (n, price, timer, next) => [...live(n, price, timer, "", next), T("You're winning!", 101, 1880, 364, 1925)];
+  const soldMe = (n, price) => [...head, ...chat, T("You won!", 101, 1880, 261, 1925),
+    T(`Card on screen #${n}`, 260, 1935, 650, 1985), T("Mint", 260, 1995, 340, 2040), T("$0.38 Shipping + Taxes", 260, 2050, 610, 2095),
+    T("$" + price, 980, 1935, 1035, 1985), T("Sold", 960, 1995, 1035, 2040), T("Awaiting Next Item", 360, 2160, 720, 2210, 1)];
+  await feed(sold(145, 2, "bidder_b")); await page.waitForTimeout(3000);
+  await feed(live(150, 2, "00:09", "bidder_one", 3));
+  await page.evaluate(() => { const q = document.querySelector("#q"); q.value = "charizard 4/102"; run("charizard 4/102"); window.__phone.setMode("card"); });
+  await page.waitForTimeout(800);
+  await page.evaluate(() => document.querySelector('#phonebar .pb[data-c="NM"]').click());
+  await feed(live(150, 2, "00:08", "bidder_one", 3).map((x) => x.t === "Card on screen #150" ? Object.assign({}, x, { t: "Card on screen #1" }) : x));   // the sheet animating in
+  await page.waitForTimeout(150);
+  await feed(sheet(150, 3)); await feed(meLead(150, 4, "00:03", 5)); await feed(soldMe(150, 4));
+  await page.waitForTimeout(3500);
+  const l150 = await page.evaluate(() => ({ lots: window.__lots.filter((r) => !r.empty && /#(150|1)$/.test(r.title)), saves: window.__saves.filter((r) => /#150$/.test(r.title)) }));
+  const W150 = l150.lots[0] || {};
+  ok(l150.lots.length === 1 && W150.title === "Card on screen #150" && W150.me === true && W150.sold === true && W150.iLed === true && W150.hist.some((h) => h.u === "me") && W150.leaders.includes("me"),
+    `a short-lived title while the sheet opens: one lot, won, Derek's lead in the hand history: ${JSON.stringify(l150.lots.map((r) => ({ t: r.title, me: r.me, sold: r.sold, iLed: r.iLed, hist: r.hist.map((h) => h.u) })))}`);
+  ok(l150.saves.length === 1 && l150.saves[0].card && /charizard/i.test(l150.saves[0].card.n || ""), "the win keeps the tapped card: " + (l150.saves[0] && l150.saves[0].card ? l150.saves[0].card.n : "none"));
+  // "You won!" alone is a win, not proof of a lead seen
+  await feed(live(151, 2, "00:05", "bidder_two", 3)); await feed(soldMe(151, 6)); await page.waitForTimeout(300);
+  const W151 = await page.evaluate(() => window.__lots.filter((r) => !r.empty && r.title === "Card on screen #151")[0] || {});
+  ok(W151.me === true && W151.iLed === false && !W151.hist.some((h) => h.u === "me"), `win with no lead seen: me, iLed false: ${JSON.stringify({ me: W151.me, iLed: W151.iLed, hist: (W151.hist || []).map((h) => h.u) })}`);
+  // no Sold seen (Derek left the stream while leading): no winner, not his, ends when last seen
+  await page.waitForTimeout(3000);
+  await feed(live(152, 5, "00:04", "bidder_three", 6)); await feed(meLead(152, 7, "00:02", 8));
+  const t152 = await page.evaluate(() => Date.now());
+  await page.waitForTimeout(700);
+  await feed(live(153, 2, "00:10", "", 3)); await page.waitForTimeout(1100); await feed(live(153, 2, "00:09", "", 3));
+  await page.waitForTimeout(200);
+  const U152 = await page.evaluate(() => window.__lots.filter((r) => !r.empty && r.title === "Card on screen #152")[0] || {});
+  ok(U152.sold === false && U152.winner === "" && U152.me === false && U152.iLed === true && U152.final === 7 && U152.at <= t152 + 50,
+    `lot gone without a Sold: no winner, not a win, at = last seen: ${JSON.stringify({ sold: U152.sold, winner: U152.winner, me: U152.me, iLed: U152.iLed, final: U152.final, atLag: U152.at - t152 })}`);
+  // the app sends only what is on screen (a hidden "Sold" under the keyboard read as a sale)
+  const wkt = fs.readFileSync(path.join(ROOT, "android/app/src/main/java/io/github/pmderek/cardcomp/WhatnotReader.kt"), "utf8");
+  const ps = wkt.slice(wkt.indexOf("private fun pushScreen"), wkt.indexOf("private val AUCTION"));
+  ok(/if \(!n\.node\.isVisibleToUser\) continue/.test(ps), "pushScreen skips nodes not visible to the user");
 
   // condition link: fast read tried through the app first; the browser opens only because it failed here
   const b6 = (await calls()).length;
