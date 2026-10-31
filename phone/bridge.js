@@ -236,7 +236,10 @@
   const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products|more|boost|clip|share|wallet)$/i;
   const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);
   const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG", "mint": "NM", "new": "NM" };
-  let ME = ""; try { ME = (localStorage.getItem("cardcomp_wn_user") || "").toLowerCase(); } catch (_) {}
+  // Never learned on the phone (2026-10-31 audit): Derek's own wins show only "You won!" with no name beside it, so the
+  // first screen with "you won" and someone's "X won!" stored X as Derek (goldenboyztcg, 10-29: ~12 of their wins logged
+  // as his). "You won" / "You're winning" already mean Derek; a name is only matched when the app's settings carry one.
+  let ME = ""; try { ME = String(cfg().wnUser || "").toLowerCase(); localStorage.removeItem("cardcomp_wn_user"); } catch (_) {}
   const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
   const members = new Map();
   function seen(user, how) { const m = members.get(user) || { first: Date.now(), last: 0, joins: 0, leads: 0, chats: 0, lastJoin: 0 }; m.last = Date.now(); if (how === "joins") { if (Date.now() - m.lastJoin < 5 * 60e3) { members.set(user, m); return; } m.lastJoin = Date.now(); } m[how] = (m[how] || 0) + 1; members.set(user, m); }
@@ -296,7 +299,6 @@
       else if (/^entries$/i.test(t) && left && /^\d{1,6}$/.test(left.t)) st.giveaway = +left.t;
     }
     if (isMe(st.lead)) st.me = true;
-    if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { localStorage.setItem("cardcomp_wn_user", wonUser); } catch (_) {} }
     if (meWon) wonBy = "me";
     if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
     return st;
