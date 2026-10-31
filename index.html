@@ -2257,7 +2257,8 @@ function storeLotRows(add){   // merge rows into this browser's stats by lot key
     let i=row.k!=null ? at.get(row.k) : undefined;
     if(i==null){ const j=rows.findIndex(r=>across(r,row)); if(j>=0) i=j; }
     if(i==null){ at.set(row.k, rows.length); rows.push(row); }
-    else if(!rows[i].n && row.n){ const o=rows[i]; rows[i]=Object.assign({}, row, { me:o.me||row.me, b:row.b!=null?row.b:o.b, pm:row.pm||o.pm, sh:row.sh!=null?row.sh:o.sh }); at.set(row.k, i); }
+    else if(!rows[i].n && row.n){ const o=rows[i]; rows[i]=Object.assign({}, row, { me:o.me||row.me, b:row.b!=null?row.b:o.b, pm:row.pm||o.pm, sh:row.sh!=null?row.sh:o.sh, cp:row.cp||o.cp||0 }); at.set(row.k, i); }
+    else if(row.cp>0 && !(rows[i].cp>0)) rows[i].cp=row.cp;   // a coupon typed on the other copy
   }
   rows.sort((a,b)=>a.at-b.at);
   localStorage.setItem(LOTS_KEY, JSON.stringify(rows.slice(-4000)));
@@ -2825,11 +2826,11 @@ function setLotCond(r, cond){
   clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
   paintPick(); try{ refreshVerdict((LOT&&LOT.seller)||""); }catch(_){ } paintLot(); if(DASH.on) paintDash(); if(LOTSTATS_OPEN) paintLotStats();
 }
-// Coupon on a win (Derek, 2026-10-31): typed once per win (a coupon for the whole order goes on any one win of that
-// stream; the totals come out the same). Saved on the log row as "coupon", so every device and the dashboard see it.
+// Coupon on a win (Derek, 2026-10-31): typed once per win, up to that win's price. An order-wide coupon goes on one
+// win of that stream that has a card: on a win without a card it lowers spent but not net (that win has no market). Saved on the log row as "coupon", so every device and the dashboard see it.
 function askCoupon(r){
   if(!r || !r.me) return;
-  const v=prompt(`Coupon used on your $${r.f} win${r.n?" ("+r.n+")":""}, in dollars (0 to remove):`, r.cp>0?String(r.cp):"");
+  const v=prompt(`Coupon used on your $${r.f} win${r.n?" ("+r.n+")":""}, in dollars (0 to remove).${r.n?"":" This win has no card, so the coupon lowers spent but not net; put an order-wide coupon on a win with a card."}`, r.cp>0?String(r.cp):"");
   if(v==null) return;
   const cp=Math.max(0, Math.min(+r.f||0, Math.round((parseFloat(String(v).replace(/[^0-9.]/g,""))||0)*100)/100));
   setLotCoupon(r, cp);
