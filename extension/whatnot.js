@@ -246,6 +246,16 @@ let ME = "";   // Derek's Whatnot username (extension Options), so "derek won!" 
 try { chrome.storage.local.get("wnUser", (r) => { ME = String((r && r.wnUser) || "").trim().toLowerCase(); }); } catch (_) {}
 const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
 const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG" };
+// Condition by its first word, as on the phone (2026-10-31 audit: "Light Played" on 79 desktop lots was blank and priced as NM)
+const COND_WORD = { light: "LP", lightly: "LP", moderate: "MP", moderately: "MP", heavy: "HP", heavily: "HP", damaged: "DMG" };
+function condOf(sub) {
+  const s = (String(sub || "").split(/[·∙•|]/)[0] || "").trim().toLowerCase();
+  if (COND_TXT[s]) return COND_TXT[s];
+  const w = s.split(/\s+/);
+  if (w.length > 3) return "";   // a description, not a condition
+  if (w[0] === "near" && w[1] === "mint") return "NM";
+  return COND_WORD[w[0]] || "";
+}
 let lastRow = null;   // the lot row the reader used last, for the "copy debug" snapshot
 // "copy debug" in CardComp's strip: the lot row's HTML (two levels up, scripts / images / svg paths stripped) and
 // the text the reader saw, so a layout the reader misses can be fixed from a paste instead of a guess.
@@ -305,7 +315,7 @@ function readLot() {
     const nx = tEl.nextElementSibling, sub = nx && nx.textContent.replace(/\s+/g, " ").trim();
     if (sub && !LOT_RX.bids.test(sub)) st.sub = sub.slice(0, 119);
   }   // title, then the seller's condition / category line
-  st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";   // "Near Mint ∙ Card" uses U+2219
+  st.cond = condOf(st.sub);   // "Near Mint ∙ Card" uses U+2219, "Light Played • Card"
   // Giveaway screen in the lot's place: lotTick leaves the lot alone while it shows
   st.giveawayScreen = GIVEAWAY_RX.test(st.title) || GIVEAWAY_RX.test(st.sub);
   // Chat (Whatnot's chat-message rows, or the list around the "Say something" box) never says who won or leads:
