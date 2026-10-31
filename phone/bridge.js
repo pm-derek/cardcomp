@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.9";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.10";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -770,7 +770,9 @@
   // break-even: the most you can pay and not lose money (fees, shipping and your list markup, 0% margin): the app's own
   // bidForMargin at 0, what the desktop tiles call "b/e". Shown with cents.
   // with cents (Derek, 2026-10-29: "b/e needs to show cents"): it is a ceiling to judge against, not a bid to send
-  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForMargin === "function" ? bidForMargin(mkt, 0) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
+  // break-even = what a sale nets after fees (bidForProfit at $0), same as the open card's b/e. Not bidForMargin(mkt, 0):
+  // that also keeps the min profit per card ($0.25), so the small card read $0.25 under the full view (2026-10-31)
+  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForProfit === "function" ? bidForProfit(mkt, 0) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
   // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
   // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
   // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card

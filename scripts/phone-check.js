@@ -184,8 +184,8 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
-  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForMargin(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
-  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForProfit(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
+  ok(beOK, "break-even on each pill = the app's bidForProfit(price, 0) (fees only, same as the open card) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
   ok(gridNM && rows[0].bid === "$" + gridNM, "NM pill sends what the full grid's NM sends: $" + gridNM);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });

@@ -678,3 +678,11 @@ Now only Whatnot's own window (`com.whatnot_mobile`) is sent, as the Custom fill
 Log cleanup (a hand-run script, not shipped): phone rows whose title has no "#N" and is rare for the stream, and the
 same seller + title + price again within 3 min with no bids; 117 rows Oct 23-30.
 
+
+## Break-even matches the full view (2026-10-31, bridge 0.15.10)
+
+Derek: "breakeven value is different, why?" (Gardevoir TG05 SIT: small card NM b/e $5.10, full view $5.55). Two causes.
+The min profit per card (#85, $0.25) went into `bidForMargin`, and the small card's b/e was `bidForMargin(mkt, 0)`, so it
+read $0.25 low; it is now `bidForProfit(mkt, 0)`, the fees-only zero-profit price the open card shows (same fix for
+the desktop Chinese line). The rest is the price: pills price each condition from the grid (here a verified NM read,
+$7.31), the open card's top table from the catalog market of all conditions ($7.53).
