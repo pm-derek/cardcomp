@@ -102,12 +102,13 @@ async function pruneLog(since, before) {   // deletes rows with since <= at < be
 // Put a card on a logged lot after the fact (Derek, 2026-10-20: wins where no card was registered). key = {seller,
 // startedAt, at}. A lot sits in the day file of the UTC day it was flushed, so look at its day and the next.
 // patch: change only some fields of the card already there (condition change, 2026-10-23), keeping max bid, tap time.
-async function editLog(key, card, clear, patch) {
-  const k = lotKey(key); if (!k || (!card && !clear && !patch)) return { ok: false, why: "bad request" };   // clear: card removed (it was put on the wrong win)
+async function editLog(key, card, clear, patch, rowPatch) {   // rowPatch: fields of the lot row itself (coupon), not its card
+  const k = lotKey(key); if (!k || (!card && !clear && !patch && !rowPatch)) return { ok: false, why: "bad request" };   // clear: card removed (it was put on the wrong win)
   if (clear) card = null;
   const next = (old) => patch ? (old ? Object.assign({}, old, patch) : old) : card;
   let hit = false;
-  pendingLog.forEach((r) => { if (lotKey(r) === k) { r.card = next(r.card); hit = true; } });
+  const apply = (r) => { if (rowPatch) Object.assign(r, rowPatch); else r.card = next(r.card); };
+  pendingLog.forEach((r) => { if (lotKey(r) === k) { apply(r); hit = true; } });
   const tok = await token();
   if (!tok) return { ok: hit, why: hit ? "" : "no GitHub token" };
   const hdr = { Authorization: "Bearer " + tok, Accept: "application/vnd.github+json" };
@@ -117,10 +118,10 @@ async function editLog(key, card, clear, patch) {
     for (let attempt = 0; attempt < 2; attempt++) {
       let j; try { j = await logFile(api, hdr); } catch (e) { return { ok: hit, why: e.message }; }
       const row = j.rows.find((r) => lotKey(r) === k); if (!row) break;
-      if (patch && !row.card) return { ok: false, why: "that lot has no card in the log" };
-      row.card = next(row.card);
+      if (patch && !rowPatch && !row.card) return { ok: false, why: "that lot has no card in the log" };
+      apply(row);
       const r = await fetch(api, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, hdr),
-        body: JSON.stringify({ message: patch ? `Lot card changed: ${(row.card && row.card.n) || "?"} ${patch.cond || ""}`.trim() : card ? `Card added to a lot: ${card.n || "?"}` : "Card removed from a lot", branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
+        body: JSON.stringify({ message: rowPatch ? `Lot edited: ${Object.entries(rowPatch).map(([k, v]) => k + " " + v).join(", ")}` : patch ? `Lot card changed: ${(row.card && row.card.n) || "?"} ${patch.cond || ""}`.trim() : card ? `Card added to a lot: ${card.n || "?"}` : "Card removed from a lot", branch: LOG.branch, sha: j.sha, content: b64enc(JSON.stringify(j.rows)) }) });
       if (r.status === 409 || r.status === 422) continue;
       return r.ok ? { ok: true, file: "log-" + day + ".json" } : { ok: false, why: "GitHub PUT " + r.status };
     }
@@ -173,7 +174,7 @@ function sameLotAcross(a, b) {
 }
 function mergeAcross(a, b) {
   const keep = richness(b) > richness(a) ? b : a, other = keep === a ? b : a, out = Object.assign({}, keep);
-  for (const f of ["card", "recog", "placedMax", "ship", "viewers", "giveaway", "sub", "sellerCond"]) if (out[f] == null && other[f] != null) out[f] = other[f];
+  for (const f of ["card", "recog", "placedMax", "ship", "viewers", "giveaway", "sub", "sellerCond", "coupon"]) if (out[f] == null && other[f] != null) out[f] = other[f];
   if (out.bids == null && other.bids != null) out.bids = other.bids;
   if (!(out.bidsSent || []).length && (other.bidsSent || []).length) out.bidsSent = other.bidsSent;
   if ((other.hist || []).length > (out.hist || []).length) { out.hist = other.hist; out.leaders = other.leaders; }
@@ -191,6 +192,7 @@ function mergeRows(rows) {
       if (k != null) at.set(k, out.length); out.push(r); continue;
     }
     { const o = out[at.get(k)]; if (!r.recog && o.recog) r.recog = o.recog; else if (r.recog && !o.recog) o.recog = r.recog; }   // RECOG keep the auto reading whichever CardComp copy logged it, removed by scripts/strip-recog.js
+    { const o = out[at.get(k)]; if (r.coupon == null && o.coupon != null) r.coupon = o.coupon; else if (o.coupon == null && r.coupon != null) o.coupon = r.coupon; }   // a coupon typed on either copy stays
     const i = at.get(k); if (richness(r) > richness(out[i])) out[i] = r;
   }
   return out;

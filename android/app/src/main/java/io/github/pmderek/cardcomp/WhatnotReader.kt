@@ -75,7 +75,7 @@ class WhatnotReader : AccessibilityService() {
     }
 
     /** auction words on screen, as a signature: a new one means a new state worth a dump */
-    private val AUCTION = Regex("""^(Sold|Custom|Submit (Max |Exact )?Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*)$""", RegexOption.IGNORE_CASE)
+    private val AUCTION = Regex("""^(Sold|Custom|Submit (Max |Exact )?Bid|Max Bid|Awaiting Next Item|Bid \$[0-9,]+.*|\$[0-9,]+|[0-9]{1,2}:[0-9]{2}|[0-9]+ Bids?|.* won!?|.* is winning!?|Won the auction!?|Set Max Bid.*|.*\b(coupons?|promo code|discount)\b.*)$""", RegexOption.IGNORE_CASE)   // coupon: dump the screen so its switch can be read (2026-10-31)
     private fun autoDump() {
         try {
             val texts = nodes().map { it.text }.filter { it.isNotEmpty() }
