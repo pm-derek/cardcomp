@@ -279,7 +279,7 @@
     // No lookup yet (Derek, 2026-10-29: "not every card's Chinese price; once I pick the card"): publish the candidates;
     // the phone shows their pictures to pick from, and the card picked (or opened on desktop) is looked up alone.
     a.zhAsk = { key: d.key, at: Date.now() }; a.zh = null;
-    window.ZH_LAST = { key: d.key, at: Date.now(), ids: cands.map((c) => c.id) }; window.dispatchEvent(new Event("cardcomp-zh"));
+    window.ZH_LAST = { key: d.key, at: Date.now(), ids: cands.map((c) => c.id), num: String(r.number || ""), total: String(r.total || "") }; window.dispatchEvent(new Event("cardcomp-zh"));   // num / total: Chinese titles naming another number are another card
   }
   function zhBadges(z) {
     if (!z || !z.hits) return;
@@ -297,7 +297,7 @@
     if (!a || !a.best) return;
     a.zh = res;
     zhBadges(res);
-    if (window.ZH_LAST && window.ZH_LAST.key === key) { window.ZH_LAST = { key, at: Date.now(), ids: res.ids || window.ZH_LAST.ids, res }; window.dispatchEvent(new Event("cardcomp-zh")); }
+    if (window.ZH_LAST && window.ZH_LAST.key === key) { window.ZH_LAST = Object.assign({}, window.ZH_LAST, { at: Date.now(), ids: res.ids || window.ZH_LAST.ids, res }); window.dispatchEvent(new Event("cardcomp-zh")); }
     const bd = a.best.d; if ((bd.capAt || bd.key) < LATEST) return;
     ZH_SHOWN = res;
     MSG = describe(a.best.m, a.best.r, bd) + '<div class="zhauto" style="margin-top:3px">' + window.zhHTML(res, { compact: true }) + "</div>";

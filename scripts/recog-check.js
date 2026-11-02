@@ -748,6 +748,11 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
   ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
     "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
+  // Chinese comps of another card number (Mimikyu VMAX 078/063, 2026-11-02: "cs4.5C 025/063" regular holos priced the full art)
+  const zn = await ap.evaluate(() => ({ a: zhNum("#CHINESE# Mimikyu VMAX cs4.5C 025/063 Holo Chinese Edition"), b: zhNum("Mimikyu VMAX Chinese"), tg: zhNum("Mimikyu VMAX TG17/TG30 chinese"),
+    s: zhSummary([{ p: 9.99, id: "twin" }, { p: 59.99, id: "own" }], "own").est, s3: zhSummary([{ p: 4, id: "own" }, { p: 14, id: "t" }, { p: 15, id: "t" }], "own").est }));
+  ok(zn.a && zn.a.n === "25" && zn.a.raw === "025/063" && !zn.b && zn.tg && zn.tg.n === "TG17" && zn.s === 59.99 && zn.s3 === 14.5,
+    "Chinese comps: a title's card number is read (025/063, TG17), two far-apart prices keep the opened card's own product ($59.99), three keep the median rule ($14.50)");
   // the bid sends without labeling the lot as the English card
   const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);
