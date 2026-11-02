@@ -1781,7 +1781,7 @@ function cpTitle(){ return WN_EXT ? "tap: this bid goes into Whatnot" : "tap to 
 let LAST_TAP=null;   // the card behind the last bid sent: joins the auction log to a card, and powers "over your $X" in the lot strip
 // card snapshot at bid time: data.json changes daily and cards drop below the floor, so the log carries its own copy
 function cardSnap(r, cond, printing, rowMkt, name){
-  const mkt=r?bestMarket(r):0; rowMkt=rowMkt>0?rowMkt:mkt;
+  const mkt=r?bestMarket(r):0; rowMkt=rowMkt>0?rowMkt:(r && cond==="NM" ? nmPrice(r, printing && r.px && r.px[printing] ? printing : undefined) : mkt);
   const pr=r&&printing&&r.px&&r.px[printing], sp=r?speedOf(r, rowMkt, cond):null;
   return { id:r?r.id:"", n:r?r.n:(name||""), s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
     cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
@@ -3075,16 +3075,13 @@ function condDetail(o){
   const warn=(tm>0 && Math.abs(atc/tm-1)>0.25) || (tm>0 && lo>0 && (lo/tm>2 || lo/tm<0.5));
   return `<span class="cdet${warn?" warn":""}">${warn?"⚠ ":""}${parts.join(" · ")}</span>`;
 }
-function condGridHTML(prices, key, mf, year, pid, card){
-  const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
-  pid=(pr&&pr.p)||pid;
-  // Cascade (Derek, 2026-10-20: "if I update LP, MP and below should change intuitively"): a verified condition sets
-  // a factor vs its usual share of NM, and the unverified conditions below it move by the same factor ("≈ from LP").
-  // An unverified condition is never priced above the one above it; verified prices are shown as read.
-  // A verified price above the condition above it is capped too (Charizard 30th CC: MP market $153.92 over LP $145.60,
-  // so MP bid more than LP): a thin or stale market for the worse condition never buys it for more ("≤LP" tag).
+// The price each condition is bid from (Derek, 2026-11-02: "break-even should be the price where I make $0 given all my
+// conditions, consistent by condition"). One source for the condition grid, the phone's condition buttons, and the
+// open card's top bid table / result tiles (which bid NM): TCGplayer's read for that condition when there is one,
+// else NM x the condition's usual share, with the cascade and caps below.
+function condPrices(base, key, year, pid){
   let anchor=null, prevP=Infinity, prevC="";
-  const rows=CONDS.map(cond=>{
+  return CONDS.map(cond=>{
     const lv=liveFor(pid, cond, base, key), tierP=base*condMult(cond, year, base);
     let atc, dv=null, cap=null, stale=null;
     // A lowest listing is an asking price, not a sale (Pikachu EX XY174: LP listed $29, LP market $18.53): it caps the
@@ -3097,6 +3094,24 @@ function condGridHTML(prices, key, mf, year, pid, card){
     const pre=atc, aboveC=prevC;
     if(atc>prevP) atc=prevP;
     prevP=atc; prevC=cond;
+    return {cond, lv, tierP, atc, dv, cap, stale, pre, aboveC};
+  });
+}
+// NM price of a card's printing (default: the top printing, what result tiles bid), the same number as its NM grid row
+function nmPrice(r, key){
+  key=key||topPrint(r); const v=r&&r.px&&r.px[key]; if(!v) return bestMarket(r);
+  const base=(v.m!=null?v.m:v.l)||0; if(!(base>0)) return 0;
+  const nm=condPrices(base, key, r.y, v.p||r.pid)[0]; return nm && nm.atc>0 ? nm.atc : base;
+}
+function condGridHTML(prices, key, mf, year, pid, card){
+  const pr=prices[key]; const base=(pr&&(pr.market??pr.mid))||0;
+  pid=(pr&&pr.p)||pid;
+  // Cascade (Derek, 2026-10-20: "if I update LP, MP and below should change intuitively"): a verified condition sets
+  // a factor vs its usual share of NM, and the unverified conditions below it move by the same factor ("≈ from LP").
+  // An unverified condition is never priced above the one above it; verified prices are shown as read.
+  // A verified price above the condition above it is capped too (Charizard 30th CC: MP market $153.92 over LP $145.60,
+  // so MP bid more than LP): a thin or stale market for the worse condition never buys it for more ("≤LP" tag).
+  const rows=condPrices(base, key, year, pid).map(({cond, lv, tierP, atc, dv, cap, stale, pre, aboveC})=>{
     const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), np=netProceeds(listSale(atc)), wb=wholeBid(bid, np), net=np-(wb>=1?wb:bid);   // each condition row: its own price and speed; sends / nets the whole-dollar bid
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
@@ -3185,7 +3200,7 @@ function renderPrices(host, data, prices, src){
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
     const yr=card?card.y:0;
-    const nm=base, sp=speedOf(card, nm, "NM"), bid=bidForMargin(nm, sp.margin);
+    const nm=card ? nmPrice(card, sel) : base, sp=speedOf(card, nm, "NM"), bid=bidForMargin(nm, sp.margin);   // the NM grid row's price, so this table's bids and b/e match the NM row
     const pbid=bidForProfit(nm, td);
     const tf=thinFlag(prices[sel]);
     const np=netProceeds(listSale(nm));
@@ -3881,7 +3896,7 @@ function render(res, literal, newestFirst){
   $("#status").textContent = res.length ? (res.length + " match" + (res.length>1?"es":"") + (literal?"  · no exact filter match — closest by name":"")) : "no matches — try fewer words, or just the Pokémon name";
   res.slice(0,16).forEach(r=>{
     const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
-    const best=bestMarket(r);
+    const best=nmPrice(r);   // NM of the top printing, same price as its NM grid row (verified read when there is one)
     const sp = best>0 ? speedOf(r, best, "NM") : null;
     const mb = best>0 ? bidForMargin(best, sp.margin) : null;
     const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
