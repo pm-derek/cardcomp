@@ -750,9 +750,12 @@ async function appPage(browser, base, blockRecog) {
     "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
   // Chinese comps of another card number (Mimikyu VMAX 078/063, 2026-11-02: "cs4.5C 025/063" regular holos priced the full art)
   const zn = await ap.evaluate(() => ({ a: zhNum("#CHINESE# Mimikyu VMAX cs4.5C 025/063 Holo Chinese Edition"), b: zhNum("Mimikyu VMAX Chinese"), tg: zhNum("Mimikyu VMAX TG17/TG30 chinese"),
-    s: zhSummary([{ p: 9.99, id: "twin" }, { p: 59.99, id: "own" }], "own").est, s3: zhSummary([{ p: 4, id: "own" }, { p: 14, id: "t" }, { p: 15, id: "t" }], "own").est }));
-  ok(zn.a && zn.a.n === "25" && zn.a.raw === "025/063" && !zn.b && zn.tg && zn.tg.n === "TG17" && zn.s === 59.99 && zn.s3 === 14.5,
-    "Chinese comps: a title's card number is read (025/063, TG17), two far-apart prices keep the opened card's own product ($59.99), three keep the median rule ($14.50)");
+    s: zhSummary([{ p: 9.99, id: "twin" }, { p: 59.99, id: "own" }], "own").est, s3: zhSummary([{ p: 4, id: "own" }, { p: 14, id: "t" }, { p: 15, id: "t" }], "own").est,
+    // read 078/063; the opened card is #69 (English), its twin #77 (Japanese): only another card of the same Chinese set goes
+    out: ["Mimikyu VMAX cs4.5C 025/063 Chinese", "Chinese Mimikyu VMAX 069/172", "Mimikyu VMAX 078/063 Chinese", "Chinese 077/184 Mimikyu", "Mimikyu TG17/TG30 chinese", "Chinese Mimikyu VMAX", "Chinese 69/063"]
+      .map((t) => zhOtherCard(zhNum(t), { n: "78", t: "63", own: new Set(["69", "77"]) })) }));
+  ok(zn.a && zn.a.n === "25" && zn.a.raw === "025/063" && !zn.b && zn.tg && zn.tg.n === "TG17" && zn.s === 59.99 && zn.s3 === 14.5 && JSON.stringify(zn.out) === JSON.stringify([true, false, false, false, false, false, false]),
+    "Chinese comps: only another card of the read card's Chinese set is left out (025/063 vs read 078/063); English / Japanese numbering (069/172, 077/184, TG17) stays in; two far-apart prices keep the opened card's own product ($59.99), three keep the median rule ($14.50)");
   // the bid sends without labeling the lot as the English card
   const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);

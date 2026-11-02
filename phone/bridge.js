@@ -952,7 +952,7 @@
         const pk = typeof zhPick === "function" ? zhPick(res) : null, est = pk && pk.use ? (pk.use === "sold" ? pk.sold.est : pk.list.est) : 0, b = est ? zhBidOf(est) : 0;
         // one line each (the pills below carry the averages): the prices they come from
         body = (pk && pk.sold ? `<div class="zl z1${pk.use === "sold" ? " on" : ""}"><b>sold</b> <small>${(pk.soldL || res.sold).slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese sale in the recent sales</small></div>`) +
-          (res.other && res.other.length ? `<div class="zl"><small>${res.other.length} left out: another card number (${esc([...new Set(res.other.map((o) => o.num))].slice(0, 3).join(", "))})</small></div>` : "") +
+          (res.other && res.other.length ? `<div class="zl"><small>${res.other.length} left out: another card of the same Chinese set (${esc([...new Set(res.other.map((o) => o.num))].slice(0, 3).join(", "))})</small></div>` : "") +
           (pk && pk.list ? `<div class="zl z1${pk.use === "listed" ? " on" : ""}"><b>listed</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese listing right now</small></div>`) +
           (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
       }

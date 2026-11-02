@@ -1899,19 +1899,25 @@ function tcgAggsOf(j){
   return {lang:vals("language"), type:vals("listingType")};
 }
 // The number the Chinese card was read with (Derek, 2026-11-02, Mimikyu VMAX 078/063: the comps were "cs4.5C 025/063",
-// a $5 regular holo from the same Chinese set, and they outvoted the real $59.99 copies). A title naming another number
-// is another card. Only when a reading gave the number: Chinese numbering differs from the English / Japanese card's.
+// a $5 regular holo from the same Chinese set, and they outvoted the real $59.99 copies). Chinese numbering often differs
+// from the English / Japanese card's (Derek: "card numbers in Chinese vary from JP and EN pretty commonly"), and sellers
+// title Chinese copies with either, so only one case is left out: a title with the read card's set total (/063) but
+// another card number (025), which is another card of the same Chinese set. Titles with any other total, or matching the
+// opened card's or its twin's own number, stay in. Only when a reading gave number and total.
 const zhNum=t=>{ const m=/(?:^|[^A-Za-z0-9])([A-Za-z]{0,3}\d{1,3})\s*\/\s*([A-Za-z]{0,3}\d{1,3})(?![0-9])/.exec(String(t||"")); return m?{n:m[1].toUpperCase().replace(/^([A-Z]*)0+(?=\d)/,"$1"), t:m[2], raw:m[1]+"/"+m[2]}:null; };
+const zhDepad=x=>String(x||"").toUpperCase().replace(/^([A-Z]*)0+(?=\d)/,"$1");
 function zhWant(cands){
-  const Z=window.ZH_LAST; if(!Z || !Z.num || Date.now()-Z.at>15*60e3 || !cands.some(c=>(Z.ids||[]).includes(c.id))) return null;
-  return String(Z.num).toUpperCase().replace(/^([A-Z]*)0+(?=\d)/,"$1");
+  const Z=window.ZH_LAST; if(!Z || !Z.num || !Z.total || Date.now()-Z.at>15*60e3 || !cands.some(c=>(Z.ids||[]).includes(c.id))) return null;
+  return { n:zhDepad(Z.num), t:zhDepad(Z.total), own:new Set(cands.map(c=>zhDepad(c.num)).filter(Boolean)) };
 }
+// another card of the read card's Chinese set: same total, another number, not the opened card's / twin's own number
+const zhOtherCard=(tn, want)=>!!(tn && want && zhDepad(tn.t)===want.t && tn.n!==want.n && !want.own.has(tn.n));
 async function zhLookup(cands){
   const t0=Date.now(), out={ok:true, hits:[], sold:[], checked:0, errs:[], dbg:[], ids:[], other:[]};
   cands=(cands||[]).filter(c=>c && /^\d+$/.test(String(c.pid||""))).slice(0,8);
   out.ids=cands.map(c=>c.id); out.lead=out.ids[0]||null;
   const want=zhWant(cands); out.want=want && (window.ZH_LAST.num+(window.ZH_LAST.total?"/"+window.ZH_LAST.total:""));
-  const otherNum=(title, p, kind, c)=>{ const tn=want && zhNum(title); if(!tn || tn.n===want) return false; out.other.push({kind, p, num:tn.raw, id:c.id, title:String(title).slice(0,80)}); return true; };
+  const otherNum=(title, p, kind, c)=>{ const tn=want && zhNum(title); if(!zhOtherCard(tn, want)) return false; out.other.push({kind, p, num:tn.raw, id:c.id, title:String(title).slice(0,80)}); return true; };
   const body=term=>({filters:{term:Object.assign({sellerStatus:"Live", channelId:0}, term), range:{quantity:{gte:1}}, exclude:{channelExclusion:0}},
     from:0, size:50, sort:{field:"price+shipping", order:"asc"}, context:{shippingCountry:"US", cart:{}}, aggregations:["listingType","language"]});
   await Promise.all(cands.map(async c=>{
@@ -2027,7 +2033,7 @@ function zhHTML(res, opt){
   const prods=new Set(res.hits.concat(res.sold).map(x=>x.pid)).size;
   h+=`<div style="color:var(--faint)">${res.sold.length} sold · ${res.hits.length} listed · on ${prods} of ${res.checked} products (English + Japanese) · listings are asks</div>`;
   if(res.other && res.other.length){ const nums=[...new Set(res.other.map(o=>o.num))];
-    h+=`<div style="color:var(--faint)" title="${escH(res.other.slice(0,8).map(o=>o.kind+" $"+o.p+" "+o.title).join("\n"))}">${res.other.length} left out: another card number (${escH(nums.slice(0,3).join(", "))}${nums.length>3?", ...":""}), read ${escH(res.want||"")}</div>`; }
+    h+=`<div style="color:var(--faint)" title="${escH(res.other.slice(0,8).map(o=>o.kind+" $"+o.p+" "+o.title).join("\n"))}">${res.other.length} left out: another card of the same Chinese set (${escH(nums.slice(0,3).join(", "))}${nums.length>3?", ...":""}), read ${escH(res.want||"")}</div>`; }
   const name=c=>{ const x=BY_ID.get(c); return x ? `${escH(x.s)}${x.lang==="jp"?" JP":""} #${escH(x.num)}` : ""; };
   const row=(x, sold)=>`<div style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sold?"sold ":""}<a href="https://www.tcgplayer.com/product/${escH(x.pid)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none">${zhMoney(x.p)}</a>${sold?" "+day(x.at):x.ship?` +${zhMoney(x.ship)}`:""} ${escH(x.cond)} · ${escH(x.title)} <span style="color:var(--faint)">· ${name(x.id)}</span></div>`;
   const n=opt.rows!=null?opt.rows:3;
