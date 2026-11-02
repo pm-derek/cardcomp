@@ -2030,6 +2030,7 @@ function zhHTML(res, opt){
   else h+=`<div style="color:var(--faint)">no Chinese sale in the recent sales of these products</div>`;
   if(pk.list) h+=line("listed", pk.list, pk.list.all.length===1?"listing":"lowest", pk.list.all.map(zhMoney).join(" · "));
   else h+=`<div style="color:var(--faint)">no listing says Chinese right now</div>`;
+  h+=zhRefHTML(res, est);
   const prods=new Set(res.hits.concat(res.sold).map(x=>x.pid)).size;
   h+=`<div style="color:var(--faint)">${res.sold.length} sold · ${res.hits.length} listed · on ${prods} of ${res.checked} products (English + Japanese) · listings are asks</div>`;
   if(res.other && res.other.length){ const nums=[...new Set(res.other.map(o=>o.num))];
@@ -2060,7 +2061,23 @@ async function zhForCard(card, el){
   ZH_CACHE.set(card.id, {res, at:Date.now()});
   if(el.isConnected){ el.innerHTML=zhHTML(res); zhWire(el, res); }
 }
-window.zhLookup=zhLookup; window.zhCands=zhCands; window.zhHTML=zhHTML; window.zhWire=zhWire; window.zhSummary=zhSummary; window.zhPick=zhPick;
+// English and Japanese market beside the Chinese price (Derek, 2026-11-02: "show mkt for JP and EN when showing CN, so I
+// can catch CN priced higher than JP, a signal the CN price is wrong"): the looked-up card and its other-language twin
+// (res.ids, lead first), each at its top printing's market. CN above JP (or above EN when there is no JP) turns the line red.
+function zhRefs(res){
+  const out={en:null, jp:null};
+  for(const id of (res && res.ids)||[]){ const c=BY_ID.get(id); if(!c) continue; const k=(c.lang||"en")==="jp"?"jp":"en";
+    if(!out[k]){ const m=typeof bestMarket==="function"?bestMarket(c):0; if(m>0) out[k]={id, n:c.n, s:c.s, num:c.num, m}; } }
+  return out;
+}
+function zhRefHTML(res, est, tag){
+  const R=zhRefs(res); if(!R.en && !R.jp) return "";
+  const ref=R.jp||R.en, hi=est>0 && ref && est>ref.m;
+  const one=(k,x)=>x?`${k} <b>${zhMoney(x.m)}</b>`:"";
+  return `<${tag||"div"} class="zhref" title="${escH([R.en&&"EN "+R.en.s+" #"+R.en.num, R.jp&&"JP "+R.jp.s+" #"+R.jp.num].filter(Boolean).join(" · "))}" style="color:${hi?"var(--red)":"var(--dim)"}">`+
+    [one("EN",R.en), one("JP",R.jp)].filter(Boolean).join(" · ")+(hi?` · ⚠ CN ${zhMoney(est)} above ${R.jp?"JP":"EN"}: check the comps`:"")+`</${tag||"div"}>`;
+}
+window.zhLookup=zhLookup; window.zhCands=zhCands; window.zhHTML=zhHTML; window.zhWire=zhWire; window.zhSummary=zhSummary; window.zhPick=zhPick; window.zhRefHTML=zhRefHTML;
 // Fast read reply: apply every condition that came back; on failure the page read (already loading) takes over.
 let FAST_REQ=null, FAST_DEBUG="";
 const FAST_AT={};   // live key -> when a fast read landed; page reads of that key are ignored for 2 min

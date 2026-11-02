@@ -756,6 +756,12 @@ async function appPage(browser, base, blockRecog) {
       .map((t) => zhOtherCard(zhNum(t), { n: "78", t: "63", own: new Set(["69", "77"]) })) }));
   ok(zn.a && zn.a.n === "25" && zn.a.raw === "025/063" && !zn.b && zn.tg && zn.tg.n === "TG17" && zn.s === 59.99 && zn.s3 === 14.5 && JSON.stringify(zn.out) === JSON.stringify([true, false, false, false, false, false, false]),
     "Chinese comps: only another card of the read card's Chinese set is left out (025/063 vs read 078/063); English / Japanese numbering (069/172, 077/184, TG17) stays in; two far-apart prices keep the opened card's own product ($59.99), three keep the median rule ($14.50)");
+  // EN / JP market beside the Chinese price; CN above JP turns it red (Derek, 2026-11-02)
+  const zr = await ap.evaluate(() => { const en = CARDS.find((c) => c.id === "sv8-238"), jp = CARDS.find((c) => c.lang === "jp" && c.n === "Pikachu ex 132 106"), res = { ids: [en.id, jp.id] };
+    const d = document.createElement("div"); d.innerHTML = zhRefHTML(res, 1) + "|" + zhRefHTML(res, 1e5);
+    const [lo, hi] = d.querySelectorAll(".zhref"); return { lo: lo.textContent, loRed: lo.style.color, hi: hi.textContent, hiRed: hi.style.color }; });
+  ok(/^EN \$[\d.]+ · JP \$[\d.]+$/.test(zr.lo) && !/red/.test(zr.loRed) && /above JP: check the comps/.test(zr.hi) && /red/.test(zr.hiRed),
+    "Chinese price shows the English and Japanese market (" + zr.lo + "); CN above JP turns it red with a warning");
   // the bid sends without labeling the lot as the English card
   const tap0 = await ap.evaluate(() => JSON.stringify(LAST_TAP));
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);

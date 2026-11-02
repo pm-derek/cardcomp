@@ -954,7 +954,8 @@
         body = (pk && pk.sold ? `<div class="zl z1${pk.use === "sold" ? " on" : ""}"><b>sold</b> <small>${(pk.soldL || res.sold).slice(0, 3).map((x) => `${zm(x.p)} ${day(x.at)}`).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese sale in the recent sales</small></div>`) +
           (res.other && res.other.length ? `<div class="zl"><small>${res.other.length} left out: another card of the same Chinese set (${esc([...new Set(res.other.map((o) => o.num))].slice(0, 3).join(", "))})</small></div>` : "") +
           (pk && pk.list ? `<div class="zl z1${pk.use === "listed" ? " on" : ""}"><b>listed</b> <small>${pk.list.all.map(zm).join(" · ")}</small></div>` : `<div class="zl z1"><small>no Chinese listing right now</small></div>`) +
-          (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`);
+          (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`) +
+          (typeof zhRefHTML === "function" ? `<div class="zl">${zhRefHTML(res, est, "small")}</div>` : "");   // EN / JP market: CN above JP means the CN comps are off
       }
       html = `<div class="pc"><div class="pimg" data-t="zhback">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
         `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
