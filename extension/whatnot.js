@@ -139,7 +139,7 @@ function fill(el, p) {
 }
 
 let toastEl = null, toastTimer = null;
-function toast(msg, kind) {
+function toast(msg, kind, sticky) {
   if (!toastEl) {
     toastEl = document.createElement("div");
     toastEl.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 14px;border-radius:8px;" +
@@ -150,7 +150,7 @@ function toast(msg, kind) {
   toastEl.style.background = kind === "ok" ? "#5fd6a0" : kind === "bad" ? "#ff6b6b" : "#f5b301";
   toastEl.style.display = "block";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, kind === "wait" ? 8000 : 3500);
+  if (!sticky) toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, kind === "wait" ? 8000 : 3500);
 }
 
 // ---- Lot reader: what the auction on screen is doing, sent to CardComp whenever it changes ----
@@ -178,11 +178,16 @@ function roomSnapshot() { const cut = Date.now() - 30 * 60000, now = Date.now();
 // Chat panel (side list in the wide layout, overlay on the video in the narrow one): rows are
 // [avatar letter?] "primo_512" + "joined 👋", or "bigben1171" + "Any mega IRs?". Rooted at the "Say something" box.
 const chatSeen = new WeakSet();
-function readChat() {
-  const box = document.querySelector('input[placeholder^="Say something" i],textarea[placeholder^="Say something" i]');
-  if (!box) return;
+function chatRootEl() {
+  const box = document.querySelector('[data-testid="chat-input"],input[placeholder^="Say something" i],textarea[placeholder^="Say something" i]');
+  if (!box || !box.parentElement) return null;
   let root = box.parentElement;
   for (let i = 0; i < 6 && root.parentElement; i++) { if (root.querySelectorAll("*").length > 60) break; root = root.parentElement; }
+  return root;
+}
+function readChat() {
+  const root = chatRootEl();
+  if (!root) return;
   const ls = leaves(root);
   for (let i = 0; i + 1 < ls.length; i++) {
     const u = ls[i].textContent.trim(), next = ls[i + 1].textContent.trim();
@@ -206,6 +211,14 @@ function ownTexts(root) {
 }
 const NOT_NAME = /^(entries|giveaway|follow|following|custom|chat|watching|shop|bid|bids|sold|winning|won|joined|pre-bid|products)$/i;
 const userLike = (s) => /^[A-Za-z0-9_.-]{2,32}$/.test(s || "") && /[A-Za-z]/.test(s) && !NOT_NAME.test(s);   // Whatnot usernames: no spaces, has a letter
+// A winner read off the page: 3+ characters and not a chat word. Chat lines like "I won!", "It won lol", "Finally won one"
+// once ended lots within a second of starting (0 bids) and named "I" x5, "It", "Finally" as winners (log 2026-10-16 / 10-30).
+const NOT_WINNER = /^(i|it|we|he|she|they|you|me|my|who|someone|somebody|nobody|everyone|finally|just|already|never|also|still|and|but|so|lol|omg|yay|yes|no|nice|wow|bro|dude|guess|almost|actually|totally)$/i;
+const winnerLike = (s) => userLike(s) && s.length >= 3 && !NOT_WINNER.test(s);
+// Giveaway screens replace the lot (title "Selecting Winner" / "Giveaway Winner" + "won the giveaway!" /
+// "Randomizing spot for X..."): never a lot, never a lot end, and "X won the giveaway!" is no sale.
+const GIVEAWAY_RX = /^(selecting winner|giveaway winner|randomizing spot\b)|won the giveaway/i;
+const GIVEAWAY_TXT = /giveaway|randomizing spot|selecting winner/i;
 // two text elements belong together ("garrubia" + "is Winning!") only if they share an ancestor within 4 levels;
 // otherwise the giveaway widget's "27 Entries" once became a winner
 const near = (a, b) => { for (let x = a, i = 0; i < 4 && x; i++, x = x.parentElement) if (x.contains(b)) return true; return false; };
@@ -233,6 +246,16 @@ let ME = "";   // Derek's Whatnot username (extension Options), so "derek won!" 
 try { chrome.storage.local.get("wnUser", (r) => { ME = String((r && r.wnUser) || "").trim().toLowerCase(); }); } catch (_) {}
 const isMe = (u) => !!ME && String(u || "").trim().toLowerCase() === ME;
 const COND_TXT = { "near mint": "NM", "lightly played": "LP", "moderately played": "MP", "heavily played": "HP", "damaged": "DMG" };
+// Condition by its first word, as on the phone (2026-10-31 audit: "Light Played" on 79 desktop lots was blank and priced as NM)
+const COND_WORD = { light: "LP", lightly: "LP", moderate: "MP", moderately: "MP", heavy: "HP", heavily: "HP", damaged: "DMG" };
+function condOf(sub) {
+  const s = (String(sub || "").split(/[·∙•|]/)[0] || "").trim().toLowerCase();
+  if (COND_TXT[s]) return COND_TXT[s];
+  const w = s.split(/\s+/);
+  if (w.length > 3) return "";   // a description, not a condition
+  if (w[0] === "near" && w[1] === "mint") return "NM";
+  return COND_WORD[w[0]] || "";
+}
 let lastRow = null;   // the lot row the reader used last, for the "copy debug" snapshot
 // "copy debug" in CardComp's strip: the lot row's HTML (two levels up, scripts / images / svg paths stripped) and
 // the text the reader saw, so a layout the reader misses can be fixed from a paste instead of a guess.
@@ -292,21 +315,33 @@ function readLot() {
     const nx = tEl.nextElementSibling, sub = nx && nx.textContent.replace(/\s+/g, " ").trim();
     if (sub && !LOT_RX.bids.test(sub)) st.sub = sub.slice(0, 119);
   }   // title, then the seller's condition / category line
-  st.cond = COND_TXT[(st.sub.split(/[·∙•|]/)[0] || "").trim().toLowerCase()] || "";   // "Near Mint ∙ Card" uses U+2219
+  st.cond = condOf(st.sub);   // "Near Mint ∙ Card" uses U+2219, "Light Played • Card"
+  // Giveaway screen in the lot's place: lotTick leaves the lot alone while it shows
+  st.giveawayScreen = GIVEAWAY_RX.test(st.title) || GIVEAWAY_RX.test(st.sub);
+  // Chat (Whatnot's chat-message rows, or the list around the "Say something" box) never says who won or leads:
+  // only joins are read from it. The chat root is ignored if it holds the lot card or the video (the climb went too far).
+  const cRoot = chatRootEl();
+  const cRootOK = !!cRoot && !(card && cRoot.contains(card)) && !(bidsEl && cRoot.contains(bidsEl)) && !cRoot.querySelector("video");
+  const inChat = (el) => !!el.closest('[data-testid="chat-message"]') || (cRootOK && cRoot.contains(el));
   let wonBy = "", meWon = false, wonUser = "";
   for (let i = 0; i < all.length; i++) {
     const t = all[i].t; let m;
-    const prev = i > 0 && near(all[i].el, all[i - 1].el) ? all[i - 1].t : "";   // the name must sit right beside "is Winning!" / "won!"
+    if (inChat(all[i].el) || GIVEAWAY_TXT.test(t)) {   // chat / giveaway text: joins and entry counts only
+      if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i].el)) { chatSeen.add(all[i].el); seen(m[1], "joins"); } }
+      else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
+      continue;
+    }
+    const prev = i > 0 && near(all[i].el, all[i - 1].el) && !inChat(all[i - 1].el) ? all[i - 1].t : "";   // the name must sit right beside "is Winning!" / "won!"
     if (LOT_RX.me.test(t)) st.me = true;
     else if ((m = LOT_RX.win.exec(t))) st.lead = m[1];
     else if (LOT_RX.winTail.test(t) && userLike(prev)) st.lead = prev;
     else if (/^winning!?$/i.test(t) && (m = /^(\S+)\s+is$/i.exec(prev)) && userLike(m[1])) st.lead = m[1];   // zenzoogie: "samiam1271 is" + "Winning!"
-    else if (/^won!?$/i.test(t) && userLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
+    else if (/^won!?$/i.test(t) && winnerLike(prev)) { wonBy = prev; wonUser = prev; }   // "daybreakfm" + "won!"
     else if (/^awaiting next item$/i.test(t)) st.waiting = true;
     else if ((m = /^max bid added:?\s*\$([\d,]+)/i.exec(t))) st.placedMax = +m[1].replace(/,/g, "");   // what Derek actually set, even if he edited the box by hand
     else if ((m = LOT_RX.next.exec(t)) && all[i].el.closest("button,[role=button]")) st.next = parseFloat(m[1].replace(/,/g, ""));
     else if (LOT_RX.meWon.test(t)) { meWon = true; st.me = true; }           // "You won" popup in the middle of the video
-    else if ((m = LOT_RX.sold.exec(t))) wonBy = wonBy || m[1] || m[2];      // "Sold to X", "darks_tcg won the auction!"
+    else if ((m = LOT_RX.sold.exec(t))) { if (winnerLike(m[1] || m[2])) wonBy = wonBy || m[1] || m[2]; }   // "Sold to X", "darks_tcg won the auction!"
     else if ((m = LOT_RX.joined.exec(t)) && userLike(m[1])) { if (!chatSeen.has(all[i].el)) { chatSeen.add(all[i].el); seen(m[1], "joins"); } }   // one-leaf "X joined" variant
     else if ((m = LOT_RX.giveaway.exec(t))) st.giveaway = +m[1];
     else if (/^entries$/i.test(t) && /^\d{1,6}$/.test(prev)) st.giveaway = +prev;   // "27" + "Entries"
@@ -316,14 +351,35 @@ function readLot() {
   }
   if (isMe(st.lead)) st.me = true;
   // "You won" in the middle + "rewired won!" bottom left on the same screen: rewired is Derek. Learn it
-  // once, so later wins and "rewired is Winning!" count as his even when the popup is gone.
-  if (meWon && wonUser && !ME) { ME = wonUser.toLowerCase(); try { chrome.storage.local.set({ wnUser: wonUser }); } catch (_) {} }
+  // once, so later wins and "rewired is Winning!" count as his even when the popup is gone. Only when that name led
+  // this lot: a stranger's "X won!" next to a "You won" must never become Derek.
+  if (meWon && wonUser && !ME && lot && (lot.leaders.has(wonUser) || lot.lastLead === wonUser || st.lead === wonUser)) { ME = wonUser.toLowerCase(); try { chrome.storage.local.set({ wnUser: wonUser }); } catch (_) {} }
   if (meWon) wonBy = "me";
   if (wonBy || st.ended) { st.ended = true; st.sold = (wonBy && wonBy !== "me" && isMe(wonBy)) ? "me" : (wonBy || "?"); if (st.sold === "me") st.me = true; }
   return st;
 }
 let lotLast = "", lot = null;   // lot: {title, leaders:Set, startedAt, ended}
-function sendApp(msg) { try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); } catch (_) {} }
+// After the extension is reloaded or updated, this copy of the script is orphaned: every send throws "Extension
+// context invalidated" and logging stops without a word. Say so once in the Whatnot tab and stop reading.
+let orphan = false;
+function orphaned() {
+  if (orphan) return true;
+  let gone = false; try { gone = !chrome.runtime || !chrome.runtime.id; } catch (_) { gone = true; }
+  if (gone) markOrphan();
+  return orphan;
+}
+function markOrphan() {
+  if (orphan) return;
+  orphan = true;
+  try { lotObserver.disconnect(); } catch (_) {}
+  try { clearInterval(lotIv); } catch (_) {}
+  toast("CardComp extension updated: reload this tab to keep logging", "bad", true);
+}
+function sendApp(msg) {
+  if (orphaned()) return;
+  try { chrome.runtime.sendMessage(msg, () => chrome.runtime.lastError); }
+  catch (e) { if (/context invalidated/i.test((e && e.message) || "") || orphaned()) markOrphan(); }
+}
 function endLot(st) {
   if (!lot || lot.ended) return;
   lot.ended = true;
@@ -343,6 +399,7 @@ const secs = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? 
 function lotTick() {
   try { readChat(); } catch (_) {}
   let st; try { st = readLot(); } catch (_) { return; }
+  if (st.giveawayScreen) return;   // a giveaway in the lot's place: no new lot, no lot end, nothing sent (the app would read "Sold")
   // A new lot starts when the title changes, or, for sellers who reuse one title ("$2 start") lot after
   // lot, when the bid count drops back (a new lot starts at 0) or the timer jumps back up after a sale.
   const tSec = secs(st.timer);
@@ -389,11 +446,12 @@ let lotLastState = null;
 // mutation callbacks still fire, so a muted stream in another tab keeps reporting.
 let lotBusy = false, lotQueued = false, lotLastRun = 0;
 function lotRun() {
+  if (orphaned()) return;
   if (lotBusy) { lotQueued = true; return; }
   lotBusy = true; lotLastRun = Date.now();
   try { lotTick(); } finally { lotBusy = false; }
   if (lotQueued) { lotQueued = false; setTimeout(lotRun, 250); }
 }
-new MutationObserver(() => { if (Date.now() - lotLastRun > 300) lotRun(); else { lotQueued = true; if (!lotBusy) setTimeout(lotRun, 300); } })
-  .observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-setInterval(lotRun, 2000);   // timer fallback for the foreground tab (the timer, not the observer, counts the clock down)
+const lotObserver = new MutationObserver(() => { if (Date.now() - lotLastRun > 300) lotRun(); else { lotQueued = true; if (!lotBusy) setTimeout(lotRun, 300); } });
+lotObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+const lotIv = setInterval(lotRun, 2000);   // timer fallback for the foreground tab (the timer, not the observer, counts the clock down)
