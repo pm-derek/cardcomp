@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.11";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.12";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -629,7 +629,9 @@
     "body.ph-typing #phonestat{display:none}body.ph-typing #read,body.ph-typing #status,body.ph-typing #autoline{display:none!important}" +
     "#phonecard{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)}" +
     "#phonebar .pc{display:flex;gap:8px;align-items:flex-start;padding:3px 0 2px}" +
-    "#phonebar .pimg{flex:none;width:78px;height:109px;border-radius:5px;overflow:hidden;background:var(--panel2);cursor:pointer}" +
+    "#phonebar .pimg{flex:none;width:78px;height:109px;border-radius:5px;overflow:hidden;background:var(--panel2)}" +
+    "#phonebar .pimg img,#phonebar .pkim img{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none}" +
+    "#phonepeek{padding:2px 0 8px}#phonepeek img{display:block;width:100%;max-width:360px;margin:0 auto;aspect-ratio:63/88;object-fit:contain;border-radius:10px;background:var(--panel2)}" +
     "#phonebar .pimg img{width:100%;height:100%;object-fit:contain;display:block}" +
     "#phonebar .pmain{flex:1;min-width:0}" +
     "#phonebar .pn{cursor:pointer;line-height:1.15}" +
@@ -738,6 +740,27 @@
       if (!wrapEl.classList.contains("reading") || wrapEl.classList.contains("partial") || !e.target.closest("#phonebar")) return;
       e.preventDefault(); e.stopPropagation(); P.stillReading();
     }, true);
+    // hold a card picture to see it large, let go to hide it (Derek, 2026-11-04: "holding on the card image zooms it so
+    // we can compare cards"): the small card's picture and every picture in the "Which card?" pickers. A hold never
+    // picks or opens; a quick tap does what it did (picker: picks; small card's picture: nothing)
+    let peekT = 0, peeked = false, peekXY = null, peekEl = null;
+    const hiRes = (u) => String(u).replace(/_200w\.jpg/, "_400w.jpg").replace(/(images\.pokemontcg\.io\/[^?]*?)(_hires)?\.png/, "$1_hires.png");
+    const peekHide = () => { clearTimeout(peekT); if (peekEl) { peekEl.remove(); peekEl = null; sizeSoon(); } };
+    wrapEl.addEventListener("pointerdown", (e) => {
+      const t = e.target.closest(".pimg, .pkim"), im = t && t.querySelector("img"); if (!im || !im.getAttribute("src")) return;
+      peeked = false; peekXY = [e.clientX, e.clientY]; clearTimeout(peekT);
+      peekT = setTimeout(() => {
+        peeked = true; const src = im.getAttribute("src");
+        peekEl = document.createElement("div"); peekEl.id = "phonepeek"; peekEl.innerHTML = '<img alt="">';
+        const big = peekEl.querySelector("img"); big.onerror = () => { if (big.getAttribute("src") !== src) big.src = src; }; big.src = hiRes(src);
+        wrapEl.insertBefore(peekEl, wrapEl.firstChild); sizeSoon();
+        try { navigator.vibrate && navigator.vibrate(12); } catch (_) {}
+      }, 320);
+    });
+    wrapEl.addEventListener("pointermove", (e) => { if (!peekEl && peekXY && Math.hypot(e.clientX - peekXY[0], e.clientY - peekXY[1]) > 12) clearTimeout(peekT); });   // a swipe through the picker is not a hold
+    ["pointerup", "pointercancel"].forEach((ev) => wrapEl.addEventListener(ev, () => { peekXY = null; peekHide(); }));
+    wrapEl.addEventListener("click", (e) => { if (peeked) { peeked = false; e.preventDefault(); e.stopPropagation(); } }, true);
+    wrapEl.addEventListener("contextmenu", (e) => { if (e.target.closest(".pimg, .pkim")) e.preventDefault(); });
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
       setMode("list");
@@ -878,9 +901,9 @@
     const fo = fpid && FAST_OK[fpid], live = fo ? (fo.ok ? '<i class="ok" title="every condition read from TCGplayer">TCG</i>' : '<i class="no" title="TCGplayer read failed: usual condition shares">TCG</i>') : fpid && FAST_AUTO[Object.keys(FAST_AUTO).find((k) => k.startsWith(fpid + "|")) || ""] ? '<i class="wt" title="reading every condition on TCGplayer">TCG</i>' : "";
     const html =
       `<div class="pc">` +
-        `<div class="pimg" data-t="open">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
+        `<div class="pimg" title="hold to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
-          `<div class="pn" data-t="open"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` +
+          `<div class="pn"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` +
           `<div class="ph">` +
             (n > 1 && i >= 0 ? `<span class="st" data-t="prev">&#8249;</span><span class="sn">${i + 1}/${n}</span><span class="st" data-t="next">&#8250;</span>` : "") +
             `<span class="tg">${live || (tag ? `<i>${esc({ "best guess": "guess", "picture": "pic", "auto + picture": "pic ✓" }[tag] || tag)}</i>` : "")}</span>` +
@@ -961,7 +984,7 @@
           (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`) +
           (typeof zhRefHTML === "function" ? `<div class="zl">${zhRefHTML(res, est, "small")}</div>` : "");   // EN / JP market: CN above JP means the CN comps are off
       }
-      html = `<div class="pc"><div class="pimg" data-t="zhback">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
+      html = `<div class="pc"><div class="pimg" title="hold to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
         `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
         `<div class="ph"><span class="st" data-t="zhback" title="back to the cards">&#8801;</span><span class="tg">${res && res.ok ? `${res.sold.length} sold · ${res.hits.length} listed` : ""}</span>${tools}</div>` +
         body + `</div></div>`;
@@ -1007,7 +1030,8 @@
   }
   function wire(el, card) {
     const on = (t, f) => el.querySelectorAll(`[data-t="${t}"]`).forEach((x) => { x.onclick = (e) => { e.preventDefault(); e.stopPropagation(); f(x); }; });
-    on("open", () => { if (MODE !== "card") { setMode("card"); return; } OPENED = null; setMode("list"); });   // keep it open: Derek wants the full grid
+    // the picture and name no longer open the full view (Derek, 2026-11-04: "I tap the card to confirm which card it is
+    // and it expands"): 🔍 opens it; holding a picture shows it large (peek, in wrap())
     on("print", (x) => {   // the printing chip: picks that printing in the open card; the grid, pills and fast read follow
       touched();
       const c = card && Array.from(card.querySelectorAll(".pchips .pchip")).find((p) => p.dataset.k === x.dataset.k);
