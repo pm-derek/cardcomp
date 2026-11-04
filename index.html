@@ -1785,7 +1785,8 @@ function cardSnap(r, cond, printing, rowMkt, name){
   const pr=r&&printing&&r.px&&r.px[printing], sp=r?speedOf(r, rowMkt, cond):null;
   return { id:r?r.id:"", n:r?r.n:(name||""), s:r?r.s:"", c:r?r.c:"", num:r?r.num:"", r:r?r.r:"", y:r?r.y:0, lang:r?(r.lang||"en"):"", game:r?(r.game||"pkmn"):"", sealed:!!(r&&r.sealed),
     cond, printing:printing||"", market:mkt, condMarket:rowMkt, low:pr?pr.l:null, tier:sp?sp.tier:"", margin:sp?sp.margin:null, thin:pr?thinFlag({market:(pr.m!=null?pr.m:pr.l), low:pr.l}):"",
-    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0, printing) };
+    d30:r?r.d30:null, live:!!liveFor(((pr&&pr.p)||(r&&r.pid)), cond, (pr&&(pr.m!=null?pr.m:pr.l))||0, printing),
+    pid:String((pr&&pr.p)||(r&&r.pid)||"") };   // pid: the printing's own TCGplayer product, for the purchases export (SKU join in the Pull Sheet)
 }
 let LAST_VIEW=null;   // last card opened {id, at, el}: labels a lot Derek only looked at (data collection, no bid)
 function sendToWhatnot(s, el, show, labelOnly){
@@ -2293,7 +2294,8 @@ function lotRow(rec){
       n:c?(c.n||""):"", c:c?(c.cond||""):"", lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null, nm:c&&!multi&&c.market>0?+(+c.market).toFixed(2):null,   // nm: the card's NM market when bought (top printing), for "worth today"
       id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
-      t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"", cp:rec.coupon>0?+rec.coupon:0 };   // cp: coupon on your win   // t / src: the same lot from the phone and this browser is one lot
+      t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"", cp:rec.coupon>0?+rec.coupon:0,
+      nu:c&&!multi?(c.num||""):"", se:c&&!multi?(c.s||""):"", pid:c&&!multi?(c.pid||""):"", la:c&&!multi?(c.lang||""):"", mu:multi?c.cards.length:0 };   // purchases export   // cp: coupon on your win   // t / src: the same lot from the phone and this browser is one lot
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2593,7 +2595,7 @@ function paintDash(){
   const head=`<div class="dh"><b class="t">Dashboard</b>
     <span class="dchips">${per.map(([k,l])=>`<span data-per="${k}" class="${DASH.per===k?"on":""}">${l}</span>`).join("")}</span>
     ${DASH.seller?`<span class="dsel" data-clr="1" title="show every seller">${escH(DASH.seller)} ✕</span>`:""}
-    <span class="dx">${window.parent!==window?`<a href="./#dash" target="_blank" rel="noopener">new tab ↗</a>`:""}<button class="dclose" title="close (Esc)">✕</button></span></div>`;
+    <span class="dx"><button class="dexp" title="every win as a CSV for the Pull Sheet (costs by SKU)">export purchases</button>${window.parent!==window?`<a href="./#dash" target="_blank" rel="noopener">new tab ↗</a>`:""}<button class="dclose" title="close (Esc)">✕</button></span></div>`;
   if(!rows.length){
     el.innerHTML=`<div class="dw">${head}<div class="empty">No lots ${DASH.per==="1"?"today":"in this period"}${DASH.seller?" for "+escH(DASH.seller):""}.<br>Lots are logged on desktop while a Whatnot tab is open with the extension.${sellers.length?"":"<br>This device has none yet."}</div></div>`;
     dashWire(el); return;
@@ -2746,12 +2748,74 @@ function dashWire(el){
   el.querySelectorAll("tr[data-s]").forEach(t=>t.onclick=()=>{ DASH.seller=t.dataset.s; paintDash(); el.scrollTop=0; });
   const c=el.querySelector("[data-clr]"); if(c) c.onclick=()=>{ DASH.seller=""; paintDash(); };
   const x=el.querySelector(".dclose"); if(x) x.onclick=()=>dashOpen(false);
+  const ex=el.querySelector(".dexp"); if(ex) ex.onclick=()=>exportPurchases(ex);
   el.querySelectorAll(".dadd").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) pickFor(r, "dash"); });
   const aw=el.querySelector(".dallw"); if(aw) aw.onclick=()=>{ DASH.allWins=true; paintDash(); };
   el.querySelectorAll(".dcond").forEach(sl=>sl.onchange=()=>{ const r=loadLots().find(x=>x.k===sl.dataset.k); if(r && sl.value) setLotCond(r, sl.value); });
   el.querySelectorAll(".dcp").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r) askCoupon(r); });
   el.querySelectorAll(".dclr").forEach(b=>b.onclick=()=>{ const r=loadLots().find(x=>x.k===b.dataset.k); if(r && confirm(`Remove ${r.n||"the card"} from your $${r.f} win?`)) clearLotCard(r); });
 }
+// ---- Purchases export (Derek, 2026-11-03: "drop CardComp costs into my Pull Sheet's Locations tab") ----
+// Every win as one CSV row: cost (price - coupon), shipping share, date, seller, the card, and its TCGplayer SKUs.
+// TCGCSV has product ids but no SKUs; the extension asks TCGplayer's product details for them (the same request the
+// fast read makes), so the Pull Sheet can join on SKU. All conditions of the printing are listed ("NM:123 LP:124"):
+// a card bought as NM and listed as LP still joins exactly, and a different printing never does. SKUs are cached per
+// product in localStorage (they never change). No extension (phone): the export still works, SKU columns empty.
+const SKU_KEY="cardcomp_skus", SKU_WAIT=new Map(); let SKU_SEQ=0;
+function skuCache(){ try{ return JSON.parse(localStorage.getItem(SKU_KEY)||"{}")||{}; }catch(_){ return {}; } }
+function skuFetch(pids){   // -> {pid: [{s:sku, c:"NM", p:"Holofoil"}]}
+  if(!WN_EXT || !pids.length) return Promise.resolve({});
+  return new Promise(res=>{
+    const req=(++SKU_SEQ)+"-"+Date.now(), t=setTimeout(()=>{ SKU_WAIT.delete(req); res({}); }, 20000+pids.length*400);
+    SKU_WAIT.set(req, d=>{ clearTimeout(t); res((d && d.skus) || {}); });
+    extPost({type:"cardcomp-tcg-skus", req, pids});
+  });
+}
+window.addEventListener("message", e=>{
+  const d=e.data; if(!d || d.type!=="cardcomp-tcg-skus-ack") return;
+  const f=SKU_WAIT.get(d.req); if(f){ SKU_WAIT.delete(d.req); f(d); }
+});
+const skuPrint=p=>String(p||"").replace(/^(Shadowless|Master Ball|Pok[eé] Ball) /,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+function skusFor(list, printing){   // this printing's SKUs; blank printing only when the product has one printing
+  if(!Array.isArray(list) || !list.length) return [];
+  const want=skuPrint(printing), prints=[...new Set(list.map(x=>skuPrint(x.p)))];
+  const key=want && prints.includes(want) ? want : (!want && prints.length===1 ? prints[0] : null);
+  return key==null ? [] : list.filter(x=>skuPrint(x.p)===key);
+}
+async function exportPurchases(btn){
+  const say=t=>{ if(btn) btn.textContent=t; };
+  if(typeof CARDS!=="undefined" && !DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
+  const wins=loadLots().filter(r=>r && r.me && r.f>0).slice().sort((a,b)=>a.at-b.at);
+  const pidOf=r=>{ if(r.pid) return r.pid; const c=r.id && DASH_IDX && DASH_IDX.get(r.id); if(!c) return "";
+    const pr=c.px && (c.px[r.pr] || (!r.pr && c.px[topPrint(c)])); return String((pr&&pr.p)||c.pid||""); };
+  const cache=skuCache(), need=[...new Set(wins.map(pidOf).filter(p=>p && !cache[p]))];
+  if(need.length && WN_EXT){
+    for(let i=0;i<need.length;i+=40){
+      say(`SKUs ${Math.min(i+40,need.length)}/${need.length}…`);
+      const got=await skuFetch(need.slice(i,i+40));
+      for(const p in got) if(Array.isArray(got[p]) && got[p].length) cache[p]=got[p];
+    }
+    try{ localStorage.setItem(SKU_KEY, JSON.stringify(cache)); }catch(_){ }
+  }
+  const ymd=t=>{ const d=new Date(t); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  const head=["Key","Won","Won At","Seller","Card","Number","Set","Language","Printing","Condition","Label","Price","Coupon","Cost","Ship Share",
+              "Product ID","SKU","SKUs (printing)","Flag","Card ID"];
+  let withSku=0;
+  const out=wins.map(r=>{
+    const c=r.id && DASH_IDX && DASH_IDX.get(r.id), pid=pidOf(r), list=skusFor(cache[pid], r.pr || (c && !r.pr ? topPrint(c) : ""));
+    const own=list.find(x=>x.c===r.c), flag=r.mu ? `cart lot (${r.mu} cards)` : !r.n ? "no card" : likelyOther(r) ? "likely another printing" : r.lab==="view" ? "opened only" : "";
+    if(list.length) withSku++;
+    return [r.k, ymd(r.at), new Date(r.at).toISOString(), r.s, r.n||"", r.nu||(c&&c.num)||"", r.se||(c&&c.s)||"", r.la||(c&&(c.lang||"en"))||"",
+      r.pr||"", r.c||"", r.lab||"", (+r.f).toFixed(2), (+r.cp||0).toFixed(2), costOf(r).toFixed(2), shipOf(r).toFixed(2),
+      pid, own?own.s:"", list.map(x=>x.c+":"+x.s).join(" "), flag, r.id||""];
+  });
+  const csv=[head].concat(out).map(row=>row.map(v=>{ v=String(v==null?"":v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(",")).join("\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+  a.download=`CardComp purchases ${ymd(Date.now())}.csv`; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  say(`exported ${out.length} wins · ${withSku} with SKUs${WN_EXT?"":" (no extension: SKUs need desktop)"}`);
+  setTimeout(()=>say("export purchases"), 8000);
+}
+window.exportPurchases=exportPurchases; window.skusFor=skusFor;
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && DASH.on){ e.stopPropagation(); dashOpen(false); } }, true);
 window.addEventListener("hashchange", ()=>{ if(location.hash==="#dash" && !DASH.on && window.__ready) dashOpen(true); });
 window.addEventListener("message", e=>{   // "copy debug" reply: put it on the clipboard for Derek to paste
