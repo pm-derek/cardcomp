@@ -12,7 +12,7 @@
   const cfg = () => { try { return JSON.parse(A.cfg() || "{}") || {}; } catch (_) { return {}; } };
   const log = (o) => { try { A.log(typeof o === "string" ? o : JSON.stringify(o)); } catch (_) {} };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const VER = "0.15.12";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
+  const VER = "0.15.13";          // bridge version (the app's loader runs the live site's copy when it is newer than its own)
   const PHONE_API = 6;          // the native Bridge this needs (OverlayService.NATIVE_API): img, copy, size, collapse
   const PROTO = "0.9.0";        // the extension version the app should treat us as (auto-ui gates the picture match on 0.7+)
 
@@ -48,6 +48,7 @@
   let STILL = 0;        // until when the bar says "still reading"
   const readBusy = () => !!READING && Date.now() - READING.at < 25000;
   function readState(on, phase, what) {
+    if (on && P.peekHide) P.peekHide();
     if (on && !READING) window.ZH_LAST = null;   // a new read: the last Chinese card's view goes
     if (on) READING = Object.assign(READING || { at: Date.now() }, { phase: phase || "frame" }, what ? { what } : {});
     else READING = null;
@@ -542,6 +543,7 @@
   // The panel is as tall as what it shows (Android.size): no dead space, and it is dragged wherever the stream allows.
   let MODE = "card", MODE_BEFORE_TYPING = "card";
   function setMode(m, show) {
+    if (P.peekHide) P.peekHide();   // the large picture never outlives the view it was opened from
     if (m !== "card" && m !== "list" && m !== "typing") return;
     const changed = m !== MODE; MODE = m;
     document.body.classList.remove("ph-card", "ph-list", "ph-typing"); document.body.classList.add("ph-" + m);
@@ -740,26 +742,30 @@
       if (!wrapEl.classList.contains("reading") || wrapEl.classList.contains("partial") || !e.target.closest("#phonebar")) return;
       e.preventDefault(); e.stopPropagation(); P.stillReading();
     }, true);
-    // hold a card picture to see it large, let go to hide it (Derek, 2026-11-04: "holding on the card image zooms it so
-    // we can compare cards"): the small card's picture and every picture in the "Which card?" pickers. A hold never
-    // picks or opens; a quick tap does what it did (picker: picks; small card's picture: nothing)
-    let peekT = 0, peeked = false, peekXY = null, peekEl = null;
+    // double-tap a card picture to see it large, tap again to hide it (Derek, 2026-11-04: "holding is not behaving: it
+    // closes the panel; maybe a double tap"; a hold read as the pinch that folds the panel). A single tap on the small
+    // card's picture does nothing (it no longer opens the full view, 🔍 does); in the "Which card?" pickers a tap still
+    // picks, and a second tap right after shows the picked card large.
+    let peekEl = null, lastTapAt = 0;
     const hiRes = (u) => String(u).replace(/_200w\.jpg/, "_400w.jpg").replace(/(images\.pokemontcg\.io\/[^?]*?)(_hires)?\.png/, "$1_hires.png");
-    const peekHide = () => { clearTimeout(peekT); if (peekEl) { peekEl.remove(); peekEl = null; sizeSoon(); } };
-    wrapEl.addEventListener("pointerdown", (e) => {
-      const t = e.target.closest(".pimg, .pkim"), im = t && t.querySelector("img"); if (!im || !im.getAttribute("src")) return;
-      peeked = false; peekXY = [e.clientX, e.clientY]; clearTimeout(peekT);
-      peekT = setTimeout(() => {
-        peeked = true; const src = im.getAttribute("src");
-        peekEl = document.createElement("div"); peekEl.id = "phonepeek"; peekEl.innerHTML = '<img alt="">';
-        const big = peekEl.querySelector("img"); big.onerror = () => { if (big.getAttribute("src") !== src) big.src = src; }; big.src = hiRes(src);
-        wrapEl.insertBefore(peekEl, wrapEl.firstChild); sizeSoon();
-        try { navigator.vibrate && navigator.vibrate(12); } catch (_) {}
-      }, 320);
-    });
-    wrapEl.addEventListener("pointermove", (e) => { if (!peekEl && peekXY && Math.hypot(e.clientX - peekXY[0], e.clientY - peekXY[1]) > 12) clearTimeout(peekT); });   // a swipe through the picker is not a hold
-    ["pointerup", "pointercancel"].forEach((ev) => wrapEl.addEventListener(ev, () => { peekXY = null; peekHide(); }));
-    wrapEl.addEventListener("click", (e) => { if (peeked) { peeked = false; e.preventDefault(); e.stopPropagation(); } }, true);
+    const peekHide = () => { if (peekEl) { peekEl.remove(); peekEl = null; sizeSoon(); } };
+    const peekShow = (src) => {
+      peekHide();
+      peekEl = document.createElement("div"); peekEl.id = "phonepeek"; peekEl.innerHTML = '<img alt="">';
+      const big = peekEl.querySelector("img"); big.onerror = () => { if (big.getAttribute("src") !== src) big.src = src; }; big.src = hiRes(src);
+      wrapEl.insertBefore(peekEl, wrapEl.firstChild); sizeSoon();
+    };
+    P.peekHide = peekHide;
+    wrapEl.addEventListener("click", (e) => {
+      if (peekEl && e.target.closest("#phonepeek")) { e.preventDefault(); e.stopPropagation(); peekHide(); return; }
+      if (e.target.closest(".pki")) { lastTapAt = Date.now(); if (peekEl) peekHide(); return; }   // a pick; a tap on the picked card's picture right after shows it large
+      const t = e.target.closest(".pimg");
+      if (!t) { if (peekEl) peekHide(); return; }
+      e.preventDefault(); e.stopPropagation();
+      const now = Date.now(), im = t.querySelector("img");
+      if (now - lastTapAt < 400 && im && im.getAttribute("src")) { lastTapAt = 0; if (peekEl) peekHide(); else peekShow(im.getAttribute("src")); }
+      else lastTapAt = now;
+    }, true);
     wrapEl.addEventListener("contextmenu", (e) => { if (e.target.closest(".pimg, .pkim")) e.preventDefault(); });
     wrapEl.querySelector("#phonestat").onclick = (e) => {
       if (e.target.closest("a.fr")) { e.preventDefault(); if (P.lastFrame && typeof zoom === "function") { setMode("list"); zoom(P.lastFrame); } return; }
@@ -901,7 +907,7 @@
     const fo = fpid && FAST_OK[fpid], live = fo ? (fo.ok ? '<i class="ok" title="every condition read from TCGplayer">TCG</i>' : '<i class="no" title="TCGplayer read failed: usual condition shares">TCG</i>') : fpid && FAST_AUTO[Object.keys(FAST_AUTO).find((k) => k.startsWith(fpid + "|")) || ""] ? '<i class="wt" title="reading every condition on TCGplayer">TCG</i>' : "";
     const html =
       `<div class="pc">` +
-        `<div class="pimg" title="hold to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
+        `<div class="pimg" title="double-tap to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div>` +
         `<div class="pmain">` +
           `<div class="pn"><b>${esc(r.n)}</b><span>${esc(r.s)} · #${esc(r.num)}${(r.lang || "en") === "jp" ? " · JP" : ""}${printing && pks.length < 2 ? " · " + esc(printing) : ""}</span></div>` +
           `<div class="ph">` +
@@ -984,7 +990,7 @@
           (b ? zhPills(pk) : `<div class="zl"><small>nothing Chinese on TCGplayer for this card</small></div>`) +
           (typeof zhRefHTML === "function" ? `<div class="zl">${zhRefHTML(res, est, "small")}</div>` : "");   // EN / JP market: CN above JP means the CN comps are off
       }
-      html = `<div class="pc"><div class="pimg" title="hold to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
+      html = `<div class="pc"><div class="pimg" title="double-tap to see it large">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}</div><div class="pmain">` +
         `<div class="pn" data-t="zhback"><b>${esc(c ? c.n : ZH_PICK)}</b><span>中 Chinese copy · ${esc(c ? c.s : "")} · #${esc(c ? c.num : "")}${c && (c.lang || "en") === "jp" ? " · JP" : ""}</span></div>` +
         `<div class="ph"><span class="st" data-t="zhback" title="back to the cards">&#8801;</span><span class="tg">${res && res.ok ? `${res.sold.length} sold · ${res.hits.length} listed` : ""}</span>${tools}</div>` +
         body + `</div></div>`;
