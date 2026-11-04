@@ -56,7 +56,8 @@ const winOf = (msg, sender) => (sender && sender.tab ? sender.tab.windowId : msg
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg) return;
-  if (msg.type === "cardcomp-tcg-post") { tcgPostRelay(msg).then(reply); return true; }   // CardComp's own TCGplayer listings request (Chinese copy prices)
+  if (msg.type === "cardcomp-tcg-post") { tcgPostRelay(msg).then(reply); return true; }
+  if (msg.type === "cardcomp-tcg-skus") { tcgSkus(msg).then(reply, (e) => reply({ ok: false, skus: {}, errs: [e.message] })); return true; }   // purchases export: SKUs per product   // CardComp's own TCGplayer listings request (Chinese copy prices)
   if (msg.type === "cardcomp-tcg-fast") {   // condition market / cheapest listing / recent sales straight from TCGplayer's data services
     tcgFast(msg).then((r) => {
       r.ok = Object.values(r.conds || {}).some((c) => c.market > 0);   // any condition priced: the tapped one may have no sales yet
@@ -77,7 +78,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === "cardcomp-status") {   // app footer: is a Whatnot tab open, is the store token saved
     chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
-      chrome.storage.local.get("ghToken", (r) => reply({ whatnot: tabs.length > 0, store: !!r.ghToken }));
+      chrome.storage.local.get("ghToken", (r) => reply({ whatnot: tabs.length > 0, store: !!(r && r.ghToken) }));
     });
     return true;
   }
@@ -102,7 +103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg.type === "cardcomp-log-prune") { pruneLog(msg.since, msg.before).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // stats panel "clear logged data"
-  if (msg.type === "cardcomp-log-edit") { editLog(msg.key, msg.card, !!msg.clear, msg.patch).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // card added to a past lot
+  if (msg.type === "cardcomp-log-edit") { editLog(msg.key, msg.card, !!msg.clear, msg.patch, msg.rowPatch).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // card added to a past lot
   if (msg.type === "cardcomp-log-read") { readLog(msg.since).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }   // app load: log -> browser stats
   if (msg.type === "cardcomp-live-test") { test().then(reply); return true; }
   if (msg.type !== "cardcomp-bid") return;

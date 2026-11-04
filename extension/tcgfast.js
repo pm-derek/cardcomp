@@ -73,6 +73,29 @@ async function tcgFast(q) {
   out.ms = Date.now() - t0;
   return out;
 }
+// SKUs for the purchases export (Derek, 2026-11-03: TCGCSV has product ids, not SKUs; the Pull Sheet joins on SKU).
+// One product details request per product id (the same one tcgFast makes), 4 at a time, English SKUs only:
+// {pid: [{s: sku, c: "NM", p: "Holofoil"}]}. A product that fails is left out (the export leaves its SKU blank).
+async function tcgSkus(msg) {
+  const pids = [...new Set((msg.pids || []).map(String).filter((p) => /^\d+$/.test(p)))].slice(0, 200);
+  const codeOf = (name) => Object.keys(TCG_FAST_COND).find((k) => tcgNorm(TCG_FAST_COND[k]) === tcgNorm(name));
+  const skus = {}, errs = [];
+  let i = 0;
+  const work = async () => {
+    while (i < pids.length) {
+      const pid = pids[i++];
+      try {
+        const d = await tcgJson(`https://mp-search-api.tcgplayer.com/v2/product/${pid}/details`);
+        const all = (d && (d.skus || (d.result && d.result.skus) || (d.results && d.results[0] && d.results[0].skus))) || [];
+        const mine = all.filter((x) => codeOf(x.condition) && tcgEnglish(x.language))
+          .map((x) => ({ s: String(x.sku || x.skuId || x.id || ""), c: codeOf(x.condition), p: x.variant || x.printing || "" })).filter((x) => x.s);
+        if (mine.length) skus[pid] = mine;
+      } catch (e) { if (errs.length < 5) errs.push(pid + ": " + e.message); }
+    }
+  };
+  await Promise.all([work(), work(), work(), work()]);
+  return { ok: true, skus, errs, n: pids.length };
+}
 // Relay for CardComp's own TCGplayer requests (Chinese copy prices, index.html zhLookup): the page cannot call
 // TCGplayer's data services itself (cross-site), the extension can. Only the listings search and the latest sales of one product.
 const TCG_POST_OK = /^https:\/\/(mp-search-api\.tcgplayer\.com\/v1\/product\/\d+\/listings|mpapi\.tcgplayer\.com\/v2\/product\/\d+\/latestsales)$/;
