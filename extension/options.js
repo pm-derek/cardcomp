@@ -1,12 +1,12 @@
 const tok = document.getElementById("tok"), st = document.getElementById("st");
-chrome.storage.local.get("ghToken", (r) => { if (r.ghToken) tok.placeholder = "saved (" + r.ghToken.slice(0, 10) + "...)"; });
+chrome.storage.local.get("ghToken", (r) => { if (r && r.ghToken) tok.placeholder = "saved (" + r.ghToken.slice(0, 10) + "...)"; });
 document.getElementById("save").onclick = () => {
   const v = tok.value.trim();
   if (!v) { st.textContent = "Nothing to save."; return; }
   chrome.storage.local.set({ ghToken: v }, () => { st.textContent = "Saved."; tok.value = ""; tok.placeholder = "saved (" + v.slice(0, 10) + "...)"; });
 };
 const wn = document.getElementById("wn"), stwn = document.getElementById("stwn");
-chrome.storage.local.get("wnUser", (r) => { if (r.wnUser) wn.value = r.wnUser; });
+chrome.storage.local.get("wnUser", (r) => { if (r && r.wnUser) wn.value = r.wnUser; });
 document.getElementById("savewn").onclick = () => {
   const v = wn.value.trim().replace(/^@/, "");
   chrome.storage.local.set({ wnUser: v }, () => { stwn.textContent = v ? "Saved. Reload the Whatnot tab." : "Cleared."; });
