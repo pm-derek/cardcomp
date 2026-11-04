@@ -156,6 +156,14 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const sure = await page.evaluate(() => new Promise((res) => { const g = document.querySelector("#results .card.autosug"); g.classList.add("byboth"); setTimeout(() => { const ok = !!document.querySelector("#phonebar .pb") && !document.querySelector("#phonebar .pki"); g.classList.remove("byboth"); setTimeout(() => res(ok), 300); }, 300); }));
   ok(sure, "auto + picture agree: priced straight away");
   // Derek picks the best guess: priced, with ≡ back to the choices
+  // hold a candidate's picture: shown large to compare, not picked
+  await page.evaluate(() => document.querySelector("#phonebar .pki.g .pkim img").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })));
+  await page.waitForTimeout(450);
+  const pkPeek = await page.evaluate(() => !!document.querySelector("#phonepeek img"));
+  await page.evaluate(() => { const p = document.querySelector("#phonebar .pki.g .pkim img"); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); });
+  await page.waitForTimeout(150);
+  const pkAfter = await page.evaluate(() => ({ still: document.querySelectorAll("#phonebar .pki").length > 1, peek: !!document.querySelector("#phonepeek") }));
+  ok(pkPeek && pkAfter.still && !pkAfter.peek, "hold a candidate's picture: shown large, not picked, gone on release");
   await page.evaluate(() => document.querySelector("#phonebar .pki.g").click()); await page.waitForTimeout(300);
   const picked = await page.evaluate(() => ({ priced: !!document.querySelector("#phonebar .pb"), back: !!document.querySelector('#phonebar [data-t="choices"]') }));
   ok(picked.priced && picked.back, "picked: priced, with ≡ back to the choices");
@@ -180,6 +188,19 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   c = await calls();
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
+  // the picture: a tap does nothing, a hold shows it large until let go (Derek, 2026-11-04)
+  const mode0 = await page.evaluate(() => document.body.className);
+  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg"); p.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); document.querySelector("#phonebar .pn").click(); });
+  await page.waitForTimeout(200);
+  const tapPic = await page.evaluate(() => ({ cls: document.body.className, peek: !!document.querySelector("#phonepeek") }));
+  await page.evaluate(() => { document.querySelector("#phonebar .pimg img").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })); });
+  await page.waitForTimeout(450);
+  const held = await page.evaluate(() => { const z = document.querySelector("#phonepeek img"); return z ? { src: z.getAttribute("src"), w: z.getBoundingClientRect().width } : null; });
+  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg img"); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); });
+  await page.waitForTimeout(150);
+  const after = await page.evaluate(() => ({ cls: document.body.className, peek: !!document.querySelector("#phonepeek") }));
+  ok(tapPic.cls === mode0 && !tapPic.peek, "tap on the card picture or name: stays on the small card (" + mode0 + ")");
+  ok(held && held.w > 150 && after.cls === mode0 && !after.peek, `hold the card picture: shown large (${held && Math.round(held.w)} px, ${held && held.src}), gone on release, no full view`);
   const h2 = await fit();
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
@@ -221,11 +242,12 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const step = await page.evaluate(() => { const a = document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent; document.querySelector('#phonebar [data-t="next"]').click(); return new Promise((r) => setTimeout(() => r([a, document.querySelector("#phonebar .pn b").textContent + " " + document.querySelector("#phonebar .pn span").textContent, (document.querySelector("#phonebar .sn") || {}).textContent]), 50)); });
   ok(step[0] !== step[1] && step[2] === "2/" + r2.n, `› steps to the next candidate: ${step[1]} (${step[2]})`);
   await page.evaluate(() => document.querySelector('#phonebar [data-t="prev"]').click());
-  // list mode: tap the name
-  await page.evaluate(() => document.querySelector('#phonebar .pn').click());
-  const lm = await page.evaluate(() => ({ list: document.body.classList.contains("ph-list"), res: getComputedStyle(document.querySelector("#results")).display !== "none", q: getComputedStyle(document.querySelector("#q")).display !== "none" }));
-  ok(lm.list && lm.res && lm.q, "tapping the name opens the full view: search box and results shown");
+  // list mode: the 🔍 button (the name and picture no longer open it, Derek 2026-11-04)
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="search"]').click());
+  const lm = await page.evaluate(() => ({ list: document.body.classList.contains("ph-list") || document.body.classList.contains("ph-typing"), res: getComputedStyle(document.querySelector("#results")).display !== "none", q: getComputedStyle(document.querySelector("#q")).display !== "none" }));
+  ok(lm.list && lm.res && lm.q, "🔍 opens the full view: search box and results shown");
   const st2 = await page.evaluate(() => (document.querySelector("#phonestat") || {}).textContent || "");
+  await page.evaluate(() => { const q = document.querySelector("#q"); if (q) q.blur(); }); await page.waitForTimeout(150);   // 🔍 puts the keyboard up; this check is about the list
   ok(/charizard/i.test(st2) && /frame/.test(st2), "full view says what was read, with the frame link: " + st2.trim().slice(0, 80));
   const h3 = await fit(560);
   ok(h3 > h2 + 200, "list asks for a tall panel (native caps it): " + h3 + " css px");
@@ -265,7 +287,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(/picture/.test(pic.msg) && !/no reply|not on the phone|needs extension/.test(pic.msg), "picture match answered: " + (/picture[^·]*/.exec(pic.msg) || [""])[0].trim());
   const cp = await page.evaluate(() => window.__calls.filter((x) => x.n === "copy").map((x) => x.a[0]));
   ok(cp.length > 0 && cp.every((t) => /^\d+$/.test(t)), "page copies go through the app (no hidden textarea): " + cp.join(", "));
-  ok(!(await calls()).some((x) => x.n === "focus" && x.a[0] === true), "no keyboard request from a bid tap");
+  ok(!(await calls()).slice(before).some((x) => x.n === "focus" && x.a[0] === true), "no keyboard request from a bid tap");
   const readsBefore = (await calls()).filter((x) => x.n === "grab").length;
   await page.evaluate(() => document.querySelector("#phonebar .pn").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
   await page.waitForTimeout(200);

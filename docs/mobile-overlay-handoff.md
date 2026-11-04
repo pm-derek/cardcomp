@@ -686,3 +686,13 @@ The min profit per card (#85, $0.25) went into `bidForMargin`, and the small car
 read $0.25 low; it is now `bidForProfit(mkt, 0)`, the fees-only zero-profit price the open card shows (same fix for
 the desktop Chinese line). The rest is the price: pills price each condition from the grid (here a verified NM read,
 $7.31), the open card's top table from the catalog market of all conditions ($7.53).
+
+## Tap vs hold on the card picture (2026-11-04, bridge 0.15.12)
+
+Derek: "I keep accidentally clicking on card images and it expands into the full version; I was just tapping to confirm
+which card it was. Keep the magnifying glass for the larger overlay; holding the card image zooms it so we can compare."
+The small card's picture and name no longer open the full view (🔍 does, as before, with the keyboard up for typing).
+Holding any card picture for 0.32 s (the small card's, and every picture in the "Which card?" and Chinese pickers)
+shows it large above the card (`#phonepeek`, the 400 px TCGplayer / hi-res pokemontcg.io image, falling back to the
+thumbnail) until the finger lifts; a hold never picks or opens, and moving 12 px first is a swipe, not a hold. The
+Chinese picked-card view's picture no longer goes back to the choices (≡ does).
