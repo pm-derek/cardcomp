@@ -156,19 +156,17 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   const sure = await page.evaluate(() => new Promise((res) => { const g = document.querySelector("#results .card.autosug"); g.classList.add("byboth"); setTimeout(() => { const ok = !!document.querySelector("#phonebar .pb") && !document.querySelector("#phonebar .pki"); g.classList.remove("byboth"); setTimeout(() => res(ok), 300); }, 300); }));
   ok(sure, "auto + picture agree: priced straight away");
   // Derek picks the best guess: priced, with ≡ back to the choices
-  // hold a candidate's picture: shown large to compare, not picked
-  await page.evaluate(() => document.querySelector("#phonebar .pki.g .pkim img").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })));
-  await page.waitForTimeout(450);
-  const pkPeek = await page.evaluate(() => !!document.querySelector("#phonepeek img"));
-  await page.evaluate(() => { const p = document.querySelector("#phonebar .pki.g .pkim img"); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); });
-  await page.waitForTimeout(150);
-  const pkAfter = await page.evaluate(() => ({ still: document.querySelectorAll("#phonebar .pki").length > 1, peek: !!document.querySelector("#phonepeek") }));
-  ok(pkPeek && pkAfter.still && !pkAfter.peek, "hold a candidate's picture: shown large, not picked, gone on release");
   await page.evaluate(() => document.querySelector("#phonebar .pki.g").click()); await page.waitForTimeout(300);
   const picked = await page.evaluate(() => ({ priced: !!document.querySelector("#phonebar .pb"), back: !!document.querySelector('#phonebar [data-t="choices"]') }));
   ok(picked.priced && picked.back, "picked: priced, with ≡ back to the choices");
   await page.evaluate(() => document.querySelector('#phonebar [data-t="choices"]').click()); await page.waitForTimeout(200);
   ok(await page.evaluate(() => document.querySelectorAll("#phonebar .pki").length > 1), "≡ shows the choices again");
+  await page.evaluate(() => { document.querySelector("#phonebar .pki.g").click(); }); await page.waitForTimeout(120);
+  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg img"); if (p) p.click(); }); await page.waitForTimeout(120);
+  const pz = await page.evaluate(() => ({ peek: !!document.querySelector("#phonepeek img"), picked: !document.querySelector("#phonebar .pki") }));
+  await page.evaluate(() => { const z = document.querySelector("#phonepeek img"); if (z) z.click(); }); await page.waitForTimeout(120);
+  ok(pz.peek && pz.picked && !(await page.evaluate(() => !!document.querySelector("#phonepeek"))), "double-tap a choice: picked and shown large; a tap hides it");
+  await page.evaluate(() => document.querySelector('#phonebar [data-t="choices"]').click()); await page.waitForTimeout(200);
   await page.evaluate(() => document.querySelector("#phonebar .pki.g").click()); await page.waitForTimeout(300);
   const r2 = await page.evaluate(() => ({
     n: document.querySelectorAll("#results .card").length,
@@ -188,19 +186,21 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   c = await calls();
   ok(r2.card && c.some((x) => x.n === "layout" && x.a[0] === "card-show"), "after the read: compact card, panel shown (card-show unfolds it)");
   ok(r2.stat === "", "the small card stays quiet after a good read (the read line is in the full view)");
-  // the picture: a tap does nothing, a hold shows it large until let go (Derek, 2026-11-04)
+  // the picture: a single tap does nothing, a double tap shows it large, a tap hides it (Derek, 2026-11-04)
   const mode0 = await page.evaluate(() => document.body.className);
-  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg"); p.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); document.querySelector("#phonebar .pn").click(); });
-  await page.waitForTimeout(200);
+  await page.evaluate(() => { document.querySelector("#phonebar .pimg").click(); });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { document.querySelector("#phonebar .pn").click(); });
+  await page.waitForTimeout(150);
   const tapPic = await page.evaluate(() => ({ cls: document.body.className, peek: !!document.querySelector("#phonepeek") }));
-  await page.evaluate(() => { document.querySelector("#phonebar .pimg img").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 })); });
-  await page.waitForTimeout(450);
-  const held = await page.evaluate(() => { const z = document.querySelector("#phonepeek img"); return z ? { src: z.getAttribute("src"), w: z.getBoundingClientRect().width } : null; });
-  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg img"); p.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); p.click(); });
+  await page.evaluate(() => { const p = document.querySelector("#phonebar .pimg img"); p.click(); p.click(); });
+  await page.waitForTimeout(150);
+  const held = await page.evaluate(() => { const z = document.querySelector("#phonepeek img"); return z ? { src: z.getAttribute("src"), w: z.getBoundingClientRect().width, cls: document.body.className } : null; });
+  await page.evaluate(() => { document.querySelector("#phonepeek img").click(); });
   await page.waitForTimeout(150);
   const after = await page.evaluate(() => ({ cls: document.body.className, peek: !!document.querySelector("#phonepeek") }));
-  ok(tapPic.cls === mode0 && !tapPic.peek, "tap on the card picture or name: stays on the small card (" + mode0 + ")");
-  ok(held && held.w > 150 && after.cls === mode0 && !after.peek, `hold the card picture: shown large (${held && Math.round(held.w)} px, ${held && held.src}), gone on release, no full view`);
+  ok(tapPic.cls === mode0 && !tapPic.peek, "single tap on the card picture or name: stays on the small card, nothing opens (" + mode0 + ")");
+  ok(held && held.w > 150 && held.cls === mode0 && after.cls === mode0 && !after.peek, `double-tap the card picture: shown large (${held && Math.round(held.w)} px, ${held && held.src}), a tap hides it, no full view`);
   const h2 = await fit();
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));

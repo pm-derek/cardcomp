@@ -696,3 +696,8 @@ Holding any card picture for 0.32 s (the small card's, and every picture in the 
 shows it large above the card (`#phonepeek`, the 400 px TCGplayer / hi-res pokemontcg.io image, falling back to the
 thumbnail) until the finger lifts; a hold never picks or opens, and moving 12 px first is a swipe, not a hold. The
 Chinese picked-card view's picture no longer goes back to the choices (≡ does).
+
+Revised the same day (bridge 0.15.13): holding "closes the panel" (Derek; the hold read as the two-finger pinch that
+shrinks / folds it), so it is a double-tap now: double-tap the picture to see it large, any tap hides it. In the
+pickers a tap picks as before, and a tap on the picked card's picture within 0.4 s shows it large. The large picture is
+dropped on a view change or a new read.
