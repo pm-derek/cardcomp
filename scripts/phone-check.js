@@ -184,10 +184,28 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
-  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForMargin(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
-  ok(beOK, "break-even on each pill = the app's bidForMargin(price, 0) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForProfit(m, 0); return x.be === "$" + (be >= 1000 ? Math.floor(be).toLocaleString("en-US") : be.toFixed(2)) && be >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
+  ok(beOK, "break-even on each pill = the app's bidForProfit(price, 0) (fees only, same as the open card) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
   ok(gridNM && rows[0].bid === "$" + gridNM, "NM pill sends what the full grid's NM sends: $" + gridNM);
+  // one NM break-even everywhere (Derek, 2026-11-02: "break-even should be the price where I make $0, consistent by
+  // condition"): the open card's top table, the result tile and the NM pill, before and after a verified NM read
+  const beAll = async () => page.evaluate(() => {
+    const card = document.querySelector("#results .card.open"), mb = card && card.querySelector(".maxbid"), tile = card && card.querySelector(".bids .bp b");
+    const tb = mb && mb.querySelector(".bidtbl b.v.be"), top = tb ? tb.textContent.replace(/[$]/g, "") : "";
+    const pill = document.querySelector('#phonebar .pb[data-c="NM"] small:nth-of-type(2)');
+    const nmRow = card && card.querySelector(".condgrid .bd.cpy[data-cond='NM']");
+    return { top: top ? "$" + top : "", tile: tile ? tile.textContent.trim() : "", pill: pill ? pill.textContent.replace("b/e", "").trim() : "", mkt: nmRow ? +nmRow.dataset.mkt : 0 };
+  });
+  const be0 = await beAll();
+  await page.evaluate(() => { const id = document.querySelector("#results .card.open").dataset.id, c = CARDS.find((x) => x.id === id), k = topPrint(c), v = c.px[k], nm = v.m != null ? v.m : v.l;
+    LIVE[liveKey(v.p || c.pid, k, "NM")] = { r: 0.9, m: nm * 0.9, nm, src: "market", at: Date.now() }; if (LIVE_REDRAW) LIVE_REDRAW(); });
+  await page.waitForTimeout(500);
+  const be1 = await beAll();
+  const chk = await page.evaluate(([a, b]) => { const n = (x) => +String(x).replace(/[$,]/g, ""), f = (x) => x.top && x.tile && x.pill && Math.abs(n(x.top) - n(x.tile)) <= 1 && Math.abs(n(x.top) - n(x.pill)) <= 1 && Math.abs(n(x.top) - bidForProfit(x.mkt, 0)) <= 1; return [f(a), f(b)]; }, [be0, be1]);
+  await page.evaluate(() => { for (const k of Object.keys(LIVE)) delete LIVE[k]; if (LIVE_REDRAW) LIVE_REDRAW(); }); await page.waitForTimeout(400);   // the read must not leak into later checks
+  ok(await page.evaluate(() => { const b = document.querySelector("#dashbtn"); return !b || getComputedStyle(b).display === "none"; }), "no dashboard button on the phone (Derek, 2026-11-04: it got in the way)");
+  ok(chk[0] && chk[1] && be1.mkt < be0.mkt, `NM break-even is one number on the top table, the tile and the NM pill, also after a verified NM read: ${JSON.stringify(be0)} -> ${JSON.stringify(be1)}`);
   await page.screenshot({ path: path.join(OUT, "phone-card.png") });
   const scr = await page.evaluate(() => { const p = document.querySelector("#phonebar .prow"); const vis = Array.from(p.children).filter((b) => b.getBoundingClientRect().right <= p.getBoundingClientRect().right + 1).length; p.scrollLeft = 9999; return { vis, scrolls: p.scrollLeft > 0 }; });
   ok(scr.vis === 2 && scr.scrolls, `pills scroll sideways: ${scr.vis} fully visible, swipe for the rest`);
@@ -322,11 +340,12 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   await page.screenshot({ path: path.join(OUT, "phone-zh-card.png") });
   await page.evaluate(() => document.querySelector('#phonebar [data-t="zhbid"]').click());
   await page.waitForTimeout(300);
+  zv.tap = await page.evaluate(() => LAST_TAP && { id: LAST_TAP.id, n: LAST_TAP.n, m: LAST_TAP.condMarket, zh: LAST_TAP.zh });
   const nb = (await calls()).filter((x) => x.n === "bid");
   ok(/checking Chinese sales and listings for this card/.test(zw) && zv.calls.length === 1 && zv.calls[0][0] === zids[1], "tap a card: only that card is looked up (" + JSON.stringify(zv.calls) + ")");
   const zpl = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .prow.zp .pb")).map((x) => ({ t: x.textContent, alt: x.classList.contains("alt") })));
   ok(zpl.length === 2 && /SOLD/.test(zpl[0].t) && !zpl[0].alt && zpl[1].alt && zpl.every((x) => /mkt\$[\d.]+b\/e\$\d+\.\d\d/.test(x.t)), "Chinese bids as pills like the conditions: sold first (used), listed dashed, each bid / mkt / b/e: " + zpl.map((x) => x.t).join(" | "));
-  ok(/sold\s*\$12\.00 [A-Z][a-z]{2} \d/.test(zv.t) && /(EN|JP) \$[\d.]+/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.nolabel === "1" && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings, EN / JP market and bid $${zv.bid && zv.bid.bid} (sent, not labeled as the English card)`);
+  ok(/sold\s*\$12\.00 [A-Z][a-z]{2} \d/.test(zv.t) && /(EN|JP) \$[\d.]+/.test(zv.t) && /listed\s*\$14\.00 · \$15\.00/.test(zv.t) && /mkt\$12\.50/.test(zv.t) && /mkt\$14\.50/.test(zv.t) && zv.bid && zv.bid.zh === zids[1] && zv.bid.mkt === "12.50" && zv.tap && zv.tap.id === zids[1] && zv.tap.m === 12.5 && /^中 /.test(zv.tap.n) && nb.length === nb0 + 1 && nb[nb.length - 1].a[0] === zv.bid.bid, `its Chinese sales, listings and bid $${zv.bid && zv.bid.bid} (sent, labeled as the Chinese copy at $12.50: ${JSON.stringify(zv.tap)})`);
   await page.evaluate(() => { window.zhLookup = window.__zhOrig; });
   await page.evaluate(() => { window.ZH_LAST = null; window.dispatchEvent(new Event("cardcomp-zh")); });
 
