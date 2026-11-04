@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === "cardcomp-status") {   // app footer: is a Whatnot tab open, is the store token saved
     chrome.tabs.query({ url: "https://*.whatnot.com/*" }, (tabs) => {
-      chrome.storage.local.get("ghToken", (r) => reply({ whatnot: tabs.length > 0, store: !!r.ghToken }));
+      chrome.storage.local.get("ghToken", (r) => reply({ whatnot: tabs.length > 0, store: !!(r && r.ghToken) }));
     });
     return true;
   }

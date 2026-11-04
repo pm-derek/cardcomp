@@ -5,7 +5,14 @@ const GH = { owner: "pm-derek", repo: "cardcomp", branch: "live", path: "live.js
 const API = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
 let pending = {}, timer = null;
 
-function token() { return new Promise((res) => chrome.storage.local.get("ghToken", (r) => res(r.ghToken || ""))); }
+// r is undefined when the storage call fails (lastError, e.g. while the extension reloads); reading r.ghToken threw
+// inside the callback, the promise never settled, and flushLog's inflight batch then blocked every later log write.
+function token() {
+  return new Promise((res) => {
+    try { chrome.storage.local.get("ghToken", (r) => { try { void chrome.runtime.lastError; } catch (_) {} res((r && r.ghToken) || ""); }); }
+    catch (_) { res(""); }
+  });
+}
 const b64enc = (s) => btoa(unescape(encodeURIComponent(s)));
 const b64dec = (s) => decodeURIComponent(escape(atob(s.replace(/\n/g, ""))));
 

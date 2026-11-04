@@ -1,7 +1,7 @@
 // RECOG experiment: API key field on the Options page. Removed by scripts/strip-recog.js.
 (() => {
   const k = document.getElementById("rkey"), st = document.getElementById("rst");
-  const show = () => chrome.storage.local.get("recogKey", (r) => { k.placeholder = r.recogKey ? "saved (" + r.recogKey.slice(0, 12) + "...)" : "sk-ant-..."; });
+  const show = () => chrome.storage.local.get("recogKey", (r) => { k.placeholder = r && r.recogKey ? "saved (" + r.recogKey.slice(0, 12) + "...)" : "sk-ant-..."; });
   show();
   document.getElementById("rsave").onclick = () => {
     const v = k.value.trim();
@@ -12,6 +12,7 @@
   // CardSight, side by side (2026-10-23)
   const ck = document.getElementById("cskey"), cm = document.getElementById("csmonth"), cst = document.getElementById("csst");
   const csShow = () => chrome.storage.local.get(["csKey", "csMonthly", "csUse"], (r) => {
+    r = r || {};
     ck.placeholder = r.csKey ? "saved (" + r.csKey.slice(0, 6) + "...)" : "paste the key from cardsight.ai";
     cm.value = r.csMonthly || ""; const u = r.csUse; if (u && r.csKey) cst.textContent = "This month: " + u.n + " of " + (r.csMonthly || 750) + " calls used.";
   });
