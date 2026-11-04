@@ -157,6 +157,7 @@
   .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
   .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
+  #dashbtn{right:118px}   /* beside settings: the dashboard without a Whatnot stream open (Derek, 2026-11-04) */
   .settings{display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
   .settings.open{display:block}
   .settings h4{margin:0 0 9px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);font-weight:600}
@@ -239,6 +240,7 @@
 <div class="zoom" id="zoom"><img src="" alt=""></div>
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
+  <button class="gear" id="dashbtn" title="your wins, spend and net by day and streamer (also cardcomp/#dash)">▤ dashboard</button>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
@@ -4254,6 +4256,7 @@ function migrateCfg(){   // 2026-10: speed-based margin treats this setting as i
 loadCfg(); migrateCfg();
 document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
 $("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
+$("#dashbtn").onclick = ()=>{ if(window.__ready) dashOpen(true); else location.hash="#dash"; };   // before the catalog loads, the hash opens it on load
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
 $("#q").focus();
