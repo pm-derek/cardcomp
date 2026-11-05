@@ -271,7 +271,16 @@
     if (m.kind !== "foreign" || m.foreign !== "Chinese" || typeof window.zhLookup !== "function") return;
     const r = d.read || {}, num = dn(r.number);
     let jp = { cards: [] }; try { jp = window.autoMatch(Object.assign({}, r, { language: "jp" }), Object.assign({ noSwap: true }, ctx)); } catch (_) {}
-    const hasNum = (c) => num && dn(c.num) === num, en = m.pool || m.cards, jpc = jp.pool || jp.cards || [];
+    const hasNum = (c) => num && dn(c.num) === num;
+    // the name read decides which cards can be the one; the number only orders them (Flareon VMAX 003/009 Simplified
+    // Chinese, 2026-11-04: Japanese cards #3 of other 9-card sets, Klink / Magmar / Pikachu, led the choices). A name that
+    // matches nothing (misread) keeps the old pool.
+    const nb = String(r.name || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const base = (c) => (typeof zhBase === "function" ? zhBase(c.n) : String(c.n || "").toLowerCase());
+    const named = (c) => !!nb && (base(c) === nb || base(c).includes(nb));
+    const en0 = m.pool || m.cards || [], jp0 = jp.pool || jp.cards || [];
+    const anyNamed = en0.some(named) || jp0.some(named);
+    const en = anyNamed ? en0.filter(named) : en0, jpc = anyNamed ? jp0.filter(named) : jp0;
     const leads = [jpc.find(hasNum), en.find(hasNum)].filter(Boolean);
     const extra = jpc.filter(hasNum).concat(en.filter(hasNum), en, jpc);
     const cands = window.zhCands(leads.length ? leads : en.slice(0, 1), extra);
