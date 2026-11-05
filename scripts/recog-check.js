@@ -739,6 +739,13 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ posts: window.__tcgPosts.length, ids: (window.ZH_LAST || {}).ids || [], line: document.querySelector("#autoline").textContent, jp: String(CARDS.find((c) => c.lang === "jp" && c.n === "Pikachu ex 132 106").id) }));
   ok(st.posts === 0 && st.ids[0] === st.jp && st.ids.includes("sv8-238") && /open the right card for its Chinese price/.test(st.line),
     "Chinese card: no TCGplayer lookups on the read, candidates listed with the Japanese #132/106 first (" + st.ids.slice(0, 3).join(" | ") + ")");
+  // a Chinese number that matches other cards' numbers (Flareon VMAX 003/009, Simplified Chinese Eevee Heroes, domvault_card
+  // 2026-11-04: "the search said Flareon VMAX but the small card showed 5 non-Flareon"): every candidate is a Flareon VMAX
+  await lotEnd();
+  await send({ type: "cardcomp-auto", key: Date.now(), capAt: Date.now(), n: 1, read: { card_visible: true, name: "Flareon VMAX", number: "003", total: "009", language: "zh", rarity: "Ultra Rare VMAX", stamp: "", finish: "holo", set: "Eevee Heroes (Simplified Chinese)", confidence: 0.9 }, model: "claude-sonnet-5-5", ms: 1200 });
+  await ap.waitForTimeout(600);
+  const flc = await ap.evaluate(() => ((window.ZH_LAST || {}).ids || []).map((id) => { const c = CARDS.find((x) => x.id === id); return c ? c.n + " · " + c.s + " #" + c.num : id; }));
+  ok(flc.length > 0 && flc.every((n) => /flareon vmax/i.test(n)), "Chinese Flareon VMAX 003/009: only Flareon VMAX cards to pick from (" + flc.join(" | ") + ")");
   // open card (phone path too): opening a candidate looks up that card and its other-language twin only, at once
   await ap.evaluate(() => { if (LANG !== "en") setLang("en", true); });
   await ap.fill("#q", "pikachu ex 238/191"); await ap.waitForTimeout(500);

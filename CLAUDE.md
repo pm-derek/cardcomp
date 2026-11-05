@@ -335,7 +335,7 @@ kind `foreign` / Chinese looks nothing up. It publishes the candidates (`window.
 Japanese card with the number read first, since Traditional Chinese follows the Japanese numbering, then the English
 one, their twins, the other printings) and the line says "open the right card for its Chinese price". The phone shows
 their pictures to pick from; the card picked (phone) or opened (desktop, `zhB.click()` on open) is looked up alone with
-its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid.
+its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid. The name read decides who can be a candidate, the number only orders them (Derek, 2026-11-04, Flareon VMAX 003/009 Simplified Chinese Eevee Heroes: the Japanese numbers-first lookup offered #3 of other 9-card sets, Klink / Magmar / Pikachu, and the small card showed 5 non-Flareon while the search said Flareon VMAX): `askZh` keeps only cards whose `zhBase` name is or contains the name read, unless none does (misread name).
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 
