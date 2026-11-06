@@ -63,7 +63,9 @@
   const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const sentToday = (d) => Object.values(d).filter((x) => (x.how === "sent" || x.how === "unsure" || x.how === "sending") && x.at >= midnight()).length;
   // "Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil" -> "Hisuian Samurott V"
-  const shortName = (p) => { const parts = String(p).split(" - "); const nm = (parts[1] || parts[0] || "").split(": ").pop(); return nm.trim() || String(p).slice(0, 40); };
+  // Set names can carry " - " too ("Pokemon - SM - Unbroken Bonds: Chikorita (53) - #53/214 - Near Mint" once read as
+  // "SM"): the name is the segment just before the "#number" one, after its last ": ".
+  const shortName = (p) => { const parts = String(p).split(" - "); let i = parts.findIndex((x, k) => k > 0 && /^#/.test(x.trim())); if (i < 1) i = Math.min(2, parts.length); const nm = (parts[i - 1] || parts[0] || "").split(": ").pop(); return nm.trim() || String(p).slice(0, 40); };
   const cardsLine = (ps) => { const n = (ps || []).map(shortName); return n.length === 0 ? "" : n.length <= 2 ? n.join(", ") : n.slice(0, 2).join(", ") + " +" + (n.length - 2); };
   // "11/5/2026, 4:17:12 PM (PST)" -> ms
   const fbWhen = (s) => { const t = Date.parse(String(s || "").replace(/\s*\([A-Z]{2,4}\)\s*$/, "")); return isNaN(t) ? 0 : t; };
@@ -103,8 +105,9 @@
     (p || link || anchor).insertAdjacentElement("afterend", box);
     return box;
   }
+  const orderURL = (o) => "https://sellerportal.tcgplayer.com/orders/" + encodeURIComponent(o);   // the order page; its View Messages button opens the thread
   const stars = (n) => `<span class="stars ${n >= 4 ? "good" : ""}" title="${n} of 5">${"★".repeat(Math.max(0, Math.min(5, n)))}${"☆".repeat(Math.max(0, 5 - n))}</span>`;
-  const rowHTML = (r) => `<div class="row${r.rating <= 3 ? " neg" : ""}" data-order="${esc(r.order)}"><img class="pic none" alt="" data-pic><div><div class="hd"><b>${esc(r.user)}</b>${stars(r.rating)}<span class="dim">ordered ${esc(r.date)} · ${esc(r.order)}</span><span class="card" data-card></span>${r.orders > 1 ? `<span class="tag blue">${r.orders} orders in ${FB_DAYS} days</span>` : ""}<span data-tags></span></div><blockquote>${esc(r.comment)}</blockquote><div data-body><span class="dim" data-wait>waiting…</span></div></div></div>`;
+  const rowHTML = (r) => `<div class="row${r.rating <= 3 ? " neg" : ""}" data-order="${esc(r.order)}"><img class="pic none" alt="" data-pic><div><div class="hd"><b>${esc(r.user)}</b>${stars(r.rating)}<span class="dim">ordered ${esc(r.date)} · <a href="${orderURL(r.order)}" target="_blank" title="open the order">${esc(r.order)}</a></span><span class="card" data-card></span>${r.orders > 1 ? `<span class="tag blue">${r.orders} orders in ${FB_DAYS} days</span>` : ""}<span data-tags></span></div><blockquote>${esc(r.comment)}</blockquote><div data-body><span class="dim" data-wait>waiting…</span></div></div></div>`;
   function draftHTML(text, note, flags) {
     return `<textarea data-text>${esc(text)}</textarea>${flags && flags.length ? `<div class="flags">⚠ check: ${esc(flags.join(" · "))}</div>` : ""}<div class="act"><button class="send" data-send>Send</button><button data-skip>Skip</button><button data-redo title="another draft">redo</button><button data-redo="shorter" title="another draft, shorter">shorter</button><span class="note">${esc(note || "")}</span></div>`;
   }
@@ -125,7 +128,7 @@
       foot.querySelector("[data-hist]").onclick = (e) => {
         e.preventDefault(); hist.hidden = !hist.hidden; if (hist.hidden) return;
         const last = sent.sort((a, b) => b[1].at - a[1].at).slice(0, 15);
-        hist.innerHTML = last.length ? last.map(([o, d]) => `<div>${new Date(d.at).toLocaleDateString()} · <b>${esc(d.user || "")}</b>${d.how === "unsure" ? ' <span class="tag red">unsure</span>' : ""} · ${esc(d.text || "")} <span class="dim">(${esc(o)})</span></div>`).join("") : "<div>nothing yet</div>";
+        hist.innerHTML = last.length ? last.map(([o, d]) => `<div>${new Date(d.at).toLocaleDateString()} · <b>${esc(d.user || "")}</b>${d.how === "unsure" ? ' <span class="tag red">unsure</span>' : ""} · ${esc(d.text || "")} <a href="${orderURL(o)}" target="_blank" class="dim" title="the order page; View Messages there shows the thread">${esc(o)} ↗</a></div>`).join("") : "<div>nothing yet</div>";
       };
     };
     paintFoot();
@@ -178,12 +181,12 @@
         if (res && res.ok) { done = await markDone(r.order, "sent", { user: r.user, text }); finish("✓ sent", false); }
         else if (res && res.clicked) {   // Send was pressed but the page gave no confirmation: maybe sent. Never again automatically.
           done = await markDone(r.order, "unsure", { user: r.user, text, why: res.why });
-          el.querySelector("[data-body]").innerHTML = `<div class="done"><b class="un">unsure</b> Send was pressed but the page did not confirm (${esc(res.why || "")}). <a href="https://sellerportal.tcgplayer.com/orders/${esc(r.order)}" target="_blank">open the order</a> and check View Messages before sending by hand. Not offered again.</div>`;
+          el.querySelector("[data-body]").innerHTML = `<div class="done"><b class="un">unsure</b> Send was pressed but the page did not confirm (${esc(res.why || "")}). <a href="${orderURL(r.order)}" target="_blank">open the order</a> and check View Messages before sending by hand. Not offered again.</div>`;
           paintFoot(); post({ type: "cardcomp-fb-pending", n: list.querySelectorAll("[data-send]").length });
         } else { await unmark(r.order); done = await getDone(); fail("not sent: " + (res && res.why || "no reply from the extension")); }
       };
       function fail(why) { send.disabled = false; send.classList.remove("cancel"); send.textContent = "Send"; lock(false); note.textContent = why; note.className = "note bad"; }
-      function finish(label, odd) { el.querySelector("[data-body]").innerHTML = `<div class="done"><b${odd ? ' class="un"' : ""}>${esc(label)}</b> to ${esc(r.user)}: ${esc(ta.value.trim())}</div>`; paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); }
+      function finish(label, odd) { el.querySelector("[data-body]").innerHTML = `<div class="done"><b${odd ? ' class="un"' : ""}>${esc(label)}</b> to ${esc(r.user)}: ${esc(ta.value.trim())} <a href="${orderURL(r.order)}" target="_blank" title="the order page; View Messages there shows the thread">view message ↗</a></div>`; paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); }
       skip.onclick = async () => { done = await markDone(r.order, "skip", { user: r.user }); el.querySelector("[data-body]").innerHTML = '<div class="done">skipped</div>'; paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); };
       redos.forEach((b) => { b.onclick = () => draft(r, el, b.getAttribute("data-redo") || ""); });
     }

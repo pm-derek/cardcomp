@@ -390,9 +390,11 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium (50 checks). Rendered at 1280 (scratch). Not yet verified on the live Seller Portal: the first
-  real Send tells whether Vue takes the programmatic subject pick and textarea input; a miss fails safe (nothing typed,
-  or "unsure" with the text left in the box).
+  headless Chromium (52 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids and
+  the sent line link to the order page (its View Messages opens the thread; the Messages tab takes no order in its
+  address). The inbox is a work queue, not an archive (Derek asked): only pending rows render, the footer's "replied
+  from here" lists the last 15 with links, TCGplayer's Messages tab is the record.
 
 ## Other UI notes
 
