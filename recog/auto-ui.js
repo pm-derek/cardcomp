@@ -112,7 +112,7 @@
   function readNow() {
     if (!(EXT && STATE.on && STATE.hasKey)) return;
     if (READING && Date.now() - READING < 1500) return;   // a double tap is one read
-    READING = Date.now(); MSG = "reading the card on stream..."; paint();
+    READING = window.LAST_SCAN_AT = Date.now(); MSG = "reading the card on stream..."; paint();   // LAST_SCAN_AT: the header's sourcing timer (a scan is activity)
     post({ type: "cardcomp-auto-read" });
     setTimeout(() => { if (READING && Date.now() - READING >= 12000) { READING = 0; paintRead(); } }, 12100);
   }

@@ -161,6 +161,13 @@
   /* not on phones (Derek, 2026-11-04: "remove the dashboard button from mobile, it's getting in the way"): phone app and narrow screens; cardcomp/#dash still opens it */
   body.phone #dashbtn{display:none}
   @media (max-width:600px){ #dashbtn{display:none} }
+  /* sourcing timer (Derek, 2026-11-06: "an active timer for time spent today and this week, main page, browser only") */
+  #srctimer{position:absolute;top:16px;right:232px;font-size:12px;color:var(--dim);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px}
+  #srctimer b{color:var(--ink);font-weight:600}
+  #srctimer i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+  #srctimer i.on{background:var(--green)}
+  body.phone #srctimer{display:none}
+  @media (max-width:600px){ #srctimer{display:none} }
   .settings{display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
   .settings.open{display:block}
   .settings h4{margin:0 0 9px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);font-weight:600}
@@ -243,6 +250,7 @@
 <div class="zoom" id="zoom"><img src="" alt=""></div>
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
+  <span id="srctimer" title="time sourcing: a lot on screen and a scan, bid tap, card opened, lead or win within 2 min (phone lots count once synced). Green = active now. Week from Monday. Tap for the dashboard."></span>
   <button class="gear" id="dashbtn" title="your wins, spend and net by day and streamer (also cardcomp/#dash)">▤ dashboard</button>
   <button class="gear" id="gear">⚙ settings</button>
   <div class="settings" id="settings">
@@ -2380,6 +2388,7 @@ function recordLotStat(rec){
   try{ refreshVerdict((LOT&&LOT.seller)||rec.seller||""); }catch(_){ }
   if(LOTSTATS_OPEN) paintLotStats();
   if(DASH.on) paintDash();
+  try{ paintSrcTimer(); }catch(_){ }
 }
 const med=a=>{ if(!a.length) return null; const s=a.slice().sort((x,y)=>x-y), h=s.length>>1; return s.length%2?s[h]:(s[h-1]+s[h])/2; };
 function lotStats(seller, scope){
@@ -2481,6 +2490,21 @@ function sourcing(rows){
 }
 const durTxt=ms=>{ const m=Math.round(ms/60000); return m<60 ? m+"m" : Math.floor(m/60)+"h"+(m%60?" "+m%60+"m":""); };
 const perHr=(v, ms)=>ms>=15*60000 ? v/(ms/3600000) : null;   // under 15 min an hourly rate is noise
+// Header timer: today and this week (from Monday), ticking. The lot on screen counts before it ends: a live row from
+// its start to now, active at your last scan / bid tap / card opened (or now while you lead). Desktop browser only.
+let LOT_SEEN_AT=0;
+function liveSrcRow(){
+  if(!LOT || Date.now()-LOT_SEEN_AT>SRC_JOIN) return null;
+  const t=Date.now(), ac=Math.max((LAST_TAP&&LAST_TAP.at)||0, (LAST_VIEW&&LAST_VIEW.at)||0, +window.LAST_SCAN_AT||0, LOT.me&&!LOT.ended?t:0);
+  return { s:LOT.seller||"", st:LOT.lotStart>0?LOT.lotStart:LOT_SEEN_AT, at:t, ac };
+}
+function paintSrcTimer(){
+  const el=$("#srctimer"); if(!el || getComputedStyle(el).display==="none") return;
+  const n=new Date(), day0=new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(), wk0=new Date(n.getFullYear(), n.getMonth(), n.getDate()-(n.getDay()+6)%7).getTime();
+  const rows=loadLots().filter(r=>r.at>=wk0), live=liveSrcRow(); if(live) rows.push(live);
+  const w=sourcing(rows).ms, d=sourcing(rows.filter(r=>r.at>=day0)).ms, on=!!(live && live.ac && Date.now()-live.ac<=SRC_PAD);
+  el.innerHTML=`<i class="${on?"on":""}"></i>today <b>${durTxt(d)}</b> · week <b>${durTxt(w)}</b>`;
+}
 // Other buyers' shipping (Derek, 2026-10-31: "apply our shipping assumptions to others so the leaderboard is fair"):
 // per stream, the shipping each of your wins added, in order (first win $0.78, 5th +$0.31, 6th +$6.66...), is charged
 // to every other buyer for their own wins in that stream, split evenly over them. A stream you won nothing in charges
@@ -3137,7 +3161,7 @@ function lotQuery(title){   // a card name hiding in a lot title ("Charizard 4/1
 window.addEventListener("message", e=>{
   const d=e.data; if(!d || !lotFromExt(e)) return;
   if(d.type==="cardcomp-lot"){
-    LOT=d;
+    LOT=d; LOT_SEEN_AT=Date.now();
     if(d.lead) roomSee(d.seller, [[d.lead, 0]]);
     // new lot: typing replaces the old search. LOT_START is NOT reset here: it moves when the previous lot
     // ends, so a bid tapped while the seller is still showing the card (before the auction starts) counts.
@@ -4365,6 +4389,8 @@ function migrateCfg(){   // 2026-10: speed-based margin treats this setting as i
 loadCfg(); migrateCfg();
 document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
 $("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
+$("#srctimer").onclick = ()=>{ DASH.per="1"; if(window.__ready) dashOpen(true); else location.hash="#dash"; };
+setInterval(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 10000); setTimeout(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 0);
 $("#dashbtn").onclick = ()=>{ if(window.__ready) dashOpen(true); else location.hash="#dash"; };   // before the catalog loads, the hash opens it on load
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
