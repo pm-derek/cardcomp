@@ -164,15 +164,19 @@ type read from the thread (condition issue / missing package / wrong item / othe
   listing or an era estimate when there is no market), refund = charged minus value, rounded up to the dollar. Under
   $20 charged, "one grade lower" is ticked for you (cheap goodwill); untick it to price as described. "Extra for the
   trouble" is yours to type. The total is what the draft will say.
-- **Missing package**: the shipping facts and the date after which TCGplayer treats it as lost (8 business days after
-  the estimated delivery), so the draft can ask the buyer to check with household and neighbors and name the date.
-- **Wrong item**: the three options (keep and refund the difference, return for the right card, return for a refund).
+- **Missing package**: the shipping facts and the wait-until date (TCGplayer's rule: estimated delivery plus 2
+  business days; reported within that window you may ask them to wait, past it the refund goes out now), so the draft
+  can ask the buyer to check with household and neighbors and name the date.
+- **Wrong card**: the three options (keep and refund the difference, return for the right card, return for a refund).
+- **Missing card**: reship if you have it, else refund that card.
 
 "Draft reply" writes the next message in your voice from the thread so far, the numbers above and TCGplayer's
-guidance (partial refund first, return paid by the seller, refund on receipt). Edit it, then Send: 3 seconds to
-cancel, then the thread's own reply box is filled and sent. Each send is locked to that point of the thread, so a
-second press cannot send twice; 10 thread sends a day. Save your return address on the Options page so the return
-option can include it.
+guidance (photos asked for but never required, partial refund first, return paid by you, refund on receipt). Edit
+it, then Send: 3 seconds to cancel, then the thread's own reply box is filled and sent. An amber line flags an amount
+the panel never gave, a photo made a condition, or ratings talk. The send is refused if the page moved to another
+thread or the buyer wrote since the draft, and locked to that point of the thread so a second press cannot send
+twice; 10 thread sends a day. After a send the panel says what to do on the order page, since the message moves no
+money. Save your return address on the Options page so the return option can include it.
 
 ## Footer status
 
