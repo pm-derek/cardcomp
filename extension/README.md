@@ -154,6 +154,26 @@ again (check View Messages before sending by hand). At most 10 sends a day. Draf
 dollar amount, link or an apology the feedback did not call for get an amber "check" line. The extension icon shows
 how many are waiting (checked hourly with your login). "Replied from here" in the footer lists what went out.
 
+## Issue replies on a message thread
+
+Open a buyer's thread (Messages > the subject link). A "CardComp reply" panel sits under the subject with the issue
+type read from the thread (condition issue / missing package / wrong item / other, change it if it guessed wrong).
+
+- **Condition issue**: the order's cards with what you charged. Tick the ones in question and pick the condition they
+  arrived in. The value is TCGplayer's market at that condition (the same read as the bidding grid; the cheapest
+  listing or an era estimate when there is no market), refund = charged minus value, rounded up to the dollar. Under
+  $20 charged, "one grade lower" is ticked for you (cheap goodwill); untick it to price as described. "Extra for the
+  trouble" is yours to type. The total is what the draft will say.
+- **Missing package**: the shipping facts and the date after which TCGplayer treats it as lost (8 business days after
+  the estimated delivery), so the draft can ask the buyer to check with household and neighbors and name the date.
+- **Wrong item**: the three options (keep and refund the difference, return for the right card, return for a refund).
+
+"Draft reply" writes the next message in your voice from the thread so far, the numbers above and TCGplayer's
+guidance (partial refund first, return paid by the seller, refund on receipt). Edit it, then Send: 3 seconds to
+cancel, then the thread's own reply box is filled and sent. Each send is locked to that point of the thread, so a
+second press cannot send twice; 10 thread sends a day. Save your return address on the Options page so the return
+option can include it.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`

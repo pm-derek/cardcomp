@@ -29,3 +29,7 @@ document.getElementById("rtest").onclick = () => {
   rst.textContent = "Testing (one tiny call, well under a cent)...";
   chrome.runtime.sendMessage({ type: "cardcomp-fb-key-test" }, (r) => { rst.textContent = r && r.ok ? "Key works." : "Failed: " + ((r && r.why) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "no answer"); });
 };
+// Return address (issue replies)
+const fa = document.getElementById("fbaddr"), fast_ = document.getElementById("fbaddrst");
+chrome.storage.local.get("fbAddress", (r) => { if (r && r.fbAddress) fa.value = r.fbAddress; });
+document.getElementById("fbaddrsave").onclick = () => { const v = fa.value.trim(); chrome.storage.local.set({ fbAddress: v }, () => { fast_.textContent = v ? "Saved." : "Cleared."; }); };

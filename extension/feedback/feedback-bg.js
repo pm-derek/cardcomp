@@ -86,6 +86,12 @@ function fbHandle(msg, sender, reply) {
     });
     return true;
   }
+  if (msg.type === "cardcomp-fb-issue") { fbIssueDraft(msg).then(reply, (e) => reply({ ok: false, why: e.message })); return true; }
+  if (msg.type === "cardcomp-fb-price") {   // thread.js: every condition's market for a product (tcgfast.js)
+    if (typeof tcgFast !== "function") { reply({ ok: false, why: "no price reader" }); return true; }
+    tcgFast({ pid: msg.pid, printing: msg.printing || "", cond: "NM" }).then((r) => reply({ ok: true, conds: r.conds || {}, errs: r.errs || [] }), (e) => reply({ ok: false, why: e.message }));
+    return true;
+  }
   if (msg.type === "cardcomp-fb-draft") { fbDraft(msg.row || {}, msg.style || "").then(reply, (e) => reply({ ok: false, why: e.message })); return true; }
   if (msg.type === "cardcomp-fb-order-info") {   // order.js, on load: {order, products, feedback, fbDate, buyer}
     const w = FB_WAIT[msg.order]; delete FB_WAIT[msg.order];
@@ -148,6 +154,58 @@ async function fbThread(order, since, win) {
   catch (_) { const t = await chrome.tabs.create({ url, active: false }); chrome.storage.session.set({ [k]: t.id }); }
   m = (await got) || m;
   return fbPickThread(m[order], since) || null;
+}
+
+// Issue replies (thread.js): the playbook. Rules from TCGplayer's seller help as found 2026-11-06 (the help hosts are
+// blocked from the build sandbox, so these are from search summaries of help.tcgplayer.com / seller.tcgplayer.com:
+// missing packages count as lost 8 business days after the estimated delivery, ask the buyer to check with household
+// and neighbors first, untracked and late = full refund, tracked and "delivered" goes to TCGplayer as a Missing
+// Delivered Package, reply within 2 business days; condition issues: partial refund first (TCGplayer suggests about
+// 10% per condition grade; Derek recomps at the arrived condition instead), else a prepaid return and a full refund,
+// the seller pays return shipping, refund reason "Product - Condition Issue"). Derek's own practice on top: ask for
+// photos first, offer both paths at once, recomp per card at the arrived condition, round the refund to the dollar in
+// the buyer's favour, a prestamped envelope for returns, refund on receipt.
+const FB_ISSUE_SYSTEM = `You draft Derek's next reply in a TCGplayer order message thread. Derek runs the store East Bay Trader and sells Pokemon singles. The message goes to the buyer inside TCGplayer's order messages (no attachments, no formatting; plain text, blank lines between paragraphs are fine).
+Voice: warm, plain, direct, first person, no corporate phrasing, no sign-off, no emoji. Short sentences. "Oh no!" / "Ah sorry to hear that" / "Totally fair" / "Sounds good" are things Derek says. Never mention ratings or feedback. Never blame the buyer. Never mention that this was drafted.
+Real messages from Derek, for the voice:
+- "Oh no! I must've missed that. Can you shoot me a picture? Can upload to dropbox/imgur or anything like that. Would you like to return these for a full refund (I'll send a stamped envelope, and once I receive the cards i'll fully refund)? Or I can recomp these against their lower conditions and then partial refund + extra for the inconvenience?"
+- "Ah sorry to hear that. Ok here is more detail on the options we can pick from. Option 1 - Full refund where you wait for the stamped envelope. Option 2 - Partial refund based on condition. Misty's Wish - that crease is possibly HP but lets just consider it DMG. DMG goes for $6 and I had charged you $13, so I would refund $7. ==> Total refund of $9. Does that work for you?"
+- "Totally fair. Your call if you'd like to mail it directly to me or wait for me to ship you an envelope. Following TCGP's policy, once I get ahold of the returned cards, I'll issue the full refund. If you decided to ship it yourself, best to keep them in the same toploader and taped up so that they dont slip out the top. A single forever stamp will usually work. I'm really sorry about the inconvenience!"
+- "Ah I remember this, that was totally my mistake. So 3 options for you: 1. You keep the one you have and I'll refund you the difference in value 2. Return the one you have (I can send you a prestamped envelope if you'd like, just let me know), and I'll ship you the actual card you want 3. You just want a full refund by returning the card"
+Playbook (TCGplayer's seller guidance plus Derek's practice):
+CONDITION ISSUE. Stage 1, no photo yet: say sorry, ask for a picture (TCGplayer has no uploads: imgur, Dropbox, Google Photos link), and offer the two paths: return for a full refund (Derek sends a prestamped envelope, refund once the cards arrive, per TCGplayer policy) or recomp at the lower condition for a partial refund plus a little for the trouble. Stage 2, picture in or the buyer described it clearly and numbers are given: one line per card in Derek's shape ("X - charged $A, at DMG it goes for $B, so I'd refund $C"), then the total, ask if that works, and keep the return option on the table. Stage 3, buyer chose: partial -> confirm the amount and that the refund goes through TCGplayer today; return -> the return address, keep the cards in the toploader and taped so they cannot slip out, one forever stamp usually works, or wait for the prestamped envelope, refund on receipt. Use only the refund numbers given; never invent a price. If no numbers are given and the stage needs them, write the message around "let me recomp these and come back with numbers".
+MISSING PACKAGE. Before the lost-after date: sorry, ask them to check with household, roommates, neighbors, the mailroom or the post office (packages are sometimes scanned early or left somewhere odd), give the exact date after which TCGplayer treats it as lost, and promise a full refund then if it has not turned up; ask them to let you know either way, and if it arrives after a refund, TCGplayer handles payment. After that date, untracked: apologize and say the full refund is being issued now. Tracking says delivered but not received: ask them to check the same places and with the carrier, and say you will open a Missing Delivered Package case with TCGplayer.
+WRONG ITEM. Own the mistake plainly, ask for a picture if there is none yet, offer the three options (keep it and refund the difference in value, return it with a prestamped envelope and get the right card if still in stock, return for a full refund). Once they pick, follow through: address / envelope / refund timing.
+OTHER. Answer what they asked, plainly, one message.
+Return shipping is always on Derek. Refunds are issued through TCGplayer. Do not promise dates you were not given. Output only the message text.`;
+async function fbIssueDraft(q) {
+  const key = await fbKey();
+  if (!key) return { ok: false, why: "no key", nokey: true };
+  const lines = ["Issue type: " + (q.kind || "other"), "Subject: " + ((q.thread || {}).subject || "")];
+  const o = q.order || {};
+  if (o.items && o.items.length) lines.push("Order " + (o.order || "") + (o.orderDate ? " placed " + o.orderDate : "") + ", cards: " + o.items.map((it) => `${it.name} (${it.printing}, sold as ${it.soldAs}, charged $${it.charged != null ? it.charged.toFixed(2) : "?"}${it.qty > 1 ? " x" + it.qty : ""})`).join("; "));
+  const p = q.picks || {};
+  if (p.cards && p.cards.length) lines.push("Refund numbers (use these exactly): " + p.cards.map((c) => `${c.name}: charged $${(c.charged || 0).toFixed(2)}, at ${c.arrived} it goes for $${c.value != null ? c.value.toFixed(2) : "?"} (${c.valueSrc || ""}), refund $${c.refund != null ? c.refund : "?"}`).join("; ") + (p.extra ? `; extra for the trouble $${p.extra}` : "") + `; total refund $${p.total}`);
+  else if (q.kind === "condition") lines.push("No refund numbers yet (no card picked in the panel).");
+  const f = q.facts || {};
+  if (q.kind === "missing") lines.push(`Shipping: ${f.method || "?"}, shipped ${f.shippedAt || "?"}, estimated delivery ${f.edd || "?"}, ${f.tracking ? "tracking " + f.tracking : "no tracking"}, counts as lost after ${f.lostAfter || "?"}${f.late ? " (that date has passed)" : ""}.`);
+  lines.push("Return address" + (q.address ? ": " + q.address : ": not on file, do not invent one; say you will send it"));
+  lines.push("Thread, oldest first (Me = Derek):");
+  ((q.thread || {}).msgs || []).forEach((m) => lines.push(`[${m.when}] ${m.me ? "Me" : m.from || "Buyer"}: ${String(m.text || "").slice(0, 1200)}`));
+  lines.push("Write Derek's next message.");
+  let r;
+  try {
+    r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-beta": "server-side-fallback-2026-07-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: JSON.stringify({ model: FB_MODEL, max_tokens: 900, fallbacks: "default", output_config: { effort: "medium" }, system: FB_ISSUE_SYSTEM, messages: [{ role: "user", content: lines.join("\n") }] }) });
+  } catch (e) { return { ok: false, why: "network: " + e.message }; }
+  if (!r.ok) return { ok: false, why: fbErr(r.status, await r.text()) };
+  const j = await r.json();
+  if (j.stop_reason === "refusal") return { ok: false, why: "the model declined this one, write it by hand" };
+  const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  if (!text) return { ok: false, why: "empty reply" };
+  const u = j.usage || {};
+  return { ok: true, text, cost: ((u.input_tokens || 0) * 4 + (u.output_tokens || 0) * 20) / 1e6 };
 }
 
 // Icon badge: how many worded, named feedbacks of the last 14 days are not yet replied to or skipped. The panel reports

@@ -20,7 +20,7 @@ async function bgTests() {
     fetch: async (url, opt) => { calls.push({ url, opt }); return { ok: status === 200, status, json: async () => reply, text: async () => JSON.stringify({ error: { message: "nope" } }) }; },
     chrome: { storage: { local: { get: (k, cb) => cb(store), set: (o, cb) => { Object.assign(store, o); cb && cb(); } }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread;", ctx);
+  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft;", ctx);
   const row = { order: "1-A", user: "david b0501", rating: 5, comment: "Card in excellent condition. Good packaging.", date: "10/27/2026", products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"], fbDate: "11/2/2026" };
   let r = await ctx.fbDraft(row);
   assert.strictEqual(r.ok, true); assert.strictEqual(r.text, "Thanks so much, glad the Samurott V got there fast!"); ok("draft text (quotes stripped, thinking block ignored)");
@@ -49,6 +49,18 @@ async function bgTests() {
   assert.strictEqual(rows.length, 5); assert.strictEqual(rows[0].comment, "Great & fast"); assert.strictEqual(rows[1].comment, ""); assert.strictEqual(rows[0].order, "P-1"); ok("worker-side regex parser reads the feedback table");
   assert.strictEqual(ctx.fbPendingOf(rows, { "P-5": { how: "skip" } }), 1); ok("badge count: worded + named + recent minus done");
   assert.strictEqual(ctx.fbParseHTML("<html><body>Log in</body></html>"), null); ok("login page -> no table -> null");
+  reply = { stop_reason: "end_turn", model: "claude-opus-5-5", usage: { input_tokens: 900, output_tokens: 120 }, content: [{ type: "text", text: "Ah sorry to hear that. Misty's Wish - charged $13.00, at DMG it goes for $6.00, so I'd refund $7. Does that work?" }] };
+  const iq = { kind: "condition", thread: { subject: "Condition Issue", msgs: [{ from: "Daniel Davis", me: false, when: "Oct 30, 11:23 AM", text: "The misty's wish is damaged, large crease" }, { from: "Me", me: true, when: "Oct 30, 11:28 AM", text: "Oh no! Can you shoot me a picture?" }, { from: "Daniel Davis", me: false, when: "Oct 30, 11:49 AM", text: "https://drive.google.com/x I'd like a refund" }] },
+    order: { order: "O-1", orderDate: "10/24/2026", items: [{ name: "Misty's Wish", printing: "Normal", soldAs: "NM", charged: 13, qty: 1 }] }, picks: { cards: [{ name: "Misty's Wish", printing: "Normal", soldAs: "NM", charged: 13, arrived: "DMG", value: 6, valueSrc: "TCG market", refund: 7 }], extra: 2, total: 9 }, facts: {}, address: "1 Main St, Union City, CA" };
+  r = await ctx.fbIssueDraft(iq); assert.strictEqual(r.ok, true); assert.ok(/refund \$7/.test(r.text));
+  const ib = JSON.parse(calls[calls.length - 1].opt.body);
+  assert.strictEqual(ib.model, "claude-opus-5-5"); assert.deepStrictEqual(ib.output_config, { effort: "medium" }); assert.ok(/CONDITION ISSUE\. Stage 1/.test(ib.system) && /MISSING PACKAGE/.test(ib.system) && /WRONG ITEM/.test(ib.system) && /prestamped envelope/.test(ib.system));
+  const iu = ib.messages[0].content;
+  assert.ok(/Issue type: condition/.test(iu) && /Misty's Wish: charged \$13\.00, at DMG it goes for \$6\.00 \(TCG market\), refund \$7/.test(iu) && /extra for the trouble \$2/.test(iu) && /total refund \$9/.test(iu) && /Return address: 1 Main St/.test(iu) && /\[Oct 30, 11:49 AM\] Daniel Davis: https/.test(iu) && /Me: Oh no!/.test(iu));
+  ok("issue draft: playbook system prompt, numbers / extra / total / address / thread in the user turn");
+  r = await ctx.fbIssueDraft({ kind: "missing", thread: { subject: "Where Is My Order", msgs: [] }, order: { order: "O-2" }, picks: {}, facts: { edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard", lostAfter: "November 18", late: false }, address: "" });
+  const iu2 = JSON.parse(calls[calls.length - 1].opt.body).messages[0].content;
+  assert.ok(/counts as lost after November 18/.test(iu2) && /no tracking/.test(iu2) && /not on file, do not invent one/.test(iu2)); ok("missing package facts and the no-address rule reach the prompt");
   // threads: stored from the Messages list read, the newest General Inquiry since the send wins
   const t0 = Date.now();
   let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
@@ -213,8 +225,11 @@ async function pageTests() {
     await p2.waitForTimeout(600);
     const info = posted.find((m) => m.type === "cardcomp-fb-order-info");
     assert.ok(info, "order info posted"); assert.strictEqual(info.order, "92588719-TEST01-00001");
-    assert.deepStrictEqual(info.products, ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"]);
-    assert.strictEqual(info.feedback, "Excellent seller, great communication"); assert.strictEqual(info.fbDate, "11/5/2026, 4:17:12 PM (PST)"); assert.strictEqual(info.buyer, "Stevie Rogers"); assert.deepStrictEqual(info.pids, ["478078"]);
+    assert.deepStrictEqual(info.products, ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil", "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint"]);
+    assert.deepStrictEqual(info.items[1], { name: "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint", pid: "90210", price: 13, qty: 1, ext: 13 }); assert.strictEqual(info.items[0].price, 17.18);
+    assert.strictEqual(info.edd, "November 6, 2026"); assert.strictEqual(info.shippedAt, "10/26/2026, 12:10:46 AM (PDT)"); assert.strictEqual(info.tracking, ""); assert.strictEqual(info.orderDate, "10/24/2026, 3:17:47 PM (PDT)"); assert.strictEqual(info.status, "Completed - Paid"); assert.strictEqual(info.method, "Standard (7-10 days)");
+    ok("order info: per-line price / qty / product id, estimated delivery, shipped, no tracking, order date, status");
+    assert.strictEqual(info.feedback, "Excellent seller, great communication"); assert.strictEqual(info.fbDate, "11/5/2026, 4:17:12 PM (PST)"); assert.strictEqual(info.buyer, "Stevie Rogers"); assert.deepStrictEqual(info.pids, ["478078", "90210"]);
     ok("order info on load: order, cards, product id, feedback text + date, buyer (after the app rendered)");
     let r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "x", expect: { comment: "Fast shipping", user: "stevie r3006" } }));
     assert.strictEqual(r.ok, false); assert.ok(/feedback differs/.test(r.why)); assert.ok(!r.clicked); assert.strictEqual(await p2.evaluate(() => window.__mock.drawerOpen), false); ok("row's feedback not on the order page: refused before the drawer opens");
@@ -252,6 +267,60 @@ async function pageTests() {
     await p4b.goto("https://sellerportal.tcgplayer.com/messages/62192274"); await p4b.addScriptTag({ path: path.join(EXT, "feedback", "messages.js") }); await p4b.waitForTimeout(800);
     assert.strictEqual(posted4b.length, 0); ok("a thread page is left alone");
     await c4.close();
+    console.log("5. thread.js on a mock message thread");
+    const threadHTML = fs.readFileSync(path.join(__dirname, "feedback-mock-thread.html"), "utf8");
+    const c5 = await browser.newContext(), p5 = await c5.newPage(); const posted5 = [];
+    await c5.exposeFunction("__msg", (m) => { posted5.push(m); });
+    await p5.addInitScript(() => {
+      window.__ccfbCountdown = 0; window.__store = { fbAddress: "2513 Example Dr, Union City, CA 94587", fbThreadSent: {} };
+      window.chrome = { runtime: { lastError: null, getURL: (p) => "chrome-extension://x/" + p, sendMessage: (m, cb) => { window.__msg(m); setTimeout(() => {
+        if (m.type === "cardcomp-fb-key") return cb({ ok: true });
+        if (m.type === "cardcomp-fb-order") return cb({ ok: true, info: { order: m.order, buyer: "Daniel Davis", orderDate: "10/24/2026, 3:17:47 PM (PDT)", edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard (7-10 days)", items: [{ name: "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint", pid: "90210", price: 13, qty: 1 }, { name: "Pokemon - Gym Heroes: Erika's Jigglypuff - #7/132 - Near Mint Holofoil", pid: "90211", price: 2.44, qty: 1 }, { name: "Pokemon - SV: Prismatic Evolutions: Umbreon ex - #161/131 - Near Mint Holofoil", pid: "90212", price: 95, qty: 1 }] } });
+        if (m.type === "cardcomp-fb-price") return cb(m.pid === "90210" ? { ok: true, conds: { NM: { market: 14 }, LP: { market: 9.5 }, MP: { market: 7.2 }, HP: { market: 6.6 }, DMG: { market: 6 } } } : m.pid === "90211" ? { ok: true, conds: { NM: { market: 2.5 }, DMG: { low: 0.85 } } } : { ok: true, conds: { NM: { market: 100 }, LP: { market: 80 }, MP: { market: 60 }, HP: { market: 40 }, DMG: { market: 30 } } });
+        if (m.type === "cardcomp-fb-issue") return cb({ ok: true, text: "Ah sorry to hear that. Total refund of $" + m.picks.total + ". Does that work?", cost: 0.02 });
+        cb(null); }, 5); } },
+        storage: { local: { get: (k, cb) => cb(window.__store), set: (o, cb) => { Object.assign(window.__store, o); cb && cb(); } } } };
+    });
+    await c5.route("https://sellerportal.tcgplayer.com/messages/**", (r) => r.fulfill({ contentType: "text/html", body: threadHTML }));
+    await p5.goto("https://sellerportal.tcgplayer.com/messages/61545705");
+    await p5.addScriptTag({ path: path.join(EXT, "feedback", "thread.js") });
+    await p5.waitForFunction(() => document.querySelector("#ccir table") && ![...document.querySelectorAll("#ccir [data-val]")].some((e) => /reading/.test(e.textContent)), null, { timeout: 15000 });
+    assert.strictEqual(await p5.$eval("#ccir [data-type]", (s) => s.value), "condition"); ok("issue type from the subject and the buyer's words");
+    const vals = await p5.$$eval("#ccir tr[data-i]", (trs) => trs.map((tr) => ({ val: tr.querySelector("[data-val]").textContent.trim(), lower: tr.querySelector("[data-lower]").checked, cond: tr.dataset.cond })));
+    assert.deepStrictEqual(vals.map((v) => v.cond), ["DMG", "DMG", "DMG"]); assert.deepStrictEqual(vals.map((v) => v.lower), [true, true, false]); ok("DMG by default, 'one grade lower' ticked only under $20 charged");
+    await p5.selectOption('#ccir tr[data-i="0"] [data-cond]', "HP"); await p5.selectOption('#ccir tr[data-i="2"] [data-cond]', "LP");
+    await p5.check('#ccir tr[data-i="0"] [data-on]'); await p5.check('#ccir tr[data-i="1"] [data-on]'); await p5.check('#ccir tr[data-i="2"] [data-on]');
+    await p5.fill("#ccir [data-extra]", "2");
+    const rows = await p5.$$eval("#ccir tr[data-i]", (trs) => trs.map((tr) => ({ cond: tr.dataset.cond, value: tr.dataset.value, ref: tr.dataset.ref, src: tr.dataset.src })));
+    assert.deepStrictEqual(rows, [{ cond: "DMG", value: "6", ref: "7", src: "TCG market" }, { cond: "DMG", value: "0.85", ref: "2", src: "cheapest listed" }, { cond: "LP", value: "80", ref: "15", src: "TCG market" }]);
+    ok("refund math: HP one lower -> DMG $6 of $13 = $7; $2.44 vs cheapest DMG listing $0.85 = $2; $95 card as described at LP $80 = $15");
+    assert.strictEqual(await p5.$eval("#ccir [data-total]", (e) => e.textContent), "$26"); ok("total = refunds + extra ($24 + $2)");
+    await p5.uncheck('#ccir tr[data-i="2"] [data-on]'); await p5.selectOption('#ccir tr[data-i="0"] [data-cond]', "MP"); await p5.uncheck('#ccir tr[data-i="0"] [data-lower]');
+    assert.strictEqual(await p5.$eval('#ccir tr[data-i="0"]', (tr) => tr.dataset.value + "/" + tr.dataset.ref + "/" + tr.dataset.src), "7.2/6/TCG market"); ok("untick one grade lower: priced as picked (MP $7.20 -> $6 refund)");
+    await p5.click("#ccir [data-draft-btn]"); await p5.waitForSelector("#ccir [data-text]");
+    const iss = posted5.find((m) => m.type === "cardcomp-fb-issue");
+    assert.strictEqual(iss.kind, "condition"); assert.strictEqual(iss.picks.cards.length, 2); assert.strictEqual(iss.picks.total, 10); assert.strictEqual(iss.picks.cards[0].arrived, "MP"); assert.strictEqual(iss.thread.msgs.length, 3); assert.strictEqual(iss.thread.msgs[0].me, false); assert.ok(/crease/.test(iss.thread.msgs[0].text)); assert.strictEqual(iss.address, "2513 Example Dr, Union City, CA 94587"); assert.strictEqual(iss.order.items[0].name, "Misty's Wish");
+    ok("draft request: picks, total, thread oldest first with who said what, address, order items");
+    assert.ok(/Total refund of \$10/.test(await p5.$eval("#ccir [data-text]", (t) => t.value))); ok("draft lands in the editable box");
+    await p5.fill("#ccir [data-text]", "Edited reply for the thread");
+    await p5.click("#ccir [data-send]");
+    await p5.waitForFunction(() => /✓ sent/.test(document.querySelector("#ccir [data-draft]")?.textContent || ""), null, { timeout: 8000 });
+    const mk = await p5.evaluate(() => window.__mockThread);
+    assert.strictEqual(mk.sentText, "Edited reply for the thread"); assert.strictEqual(mk.replyOpened, 1); ok("send: Reply pressed, the thread's reply box filled through v-model, its Send pressed, new message seen");
+    const ts = await p5.evaluate(() => window.__store.fbThreadSent); const tk = Object.keys(ts)[0];
+    assert.strictEqual(tk, "61545705:3"); assert.strictEqual(ts[tk].how, "sent"); ok("locked per thread + message count");
+    // a second send at the same point is refused; after a new message it is allowed again
+    await p5.evaluate(() => { document.querySelector("#ccir [data-draft]").innerHTML = ""; });
+    await p5.evaluate(() => { document.querySelector("#ccir [data-type]").dispatchEvent(new Event("change")); }); await p5.click("#ccir [data-draft-btn]"); await p5.waitForSelector("#ccir [data-text]"); await p5.fill("#ccir [data-text]", "again");
+    await p5.evaluate(() => { window.__mockThread.msgs = 3; });   // the mock's new message was appended to the list; pretend it was not, so the count is still 3
+    await p5.evaluate(() => { const li = document.querySelector("li.sp-messages-thread-message"); li.remove(); });
+    await p5.click("#ccir [data-send]"); await p5.waitForFunction(() => /already sent at this point/.test(document.querySelector("#ccir .note")?.textContent || ""));
+    ok("same point of the thread: refused (no double send)");
+    // missing-package facts
+    await p5.selectOption("#ccir [data-type]", "missing");
+    const facts = await p5.$eval("#ccir [data-facts]", (e) => e.textContent);
+    assert.ok(/no tracking/.test(facts) && /November 18/.test(facts) && /estimated delivery November 6, 2026/.test(facts)); ok("missing package: lost-after date = 8 business days past the estimated delivery (Nov 6 -> Nov 18)");
+    await c5.close();
   } finally { await browser.close(); }
 }
 (async () => {
