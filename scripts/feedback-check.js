@@ -18,9 +18,9 @@ async function bgTests() {
   const store = { recogKey: "sk-ant-test" };
   const ctx = { console, setTimeout, clearTimeout, JSON, Object, Promise, String, Array, Error,
     fetch: async (url, opt) => { calls.push({ url, opt }); return { ok: status === 200, status, json: async () => reply, text: async () => JSON.stringify({ error: { message: "nope" } }) }; },
-    chrome: { storage: { local: { get: (k, cb) => cb(store) }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
+    chrome: { storage: { local: { get: (k, cb) => cb(store), set: (o, cb) => { Object.assign(store, o); cb && cb(); } }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf;", ctx);
+  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread;", ctx);
   const row = { order: "1-A", user: "david b0501", rating: 5, comment: "Card in excellent condition. Good packaging.", date: "10/27/2026", products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"], fbDate: "11/2/2026" };
   let r = await ctx.fbDraft(row);
   assert.strictEqual(r.ok, true); assert.strictEqual(r.text, "Thanks so much, glad the Samurott V got there fast!"); ok("draft text (quotes stripped, thinking block ignored)");
@@ -49,6 +49,13 @@ async function bgTests() {
   assert.strictEqual(rows.length, 5); assert.strictEqual(rows[0].comment, "Great & fast"); assert.strictEqual(rows[1].comment, ""); assert.strictEqual(rows[0].order, "P-1"); ok("worker-side regex parser reads the feedback table");
   assert.strictEqual(ctx.fbPendingOf(rows, { "P-5": { how: "skip" } }), 1); ok("badge count: worded + named + recent minus done");
   assert.strictEqual(ctx.fbParseHTML("<html><body>Log in</body></html>"), null); ok("login page -> no table -> null");
+  // threads: stored from the Messages list read, the newest General Inquiry since the send wins
+  const t0 = Date.now();
+  let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
+  assert.strictEqual(ctx.fbPickThread(m["O-1"], 0), "u2"); assert.strictEqual(ctx.fbPickThread(m["O-2"], 0), "u3"); assert.strictEqual(ctx.fbPickThread(m["O-9"], 0), null); ok("thread pick: General Inquiry over the buyer's own thread, null when unknown");
+  assert.strictEqual(await ctx.fbThread("O-1", 0, null), "u2"); ok("known thread answered without opening a tab");
+  let waited; ctx.fbHandle({ type: "cardcomp-fb-threads", rows: [{ id: "4", url: "u4", order: "O-1", subject: "General Inquiry" }] }, {}, (x) => { waited = x; }); await new Promise((r) => setTimeout(r, 10));
+  m = await ctx.fbThreadsGet(); assert.strictEqual(m["O-1"][0].id, "4"); assert.strictEqual(ctx.fbPickThread(m["O-1"], t0), "u4"); ok("a new list read adds the newer thread first; since-filter picks it");
 }
 
 async function pageTests() {
@@ -85,6 +92,7 @@ async function pageTests() {
         sendMessage: (m, cb) => { window.__msg(m); setTimeout(() => {
           if (m.type === "cardcomp-fb-key") return cb({ ok: true });
           if (m.type === "cardcomp-fb-pending") return cb({ ok: true });
+          if (m.type === "cardcomp-fb-thread") return cb(m.order === "A-1" ? { ok: true, url: "https://sellerportal.tcgplayer.com/messages/62192274" } : { ok: false });
           if (m.type === "cardcomp-fb-order") return cb(m.order === "A-4" ? { ok: false, why: "did not load" } : { ok: true, info: { order: m.order, pids: ["478078"], products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil", "Pokemon - SV: Prismatic Evolutions: Umbreon ex - #161/131 - Near Mint Holofoil", "Pokemon - SM - Unbroken Bonds: Chikorita (53) - #53/214 - Near Mint", "Pokemon - Base Set: Charizard - #4/102 - Lightly Played Holofoil"], feedback: "", fbDate: new Date(Date.now() - 20 * 36e5).toLocaleString("en-US") + " (PST)", buyer: "X" } });
           if (m.type === "cardcomp-fb-draft") return cb({ ok: true, text: m.row.rating <= 3 ? "So sorry about the bent card. Tell me what would fix it and I will sort it out." : m.style === "shorter" ? "Thanks!" : "Thanks " + m.row.user + "!" + (m.row.order === "A-7" ? " Here is a 10% discount." : ""), cost: 0.004 });
           if (m.type === "cardcomp-fb-send") return cb(window.__sendReply);
@@ -125,7 +133,10 @@ async function pageTests() {
     assert.deepStrictEqual(sent, { type: "cardcomp-fb-send", order: "A-1", text: "Edited thanks!", expect: { comment: "Got here super fast and in great condition. Thank you!", user: "robert s78A1F72" } }); ok("Send posts the edited text plus what the order page must show");
     let st = await page.evaluate(() => window.__store.fbDone);
     assert.strictEqual(st["A-1"].how, "sent"); assert.strictEqual(st["A-1"].text, "Edited thanks!"); ok("done list: sent");
-    assert.ok(/view message/.test(await page.$eval('#ccfb .row[data-order="A-1"] .done a', (a) => a.textContent)) && /orders\/A-1$/.test(await page.$eval('#ccfb .row[data-order="A-1"] .done a', (a) => a.getAttribute("href")))); ok("sent line links to the order's messages");
+    await page.waitForFunction(() => /view message/.test(document.querySelector('#ccfb .row[data-order="A-1"] .done')?.textContent || ""));
+    assert.strictEqual(await page.$eval('#ccfb .row[data-order="A-1"] .done a', (a) => a.getAttribute("href")), "https://sellerportal.tcgplayer.com/messages/62192274"); ok("sent line links to the message thread found on the Messages list");
+    assert.strictEqual((await page.evaluate(() => window.__store.fbDone))["A-1"].thread, "https://sellerportal.tcgplayer.com/messages/62192274"); ok("thread kept on the done entry");
+    assert.ok(log.msgs.some((m) => m.type === "cardcomp-fb-thread" && m.order === "A-5" && m.since === 0)); ok("on load, earlier sends without a thread are looked up once");
     assert.strictEqual(log.msgs.filter((m) => m.type === "cardcomp-fb-pending").pop().n, 4); ok("badge count updated after the send");
     await page.click('#ccfb .row[data-order="A-4"] [data-skip]');
     await page.waitForFunction(() => /skipped/.test(document.querySelector('#ccfb .row[data-order="A-4"]').textContent));
@@ -139,8 +150,10 @@ async function pageTests() {
     await page.click('#ccfb .row[data-order="B-1"] [data-send]');
     await page.waitForFunction(() => /unsure/.test(document.querySelector('#ccfb .row[data-order="B-1"]').textContent));
     st = await page.evaluate(() => window.__store.fbDone);
-    assert.strictEqual(st["B-1"].how, "unsure"); assert.strictEqual(await page.$('#ccfb .row[data-order="B-1"] [data-send]'), null); assert.ok(/open the order/.test(await page.$eval('#ccfb .row[data-order="B-1"]', (e) => e.textContent))); ok("Send pressed, no confirmation: locked as unsure, never offered again, link to the order");
+    assert.strictEqual(st["B-1"].how, "unsure"); assert.strictEqual(await page.$('#ccfb .row[data-order="B-1"] [data-send]'), null); assert.ok(/open Messages/.test(await page.$eval('#ccfb .row[data-order="B-1"]', (e) => e.textContent))); ok("Send pressed, no confirmation: locked as unsure, never offered again, link to Messages");
     await page.click("#ccfbfoot [data-hist]"); assert.ok(/Edited thanks!/.test(await page.$eval("#ccfbhist", (e) => e.textContent)) && /unsure/.test(await page.$eval("#ccfbhist", (e) => e.textContent))); ok("sent history lists what went out, unsure marked");
+    const hl = await page.$$eval("#ccfbhist a", (as) => as.map((a) => a.getAttribute("href")));
+    assert.ok(hl.includes("https://sellerportal.tcgplayer.com/messages/62192274") && hl.includes("https://sellerportal.tcgplayer.com/orders/A-1") && hl.includes("https://sellerportal.tcgplayer.com/messages")); ok("history: thread link when known, Messages list when not, order link always");
     // countdown with cancel
     const pc = await ctx.newPage(); await pc.addInitScript(init, { store: { fbDone: {} }, countdown: 2 });
     await pc.goto("https://store.tcgplayer.com/admin/Seller/Feedback"); await pc.addScriptTag({ path: path.join(EXT, "feedback", "feedback.js") });
@@ -223,6 +236,22 @@ async function pageTests() {
     r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "again" }));
     assert.strictEqual(r.ok, false); assert.ok(/subject/.test(r.why)); ok("subject that will not select: reported");
     await c2.close();
+    console.log("4. messages.js on a mock Messages list");
+    const c4 = await browser.newContext(), p4 = await c4.newPage(); const posted4 = [];
+    await c4.exposeFunction("__msg", (m) => { posted4.push(m); });
+    await p4.addInitScript(() => { window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); cb && cb({ ok: true }); } } }; });
+    const row = (id, order, subj, members, created) => `<tr><td></td><td><span>${members}</span></td><td><a href="https://sellerportal.tcgplayer.com/messages/${id}" data-testid="linkMessages_Home_Thread"><span>${subj}</span></a></td><td><a href="https://sellerportal.tcgplayer.com/orders/${order}" data-testid="linkMessages_Home_OrderDetailsSellerOrder"><span>${order}</span></a></td><td>Completed - Paid</td><td><span>${created}</span></td><td></td><td></td></tr>`;
+    await c4.route("https://sellerportal.tcgplayer.com/messages**", (r) => r.fulfill({ contentType: "text/html", body: `<html><body><div id="app"></div><script>setTimeout(() => { document.getElementById("app").innerHTML = '<table><tbody>${row("62192274", "92588719-95D880-125F4", "General Inquiry", "Me, Andy Aguiar", "Nov 6, 2026")}${row("62176784", "92588719-FA4AB6-229FF", "Negative Experience", "Me, Cari Pennoyer", "Nov 5, 2026")}</tbody></table>'; }, 300);</script></body></html>` }));
+    await p4.goto("https://sellerportal.tcgplayer.com/messages");
+    await p4.addScriptTag({ path: path.join(EXT, "feedback", "messages.js") });
+    await p4.waitForTimeout(1500);
+    const th = posted4.find((m) => m.type === "cardcomp-fb-threads");
+    assert.ok(th && th.rows.length === 2); assert.deepStrictEqual(th.rows[0], { id: "62192274", url: "https://sellerportal.tcgplayer.com/messages/62192274", order: "92588719-95D880-125F4", subject: "General Inquiry", members: "Me, Andy Aguiar", created: "Nov 6, 2026" }); ok("Messages list read: thread id, url, order, subject, members, created");
+    const p4b = await c4.newPage(); const posted4b = []; await c4.exposeFunction("__msg2", (m) => { posted4b.push(m); });
+    await p4b.addInitScript(() => { window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg2(m); cb && cb({ ok: true }); } } }; });
+    await p4b.goto("https://sellerportal.tcgplayer.com/messages/62192274"); await p4b.addScriptTag({ path: path.join(EXT, "feedback", "messages.js") }); await p4b.waitForTimeout(800);
+    assert.strictEqual(posted4b.length, 0); ok("a thread page is left alone");
+    await c4.close();
   } finally { await browser.close(); }
 }
 (async () => {

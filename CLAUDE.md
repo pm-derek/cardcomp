@@ -390,10 +390,15 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium (52 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
-  ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids and
-  the sent line link to the order page (its View Messages opens the thread; the Messages tab takes no order in its
-  address). The inbox is a work queue, not an archive (Derek asked): only pending rows render, the footer's "replied
+  headless Chromium plus messages.js on a mock Messages list (60 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
+  to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
+  page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
+  `linkMessages_Home_Thread` + order link and posts `cardcomp-fb-threads`; bg keeps `fbThreads` (order -> rows, 300
+  orders) and answers `cardcomp-fb-thread {order, since}` from it, else opens the list in the background tab and waits
+  for the read; `fbPickThread` = newest General Inquiry seen since the send (an order can also carry the buyer's own
+  thread), else the newest General Inquiry, else the newest row. The panel stores it on `fbDone[order].thread`, looks
+  up recent sends that lack one on load, and falls back to the Messages list. The inbox is a work queue, not an archive (Derek asked): only pending rows render, the footer's "replied
   from here" lists the last 15 with links, TCGplayer's Messages tab is the record.
 
 ## Other UI notes
