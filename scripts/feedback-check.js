@@ -85,7 +85,7 @@ async function pageTests() {
         sendMessage: (m, cb) => { window.__msg(m); setTimeout(() => {
           if (m.type === "cardcomp-fb-key") return cb({ ok: true });
           if (m.type === "cardcomp-fb-pending") return cb({ ok: true });
-          if (m.type === "cardcomp-fb-order") return cb(m.order === "A-4" ? { ok: false, why: "did not load" } : { ok: true, info: { order: m.order, pids: ["478078"], products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil", "Pokemon - SV: Prismatic Evolutions: Umbreon ex - #161/131 - Near Mint Holofoil", "Pokemon - Base Set: Charizard - #4/102 - Lightly Played Holofoil"], feedback: "", fbDate: new Date(Date.now() - 20 * 36e5).toLocaleString("en-US") + " (PST)", buyer: "X" } });
+          if (m.type === "cardcomp-fb-order") return cb(m.order === "A-4" ? { ok: false, why: "did not load" } : { ok: true, info: { order: m.order, pids: ["478078"], products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil", "Pokemon - SV: Prismatic Evolutions: Umbreon ex - #161/131 - Near Mint Holofoil", "Pokemon - SM - Unbroken Bonds: Chikorita (53) - #53/214 - Near Mint", "Pokemon - Base Set: Charizard - #4/102 - Lightly Played Holofoil"], feedback: "", fbDate: new Date(Date.now() - 20 * 36e5).toLocaleString("en-US") + " (PST)", buyer: "X" } });
           if (m.type === "cardcomp-fb-draft") return cb({ ok: true, text: m.row.rating <= 3 ? "So sorry about the bent card. Tell me what would fix it and I will sort it out." : m.style === "shorter" ? "Thanks!" : "Thanks " + m.row.user + "!" + (m.row.order === "A-7" ? " Here is a 10% discount." : ""), cost: 0.004 });
           if (m.type === "cardcomp-fb-send") return cb(window.__sendReply);
           cb(null); }, 5); } },
@@ -104,7 +104,8 @@ async function pageTests() {
     assert.deepStrictEqual(log.pages.filter((p) => p !== "1"), ["2", "3"]); ok("fetched page 2 and 3, stopped once a page was all old");
     assert.ok(await page.$eval('#ccfb .row[data-order="A-6"]', (e) => e.classList.contains("neg"))); assert.ok(/reply within 48h: 2[78]h left/.test(await page.$eval('#ccfb .row[data-order="A-6"] [data-tags]', (e) => e.textContent))); ok("negative row: red bar and the 48h clock from the feedback date");
     const card = await page.$eval('#ccfb .row[data-order="A-1"] [data-card]', (e) => e.textContent);
-    assert.strictEqual(card, "Hisuian Samurott V, Umbreon ex +1"); ok("card line: short names, +N");
+    assert.strictEqual(card, "Hisuian Samurott V, Umbreon ex +2"); ok("card line: short names, +N");
+    assert.strictEqual(await page.$eval('#ccfb .row[data-order="A-1"] .hd a', (a) => a.getAttribute("href")), "https://sellerportal.tcgplayer.com/orders/A-1"); ok("order id links to the order page");
     assert.strictEqual(await page.$eval('#ccfb .row[data-order="A-1"] img', (e) => e.getAttribute("src")), "https://tcgplayer-cdn.tcgplayer.com/product/478078_200w.jpg"); ok("thumbnail from the order's product id");
     assert.ok(/2 orders in 14 days/.test(await page.$eval('#ccfb .row[data-order="A-7"] .hd', (e) => e.textContent))); ok("repeat buyer tag");
     const drafts = await page.$$eval("#ccfb textarea", (els) => els.map((e) => e.value));
@@ -112,7 +113,7 @@ async function pageTests() {
     assert.ok(/mentions discount/.test(await page.$eval('#ccfb .row[data-order="A-7"] .flags', (e) => e.textContent)) && await page.$eval('#ccfb .row[data-order="A-7"]', (e) => e.classList.contains("flag"))); ok("content flag: a discount the buyer never mentioned");
     assert.strictEqual(await page.$('#ccfb .row[data-order="A-1"] .flags'), null); ok("clean draft: no flag");
     const draftRow = log.msgs.find((m) => m.type === "cardcomp-fb-draft" && m.row.order === "A-1").row;
-    assert.strictEqual(draftRow.products.length, 3); assert.ok(draftRow.fbDate); ok("draft request carries the order's cards and feedback date");
+    assert.strictEqual(draftRow.products.length, 4); assert.ok(draftRow.fbDate); ok("draft request carries the order's cards and feedback date");
     assert.ok(/6 worded in the last 14 days/.test(await page.$eval("#ccfbfoot", (e) => e.textContent)) && /replied from here: 1/.test(await page.$eval("#ccfbfoot", (e) => e.textContent)) && /today: 1 of 10/.test(await page.$eval("#ccfbfoot", (e) => e.textContent))); ok("footer counts incl. today's sends");
     assert.strictEqual(log.msgs.filter((m) => m.type === "cardcomp-fb-pending").pop().n, 5); ok("pending count posted for the icon badge");
     await page.click('#ccfb .row[data-order="A-1"] [data-redo="shorter"]'); await page.waitForFunction(() => document.querySelector('#ccfb .row[data-order="A-1"] textarea')?.value === "Thanks!"); ok("shorter: redraft with the style");
@@ -124,6 +125,7 @@ async function pageTests() {
     assert.deepStrictEqual(sent, { type: "cardcomp-fb-send", order: "A-1", text: "Edited thanks!", expect: { comment: "Got here super fast and in great condition. Thank you!", user: "robert s78A1F72" } }); ok("Send posts the edited text plus what the order page must show");
     let st = await page.evaluate(() => window.__store.fbDone);
     assert.strictEqual(st["A-1"].how, "sent"); assert.strictEqual(st["A-1"].text, "Edited thanks!"); ok("done list: sent");
+    assert.ok(/view message/.test(await page.$eval('#ccfb .row[data-order="A-1"] .done a', (a) => a.textContent)) && /orders\/A-1$/.test(await page.$eval('#ccfb .row[data-order="A-1"] .done a', (a) => a.getAttribute("href")))); ok("sent line links to the order's messages");
     assert.strictEqual(log.msgs.filter((m) => m.type === "cardcomp-fb-pending").pop().n, 4); ok("badge count updated after the send");
     await page.click('#ccfb .row[data-order="A-4"] [data-skip]');
     await page.waitForFunction(() => /skipped/.test(document.querySelector('#ccfb .row[data-order="A-4"]').textContent));
