@@ -366,7 +366,7 @@
     // export to upload (it had reached 109 MB with frames) and no hand review for lots with a tapped / opened card.
     if (b) try {
       const sg = b.m.suggestion && b.m.cards.find((x) => x.id === b.m.suggestion), rd = b.r || {};
-      rec.recog = { src: b.d.src || "claude", model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, zoom: b.d.zoom || 0, short: b.d.short || 0,
+      rec.recog = { at: +key || 0, src: b.d.src || "claude", model: (b.d.model || "").replace("claude-", ""), ms: b.d.ms || 0, pre: !!b.d.pre, manual: !!b.d.manual, zoom: b.d.zoom || 0, short: b.d.short || 0,
         read: { name: rd.name || "", number: rd.number || "", total: rd.total || "", rarity: rd.rarity || "", finish: rd.finish || "", stamp: rd.stamp || "", set: rd.set || "", lang: rd.language || "", conf: rd.confidence },
         kind: b.m.kind, strength: b.m.strength || null, printing: b.m.printing || "",
         sug: sg ? { id: sg.id, n: sg.n, s: sg.s, num: sg.num, r: sg.r || "" } : null, ids: b.m.cards.slice(0, 8).map((x) => x.id),
