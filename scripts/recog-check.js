@@ -206,9 +206,9 @@ async function appPage(browser, base, blockRecog) {
     if (om.commands) { delete om.commands["recog-grab"]; if (!Object.keys(om.commands).length) delete om.commands; }
     om.content_scripts = (om.content_scripts || []).filter((c) => !(c.js || []).every((j) => j.startsWith("recog/")));
     om.permissions = (om.permissions || []).filter((p) => p !== "activeTab");
-    om.host_permissions = (om.host_permissions || []).filter((h) => !/anthropic\.com|cardsight\.ai|tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io/.test(h));
-    const baseScripts = JSON.stringify((base.content_scripts || []).map((c) => c.js.join(",")));
-    ok(JSON.stringify(om) === JSON.stringify(sm) && !/recog|anthropic/i.test(JSON.stringify(sm)) && JSON.stringify(sm.content_scripts.map((c) => c.js.join(","))) === baseScripts,
+    om.host_permissions = (om.host_permissions || []).filter((h) => !/cardsight\.ai|tcgplayer-cdn\.tcgplayer\.com|images\.pokemontcg\.io/.test(h));   // api.anthropic.com stays (feedback thank-yous)
+    const baseScripts = JSON.stringify((om.content_scripts || []).map((c) => c.js.join(",")));   // today's scripts minus the experiment's (other features add their own, e.g. feedback/)
+    ok(JSON.stringify(om) === JSON.stringify(sm) && !/recog|cardsight/i.test(JSON.stringify(sm)) && JSON.stringify(sm.content_scripts.map((c) => c.js.join(","))) === baseScripts,
       "manifest after strip: the experiment's shortcut, content script and permissions gone, everything else kept");
   } else ok(false, "could not find the commit that added the experiment");
   ok(!fs.existsSync(path.join(tmp, "recog")) && !fs.existsSync(path.join(tmp, "extension/recog")), "recog folders gone");

@@ -341,6 +341,57 @@ Rules: a strong suggestion is never the wrong card; no closest-by-name fallback;
 Any new hook line in an existing file gets the `RECOG` tag.
 
 <!-- RECOG-END -->
+## Feedback thank-yous (extension/feedback/)
+
+Derek, 2026-11-06: "see all the feedback and generate a thank-you to send to each one; show what they said, a suggested
+response, approve or disapprove". Kept in this repo and extension on purpose (same key, hosts, relay and Options page;
+its own folder, hook lines in bg.js tagged `FEEDBACK`). Scope (Derek): only feedback with words and a buyer name, last
+14 days (`FB_DAYS`). Replies to feedback are not public on TCGplayer; Derek messages the buyer directly. Derek: "I can't
+unsend a message", so no batch send and the safeguards below; a wrong send is the one failure that matters here.
+- `feedback.js` (content script, `store.tcgplayer.com/admin/Seller/Feedback*`): the old server-rendered admin page, a
+  plain `table.dTable` (seller, order link, order date, rating, comment or `<i>No Comment Left</i>`, user), 25 rows a
+  page, `?page=N`; pages 2.. are fetched with the same login until a page is all older than the window (max 6); a reply
+  with no feedback table means signed out (shown, nothing offered). Inbox above the list, portal look (white, blue):
+  per row thumbnail (`tcgplayer-cdn .../product/<pid>_200w.jpg`, pid from the order's product link), buyer, stars,
+  cards, "N orders in 14 days" (unique orders per user in the window, worded or not), what they said, the draft in a
+  textarea, Send / Skip / redo / shorter. 1-3 stars first, red bar, "reply within 48h: Nh left" from the order page's
+  feedback date. Amber "check" line (`flagsOf`): refund / discount / $ / link / credit the feedback never mentioned, an
+  apology on a 4-5 star, over 420 chars, mentions automation; never blocking. Send: 3 s countdown, tap again cancels
+  (`window.__ccfbCountdown` for tests); then storage is re-read (another tab may have sent it), the day cap
+  (`FB_DAY_CAP` 10, sends + unsure since local midnight) checked, the order locked as `sending` in
+  `chrome.storage.local.fbDone` BEFORE the extension is asked, and the row's comment + user go along as `expect`.
+  Outcomes: `sent`; `clicked:true` without confirmation -> `unsure` (row links to the order, never offered again); a
+  refusal before the click unlocks and can be retried. Done list keeps `{at, how, user, text}` 90 days; the footer's
+  "replied from here" expands to the last 15. All caught up collapses to one line. Posts `cardcomp-fb-pending {n}`
+  for the icon badge.
+- `feedback-bg.js` (imported by bg.js, `fbHandle` for `cardcomp-fb-*`): `fbDraft(row, style)` calls api.anthropic.com
+  with the Options page key (storage name kept from the experiment that first added it), `claude-opus-5-5`, effort
+  low, `fallbacks:"default"` (beta `server-side-fallback-2026-07-01`); system prompt with two of Derek's real replies
+  for the voice, plus `FB_NEG` on 1-3 stars (acknowledge, make it right, ask what would fix it, never a rating ask),
+  "one short sentence" for `shorter`, a repeat-buyer line; user turn = buyer, rating, dates, feedback, the order's
+  cards; a `refusal` stop says "write it by hand". One background tab for order pages (`fbTab`, id in
+  `chrome.storage.session`), reused for reading and sending. Badge: `fbBadge(n)` from the panel, and `fbCheck` on an
+  hourly alarm (`alarms` permission) fetches page 1 with the login cookie and parses it with a regex
+  (`fbParseHTML`, no DOMParser in a worker); no table = signed out = badge cleared.
+- `order.js` (content script, `sellerportal.tcgplayer.com/orders/*`, a Vue app): on load posts `cardcomp-fb-order-info`
+  (cards + product ids from `OrderDetails_ProductList_ProductLink`, feedback text + date, buyer) once the product list
+  rendered; on `cardcomp-fb-fill` first `matches(info, expect)`: the page's feedback text must equal the row's
+  (case / punctuation ignored) and, for two-word usernames ("robert s78A1F72"), the buyer's first name must fit (a
+  one-word handle like xMissAlyssax says nothing); any mismatch refuses before the drawer opens. Then clicks
+  `OrderDetails_CustomerDetails_btnContactBuyer`, picks General Inquiry (`li[role=option][aria-label]`), sets the
+  textarea through the native setter + `input` event (v-model), clicks `OrderDetails_ContactBuyer_ButtonSendMessage`,
+  and replies `{ok, clicked:true}`: ok only when the drawer closed or the box emptied within 10 s; otherwise the
+  failure is named, bg.js brings the tab forward with the text still in the box. Uses the page's `data-testid` labels,
+  never text heuristics. The Messages tab's thread drawer is not used (renders on demand; the order page has everything).
+- Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`).
+  RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
+- `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
+  a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
+  caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
+  headless Chromium (50 checks). Rendered at 1280 (scratch). Not yet verified on the live Seller Portal: the first
+  real Send tells whether Vue takes the programmatic subject pick and textarea input; a miss fails safe (nothing typed,
+  or "unsure" with the text left in the box).
+
 ## Other UI notes
 
 - **Stale-price banner**: if `data.json`'s `updated` is > 2 days old, a warning shows (the daily ingest may have stalled).
