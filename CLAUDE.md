@@ -393,7 +393,8 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   `li.sp-messages-thread-message` header "Message From <X>" + `.typography-detail` date + `__body`, newest first on
   the page, reversed), the order through `cardcomp-fb-order` (order.js also returns `items` {name, pid, price = TCG
   MP Price column, qty, ext}, `edd`, `shippedAt`, `tracking` ("" = No Tracking Number), `orderDate`, `status`,
-  `method`). Types: condition / missing package / wrong card / missing card (a card left out) / other, guessed from
+  `method`; `items` folded by product id, since the product table is on the page twice and every card showed twice
+  live 2026-11-06). Types: condition / missing package / wrong card / missing card (a card left out) / other, guessed from
   subject + buyer words (`typeOf`), changeable. Condition: per card tick, arrived condition (DMG default), "one grade
   lower" ticked under `SMALL` $20 charged (Derek: a cheap card graded lower is paying $1-2 for a better review; a
   high-value card is priced as described), value = `cardcomp-fb-price` (bg -> `tcgFast`, every condition of the
@@ -408,7 +409,8 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   = refuse the package, damaged in transit, counterfeit = TCGplayer, remorse / price moves / wrong address = no
   refund). The user turn carries the numbers verbatim, the wait-until facts, the address or "not on file, do not
   invent one", the last 12 messages. Safeguards (Derek: "same scrutiny; I can't unsend"): `issueFlags` amber line
-  (an amount not among the panel's numbers, a photo made a condition, ratings talk, return-to-sender wording, long),
+  (an amount not among the panel's numbers, a ticked card the draft never names (live 2026-11-06: Slowking ticked, the
+  draft apologised for a Ponyta from the thread), a photo made a condition, ratings talk, return-to-sender wording, long),
   live as he edits; `S.draftFor` {tid, order, n} at draft and at send the address, the order on the page and the
   message count are checked again (another thread, or the buyer wrote since = refused); lock in
   `chrome.storage.local.fbThreadSent[tid:nMsgs]` (a second send at the same point is refused; 60 days; `DAY_CAP`
