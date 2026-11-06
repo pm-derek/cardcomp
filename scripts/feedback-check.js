@@ -54,13 +54,13 @@ async function bgTests() {
     order: { order: "O-1", orderDate: "10/24/2026", items: [{ name: "Misty's Wish", printing: "Normal", soldAs: "NM", charged: 13, qty: 1 }] }, picks: { cards: [{ name: "Misty's Wish", printing: "Normal", soldAs: "NM", charged: 13, arrived: "DMG", value: 6, valueSrc: "TCG market", refund: 7 }], extra: 2, total: 9 }, facts: {}, address: "1 Main St, Union City, CA" };
   r = await ctx.fbIssueDraft(iq); assert.strictEqual(r.ok, true); assert.ok(/refund \$7/.test(r.text));
   const ib = JSON.parse(calls[calls.length - 1].opt.body);
-  assert.strictEqual(ib.model, "claude-opus-5-5"); assert.deepStrictEqual(ib.output_config, { effort: "medium" }); assert.ok(/CONDITION ISSUE\. Stage 1/.test(ib.system) && /MISSING PACKAGE/.test(ib.system) && /WRONG ITEM/.test(ib.system) && /prestamped envelope/.test(ib.system));
+  assert.strictEqual(ib.model, "claude-opus-5-5"); assert.deepStrictEqual(ib.output_config, { effort: "medium" }); assert.ok(/CONDITION ISSUE\. Stage 1/.test(ib.system) && /MISSING PACKAGE/.test(ib.system) && /WRONG CARD/.test(ib.system) && /MISSING CARD/.test(ib.system) && /never required/.test(ib.system) && /prestamped envelope/.test(ib.system) && /Return shipping is always on Derek/.test(ib.system));
   const iu = ib.messages[0].content;
   assert.ok(/Issue type: condition/.test(iu) && /Misty's Wish: charged \$13\.00, at DMG it goes for \$6\.00 \(TCG market\), refund \$7/.test(iu) && /extra for the trouble \$2/.test(iu) && /total refund \$9/.test(iu) && /Return address: 1 Main St/.test(iu) && /\[Oct 30, 11:49 AM\] Daniel Davis: https/.test(iu) && /Me: Oh no!/.test(iu));
   ok("issue draft: playbook system prompt, numbers / extra / total / address / thread in the user turn");
-  r = await ctx.fbIssueDraft({ kind: "missing", thread: { subject: "Where Is My Order", msgs: [] }, order: { order: "O-2" }, picks: {}, facts: { edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard", lostAfter: "November 18", late: false }, address: "" });
+  r = await ctx.fbIssueDraft({ kind: "missing", thread: { subject: "Where Is My Order", msgs: [] }, order: { order: "O-2" }, picks: {}, facts: { edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard", waitUntil: "November 10", late: false, reportedLate: true }, address: "" });
   const iu2 = JSON.parse(calls[calls.length - 1].opt.body).messages[0].content;
-  assert.ok(/counts as lost after November 18/.test(iu2) && /no tracking/.test(iu2) && /not on file, do not invent one/.test(iu2)); ok("missing package facts and the no-address rule reach the prompt");
+  assert.ok(/wait-until date \(estimated delivery \+ 2 business days\) November 10/.test(iu2) && /no tracking/.test(iu2) && /reported it more than 2 business days after/.test(iu2) && /not on file, do not invent one/.test(iu2)); ok("missing package facts (wait-until, reported late) and the no-address rule reach the prompt");
   // threads: stored from the Messages list read, the newest General Inquiry since the send wins
   const t0 = Date.now();
   let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
@@ -302,11 +302,23 @@ async function pageTests() {
     assert.strictEqual(iss.kind, "condition"); assert.strictEqual(iss.picks.cards.length, 2); assert.strictEqual(iss.picks.total, 10); assert.strictEqual(iss.picks.cards[0].arrived, "MP"); assert.strictEqual(iss.thread.msgs.length, 3); assert.strictEqual(iss.thread.msgs[0].me, false); assert.ok(/crease/.test(iss.thread.msgs[0].text)); assert.strictEqual(iss.address, "2513 Example Dr, Union City, CA 94587"); assert.strictEqual(iss.order.items[0].name, "Misty's Wish");
     ok("draft request: picks, total, thread oldest first with who said what, address, order items");
     assert.ok(/Total refund of \$10/.test(await p5.$eval("#ccir [data-text]", (t) => t.value))); ok("draft lands in the editable box");
+    assert.strictEqual(await p5.$eval("#ccir [data-flags]", (e) => e.textContent), ""); ok("draft with only the panel's numbers: no flag");
+    await p5.fill("#ccir [data-text]", "Once I get a picture I can refund $12. Thanks for the great rating!"); await p5.waitForTimeout(50);
+    const fl = await p5.$eval("#ccir [data-flags]", (e) => e.textContent);
+    assert.ok(/amount not from the panel: \$12/.test(fl) && /photo a condition/.test(fl) && /ratings/.test(fl)); ok("flags: invented amount, photo as a condition, ratings talk");
+    await p5.fill("#ccir [data-text]", "I'd refund $7 and $2, so $10 total. Does that work?"); await p5.waitForTimeout(50);
+    assert.strictEqual(await p5.$eval("#ccir [data-flags]", (e) => e.textContent), ""); ok("the panel's own numbers pass");
+    // the buyer writes after the draft: refuse
+    await p5.evaluate(() => { document.querySelector(".sp-messages-thread-drawer__messages-list").insertAdjacentHTML("afterbegin", '<li class="sp-messages-thread-message"><div class="sp-messages-thread-message__header"><div><div>Message From &lt;Daniel Davis&gt;</div><div class="typography-detail">Oct 30, 2026, 11:55 AM</div></div></div><div class="sp-messages-thread-message__body">Actually never mind</div></li>'); });
+    await p5.click("#ccir [data-send]"); await p5.waitForFunction(() => /wrote since this draft/.test(document.querySelector("#ccir .note")?.textContent || ""));
+    assert.strictEqual(await p5.evaluate(() => window.__mockThread.sentText), ""); ok("a new buyer message after the draft: send refused, nothing typed");
+    await p5.evaluate(() => { document.querySelector("li.sp-messages-thread-message").remove(); });
     await p5.fill("#ccir [data-text]", "Edited reply for the thread");
     await p5.click("#ccir [data-send]");
     await p5.waitForFunction(() => /✓ sent/.test(document.querySelector("#ccir [data-draft]")?.textContent || ""), null, { timeout: 8000 });
     const mk = await p5.evaluate(() => window.__mockThread);
     assert.strictEqual(mk.sentText, "Edited reply for the thread"); assert.strictEqual(mk.replyOpened, 1); ok("send: Reply pressed, the thread's reply box filled through v-model, its Send pressed, new message seen");
+    assert.ok(/Partial Refund, \$10, reason Product - Condition Issue/.test(await p5.$eval("#ccir [data-draft]", (e) => e.textContent))); ok("after the send: the next step on the order page is spelled out (the message moves no money)");
     const ts = await p5.evaluate(() => window.__store.fbThreadSent); const tk = Object.keys(ts)[0];
     assert.strictEqual(tk, "61545705:3"); assert.strictEqual(ts[tk].how, "sent"); ok("locked per thread + message count");
     // a second send at the same point is refused; after a new message it is allowed again
@@ -319,7 +331,13 @@ async function pageTests() {
     // missing-package facts
     await p5.selectOption("#ccir [data-type]", "missing");
     const facts = await p5.$eval("#ccir [data-facts]", (e) => e.textContent);
-    assert.ok(/no tracking/.test(facts) && /November 18/.test(facts) && /estimated delivery November 6, 2026/.test(facts)); ok("missing package: lost-after date = 8 business days past the estimated delivery (Nov 6 -> Nov 18)");
+    assert.ok(/no tracking/.test(facts) && /wait until November 10/.test(facts) && /estimated delivery November 6, 2026/.test(facts)); ok("missing package: wait-until = estimated delivery + 2 business days (Fri Nov 6 -> Tue Nov 10), per the current policy");
+    await p5.selectOption("#ccir [data-type]", "missingcard");
+    assert.ok(/reship the card if you still have it/.test(await p5.$eval("#ccir [data-facts]", (e) => e.textContent))); ok("missing card: its own rule");
+    // in-app navigation: the address changes without a page load
+    await p5.evaluate(() => { history.pushState({}, "", "/messages"); }); await p5.waitForTimeout(900);
+    assert.strictEqual(await p5.$("#ccir"), null); ok("back to the list without a reload: the panel is dropped");
+    await p5.evaluate(() => { history.pushState({}, "", "/messages/61545705"); }); await p5.waitForSelector("#ccir table", { timeout: 8000 }); ok("a thread opened in-app: the panel mounts again");
     await c5.close();
   } finally { await browser.close(); }
 }
