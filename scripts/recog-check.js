@@ -1023,7 +1023,7 @@ async function appPage(browser, base, blockRecog) {
   ok(au.likely && au.haul && au.dash && au.sheet && au.lead && au.dashTxt, "stats: a win under 40% of market is spent only, not net / margin; nets after coupons and shipping " + JSON.stringify(au));
   ok(au.buyers && au.worth && au.cal && au.stale && au.reset, "stats: no rival without a beaten max, no 'I' buyer, worth today by NM move, 7 days from midnight, stale stream empty, removeLot resets buyers");
   ok(au.failed === "7,9" && au.noFailed === "9", "log read: rows on failed day files kept (" + au.failed + "), replaced without failed (" + au.noFailed + ")");
-  // sourcing time (2026-11-06): lots on screen, gaps under 10 min joined, only within 10 min of your action; phone + desktop copies keep the latest action
+  // sourcing time (2026-11-06): lots on screen, gaps under 10 min joined, only within 5 min of your action (a scan counts); phone + desktop copies keep the latest action
   const src = await ap.evaluate(() => {
     const keep = localStorage.getItem("cardcomp_lots"), T0 = Date.now() - 6 * 3600e3, M = 60000, rows = [];
     for (let i = 0; i < 60; i++) rows.push(lotRow({ seller: "sT", startedAt: T0 + i * M - 20000, at: T0 + i * M, final: 3, winner: "bob", title: "lot " + i, card: i === 5 ? { id: "x", n: "X", tapAt: T0 + 5 * M } : null }));
@@ -1031,7 +1031,9 @@ async function appPage(browser, base, blockRecog) {
     rows.push(lotRow({ seller: "sT", startedAt: T0 + 107 * M - 20000, at: T0 + 107 * M, final: 4, iLed: true, winner: "bob" }));   // 40 min gap: a new sitting
     const S = sourcing(rows), mins = (x) => Math.round(x / M * 10) / 10;
     const o = { ms: mins(S.ms), raw: mins(S.raw), sittings: S.sittings, hr: perHr(10, S.ms), short: perHr(10, 10 * M) };
-    const old = Object.assign({}, rows[30]); delete old.ac; o.oldRow = mins(sourcing([old]).ms);   // stored before the action time: counts
+    const old = Object.assign({}, rows[30]); delete old.ac; o.oldRow = mins(sourcing([old]).ms);
+    const scan = lotRow({ seller: "sT", startedAt: T0 + 30 * M - 20000, at: T0 + 30 * M, final: 3, winner: "bob", recog: { manual: true, at: T0 + 30 * M - 30000 } });
+    o.scan = mins(sourcing(rows.concat([scan])).ms) - mins(S.ms);   // a scan mid-way through the idle stretch adds its 10 min window   // stored before the action time: counts
     localStorage.setItem("cardcomp_lots", "[]");
     const d = lotRow({ seller: "sM", title: "t1", startedAt: T0 - 30000, at: T0, final: 5, winner: "bob", card: { id: "x", n: "X", viewAt: T0 - 40000 } });
     const ph = Object.assign(lotRow({ seller: "sM", title: "t1", startedAt: T0 - 25000, at: T0 + 3000, final: 5, winner: "bob", hist: [{ t: 20, u: "me", a: 5 }] }), { src: "phone" });
@@ -1040,7 +1042,7 @@ async function appPage(browser, base, blockRecog) {
     localStorage.setItem("cardcomp_lots", keep);
     return o;
   });
-  ok(src.ms === 25.7 && src.raw === 67.7 && src.sittings === 2 && src.hr > 23 && src.short === null && src.oldRow > 0 && src.merged, "sourcing time: idle stretch left out, 8 min gap joined, 40 min gap splits, phone lead kept " + JSON.stringify(src));
+  ok(src.ms === 15.3 && src.scan === 10 && src.raw === 67.7 && src.sittings === 2 && src.hr > 23 && src.short === null && src.oldRow > 0 && src.merged, "sourcing time: idle stretch left out, a scan counts, 8 min gap joined, 40 min gap splits, phone lead kept " + JSON.stringify(src));
   // wide window with stats open: the cart bar sits in the app column, not under the stats panel
   const cartPos = await ap.evaluate(async () => { addToCart({ id: "sv8pt5-40", n: "Sylveon", s: "Prismatic Evolutions", printing: "Holofoil", market: 5, cond: "NM", y: 2025, lang: "en", game: "pkmn", r: "Rare" }); LOTSTATS_OPEN = true; paintLotStats(); return 1; });
   await ap.setViewportSize({ width: 1180, height: 900 }); await ap.waitForTimeout(200);
