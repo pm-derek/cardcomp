@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock order page</title></head><body>
+<!-- Mock of sellerportal.tcgplayer.com/orders/<id> for scripts/feedback-check.js: the data-testid labels and the Contact
+     Buyer drawer's behaviour (subject combobox, v-model textarea, Send) as saved 2026-11-06. Vue-like: the drawer is
+     display:none until Contact Buyer is pressed; the subject list opens on the trigger click; the textarea's value is read
+     only through "input" events; Send is a no-op until both are set; a successful Send closes the drawer. -->
+<div id="app"></div>
+<script>
+window.__mock = { subject: "", message: "", sent: 0, drawerOpen: false };
+setTimeout(() => {   // the real app renders after its API calls
+  document.getElementById("app").innerHTML = `
+  <h1 data-testid="txtOrderHeader">Order: 92588719-TEST01-00001</h1>
+  <div data-testid="OrderDetails_CustomerDetails"><div data-testid="OrderDetails_CustomerDetails_BuyerDetails"><h2>Buyer</h2><p>Stevie Rogers</p>
+    <button data-testid="OrderDetails_CustomerDetails_btnViewMessages">View Messages</button>
+    <button data-testid="OrderDetails_CustomerDetails_btnContactBuyer">Contact Buyer</button></div></div>
+  <div class="tcg-drawer" data-testid="OrderDetails_ContactBuyerDrawer" style="display: none;"><div class="tcg-drawer__sheet">
+    <h2 class="tcg-drawer__title">Contact Buyer</h2>
+    <span data-testid="OrderDetails_ContactBuyer_SelectSubject"><div class="tcg-input-select">
+      <div id="subject" class="tcg-input-select__trigger" role="combobox" aria-expanded="false" tabindex="0"><span>Select</span></div>
+      <div class="tcg-base-overlay is-disabled"><ul id="subject-dropdown" role="listbox" style="display:none">
+        <li role="option" aria-label="General Inquiry" aria-selected="false" class="tcg-base-dropdown__item"><span>General Inquiry</span></li>
+        <li role="option" aria-label="Where Is My Order" aria-selected="false" class="tcg-base-dropdown__item"><span>Where Is My Order</span></li>
+        <li role="option" aria-label="Order Refund" aria-selected="false" class="tcg-base-dropdown__item"><span>Order Refund</span></li></ul></div></div></span>
+    <textarea placeholder="Reply here..." data-testid="OrderDetails_ContactBuyer_TextareaMessage" id="message" rows="3"></textarea>
+    <button data-testid="OrderDetails_ContactBuyer_ButtonSendMessage"><span>Send</span></button></div></div>
+  <div data-testid="OrderDetails_ProductList"><table data-testid="OrderDetails_ProductList_Table"><tbody><tr><td>
+    <a href="https://store.tcgplayer.com/productCatalog/product/productSearch/478078" data-testid="OrderDetails_ProductList_ProductLink">Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil</a></td><td>$17.18</td></tr></tbody></table></div>
+  <div data-testid="OrderDetails_OrderFeedback"><h2>Feedback</h2><div data-testid="OrderDetails_OrderFeedback_Rating">5</div>
+    <p data-testid="OrderDetails_OrderFeedback_Text">Excellent seller, great communication</p><p data-testid="OrderDetails_OrderFeedback_Date">11/5/2026, 4:17:12 PM (PST)</p></div>`;
+  const $ = (id) => document.querySelector('[data-testid="' + id + '"]');
+  const drawer = $("OrderDetails_ContactBuyerDrawer"), trig = document.getElementById("subject"), ul = document.getElementById("subject-dropdown"), ta = $("OrderDetails_ContactBuyer_TextareaMessage");
+  $("OrderDetails_CustomerDetails_btnContactBuyer").onclick = () => { drawer.style.display = ""; window.__mock.drawerOpen = true; };
+  trig.onclick = () => { if (window.__mockFail === "nosubject") return; ul.style.display = ""; trig.setAttribute("aria-expanded", "true"); };
+  ul.querySelectorAll("li").forEach((li) => { li.onclick = () => { if (window.__mockFail === "nosubject") return; window.__mock.subject = li.getAttribute("aria-label"); trig.querySelector("span").textContent = window.__mock.subject; li.setAttribute("aria-selected", "true"); ul.style.display = "none"; }; });
+  ta.addEventListener("input", () => { window.__mock.message = ta.value; });
+  $("OrderDetails_ContactBuyer_ButtonSendMessage").onclick = () => {
+    if (window.__mockFail === "nosend") return;
+    if (!window.__mock.subject || !window.__mock.message) return;
+    window.__mock.sentText = window.__mock.message; window.__mock.sent++; ta.value = ""; window.__mock.message = ""; drawer.style.display = "none"; window.__mock.drawerOpen = false;
+  };
+  window.__mockReady = true;
+}, 400);
+</script></body></html>

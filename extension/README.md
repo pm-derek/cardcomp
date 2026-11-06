@@ -132,6 +132,22 @@ table, a dot chart of every labeled lot, and a soft / even / hot verdict for whe
 At the bottom: "Clear logged lots: last hour / today / everything". It asks first, then removes those lots from
 the stats in this browser and from the log in your private `cardcomp-data` repo. Verified TCGplayer prices stay.
 
+## Thank-you replies to TCGplayer feedback
+
+Open the Seller Portal Feedback tab (store.tcgplayer.com > Feedback). A "Thank-you replies" panel at the top lists every
+feedback from the last 14 days that has words and a buyer name (wordless auto 5s and blank users are skipped), newest
+first, minus the ones already replied to or skipped from here. For each one the extension opens the order in a
+background tab to read the cards, then drafts a short reply in your voice with your Anthropic key (Options page; about
+a cent a draft). What they said sits above the draft; edit the text if you like, then:
+
+- **Send**: the order's Contact Buyer drawer is filled (subject General Inquiry) and Send is pressed for you. The row
+  turns "✓ sent". Replies to feedback are not public on TCGplayer, so this is a direct message to the buyer.
+- **Skip**: never offered again ("offer again" in the footer brings skipped ones back).
+- **redo**: another draft.
+
+If a send does not go through, the row says why and the order tab is brought forward with the message still in the
+box, so you can press Send yourself. Nothing is sent without your tap on Send.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
