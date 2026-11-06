@@ -348,7 +348,9 @@ response, approve or disapprove". Kept in this repo and extension on purpose (sa
 its own folder, hook lines in bg.js tagged `FEEDBACK`). Scope (Derek): only feedback with words and a buyer name, last
 14 days (`FB_DAYS`). Replies to feedback are not public on TCGplayer; Derek messages the buyer directly. Derek: "I can't
 unsend a message", so no batch send and the safeguards below; a wrong send is the one failure that matters here.
-- `feedback.js` (content script, `store.tcgplayer.com/admin/Seller/Feedback*`): the old server-rendered admin page, a
+- `feedback.js` (content script, manifest match `store.tcgplayer.com/admin/*`, own case-insensitive path check: the nav
+  link is `/admin/seller/feedback`, the page also answers at `/admin/Seller/Feedback`, and match patterns are
+  case-sensitive; 2026-11-06 it never attached from the link): the old server-rendered admin page, a
   plain `table.dTable` (seller, order link, order date, rating, comment or `<i>No Comment Left</i>`, user), 25 rows a
   page, `?page=N`; pages 2.. are fetched with the same login until a page is all older than the window (max 6); a reply
   with no feedback table means signed out (shown, nothing offered). Inbox above the list, portal look (white, blue):

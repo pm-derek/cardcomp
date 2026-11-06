@@ -6,7 +6,10 @@
 // order page must show this row's feedback text; a send is locked in storage first and never retried automatically
 // when its outcome is unknown; Send counts down 3 s with cancel; at most FB_DAY_CAP sends a day; no batch send.
 (() => {
-  if (!/\/admin\/Seller\/Feedback/i.test(location.pathname)) return;
+  // The manifest matches all of /admin/ because match patterns are case-sensitive and the portal links to
+  // /admin/seller/feedback (lowercase) while the page is also served at /admin/Seller/Feedback (2026-11-06: the
+  // script never attached from the nav link). This check is case-insensitive.
+  if (!/^\/admin\/seller\/feedback\/?$/i.test(location.pathname)) return;
   const FB_DAYS = 14, MAX_PAGES = 6, KEEP_DAYS = 90, FB_DAY_CAP = 10, COUNTDOWN = window.__ccfbCountdown != null ? window.__ccfbCountdown : 3;
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r || null); }); } catch (_) { res(null); } });
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
