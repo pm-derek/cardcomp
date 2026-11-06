@@ -155,16 +155,21 @@
     .condgrid .pc{display:none}
   }
   .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
-  .gear{position:absolute;top:9px;right:16px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  #hdrR{position:absolute;top:9px;right:16px;display:flex;align-items:center;gap:6px}   /* header right: timer, stats, dashboard, settings (Derek, 2026-11-06) */
+  .gear{background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
-  #dashbtn{right:118px}   /* beside settings: the dashboard without a Whatnot stream open (Derek, 2026-11-04) */
   /* not on phones (Derek, 2026-11-04: "remove the dashboard button from mobile, it's getting in the way"): phone app and narrow screens; cardcomp/#dash still opens it */
-  body.phone #dashbtn{display:none}
-  @media (max-width:600px){ #dashbtn{display:none} }
+  body.phone #dashbtn,body.phone #statsbtn{display:none}
+  @media (max-width:600px){ #dashbtn,#statsbtn{display:none} }
+  #statsbtn.on{color:var(--ink);border-color:var(--gold)}
+  /* stats moved to the header (Derek, 2026-11-06): the strip keeps its stats link on phones only, where the header buttons hide */
+  @media (min-width:601px){ body:not(.phone) h1{margin-bottom:8px} }   /* room for the header row (two-line timer, buttons): the sticky search row clipped their bottoms */
+  #hdrR.tight .gl{display:none}   /* narrow side panel: icon-only stats / dashboard / settings when the row would reach the title (fitHdr) */
   /* sourcing timer (Derek, 2026-11-06: "an active timer for time spent today and this week, main page, browser only") */
-  #srctimer{position:absolute;top:16px;right:232px;font-size:12px;color:var(--dim);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px}
+  #srctimer{font-size:11.5px;line-height:1.25;color:var(--dim);cursor:pointer;white-space:nowrap;display:grid;grid-template-columns:auto auto auto;gap:0 5px;align-items:center;margin-right:4px}
+  #srctimer .r{text-align:right}
   #srctimer b{color:var(--ink);font-weight:600}
-  #srctimer i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+  #srctimer i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block;margin-right:3px;vertical-align:1px}
   #srctimer i.on{background:var(--green)}
   body.phone #srctimer{display:none}
   @media (max-width:600px){ #srctimer{display:none} }
@@ -250,9 +255,12 @@
 <div class="zoom" id="zoom"><img src="" alt=""></div>
 <div class="wrap">
   <h1>CardComp<span class="dot">.</span></h1>
-  <span id="srctimer" title="time sourcing: a lot on screen and a scan, bid tap, card opened, lead or win within 2 min (phone lots count once synced). Green = active now. Week from Monday. Tap for the dashboard."></span>
-  <button class="gear" id="dashbtn" title="your wins, spend and net by day and streamer (also cardcomp/#dash)">▤ dashboard</button>
-  <button class="gear" id="gear">⚙ settings</button>
+  <div id="hdrR">
+  <span id="srctimer" title="time sourcing: a lot on screen and a scan, bid tap, card opened, lead or win within 2 min (phone lots count once synced). Green = active now. Week from Monday. Per hour = net if your wins are listed at market (after fees, coupons and shipping) over that time. Tap for the dashboard."></span>
+  <button class="gear" id="statsbtn" title="stream stats: how this room sells, your wins, buyers">▥<span class="gl"> stats</span></button>
+  <button class="gear" id="dashbtn" title="your wins, spend and net by day and streamer (also cardcomp/#dash)">▤<span class="gl"> dashboard</span></button>
+  <button class="gear" id="gear" title="settings">⚙<span class="gl"> settings</span></button>
+  </div>
   <div class="settings" id="settings">
     <h4>bid &amp; margin</h4>
     <div class="sgrid">
@@ -2233,7 +2241,7 @@ function paintLot(){
   const H=VERDICT.haul;   // this stream, from the stats store: "won 3 · $24 · +$4.20"
   if(H && H.n) parts.push(`<span style="color:var(--ink)" title="spent on wins + this stream's shipping, net after coupons and shipping${H.off?`; ${H.off} win${H.off===1?"":"s"} left out of net: under 40% of market, likely another printing`:""}${H.unl?`; ${H.unl} without a card`:""}">won ${H.n} · $${Math.round(H.spent)}${H.coupons>0?` <span style="color:var(--dim)">after $${H.coupons.toFixed(2)} coupons</span>`:""}${H.ship>0?` <span style="color:var(--dim)">+ $${H.ship.toFixed(2)} ship</span>`:""}${H.priced?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}${H.ms>=60000?` <span style="color:var(--dim)" title="time sourcing this stream (lots on screen, within 2 min of a scan, tap, card opened, lead or win)${H.hr!=null?`, net per hour`:""}">· ${durTxt(H.ms)}${H.hr!=null?` ${H.hr>=0?"":"−"}$${Math.abs(H.hr).toFixed(0)}/hr`:""}</span>`:""}</span>`);
   else if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won 0</span>`);
-  parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
+  if(document.body.classList.contains("phone") || innerWidth<=600) parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
   // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
   // with what that price would net so the nudge is a decision, not a reflex
   let nudge="";
@@ -2263,6 +2271,7 @@ function paintLot(){
   const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
   const nb=el.querySelector(".lotnudge"); if(nb) nb.onclick=(e)=>{ e.stopPropagation(); copyAmt(nb.dataset.bid, nb); };
   const sb=el.querySelector(".lotstatbtn"); if(sb) sb.onclick=(e)=>{ e.stopPropagation(); LOTSTATS_OPEN=!LOTSTATS_OPEN; paintLot(); paintLotStats(); };
+  paintStatsBtn();
 }
 function cardFields(t){ const o=Object.assign({}, t); delete o.bid; delete o.at; delete o.filled; return o; }   // a nudge keeps the card the max was for
 // ---- Stream stats: one slim row per finished lot, kept in this browser (120 days, 4000 rows) ----
@@ -2498,12 +2507,21 @@ function liveSrcRow(){
   const t=Date.now(), ac=Math.max((LAST_TAP&&LAST_TAP.at)||0, (LAST_VIEW&&LAST_VIEW.at)||0, +window.LAST_SCAN_AT||0, LOT.me&&!LOT.ended?t:0);
   return { s:LOT.seller||"", st:LOT.lotStart>0?LOT.lotStart:LOT_SEEN_AT, at:t, ac };
 }
+function fitHdr(){   // after the timer's text changes: labels off when the right row would touch the title
+  const h=$("#hdrR"), t=document.querySelector("h1"); if(!h || !t) return;
+  const rg=document.createRange(); rg.selectNodeContents(t); const tr=rg.getBoundingClientRect().right;
+  h.classList.remove("tight"); if(h.getBoundingClientRect().left<tr+10) h.classList.add("tight");
+}
 function paintSrcTimer(){
   const el=$("#srctimer"); if(!el || getComputedStyle(el).display==="none") return;
   const n=new Date(), day0=new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime(), wk0=new Date(n.getFullYear(), n.getMonth(), n.getDate()-(n.getDay()+6)%7).getTime();
-  const rows=loadLots().filter(r=>r.at>=wk0), live=liveSrcRow(); if(live) rows.push(live);
-  const w=sourcing(rows).ms, d=sourcing(rows.filter(r=>r.at>=day0)).ms, on=!!(live && live.ac && Date.now()-live.ac<=SRC_PAD);
-  el.innerHTML=`<i class="${on?"on":""}"></i>today <b>${durTxt(d)}</b> · week <b>${durTxt(w)}</b>`;
+  const rows=viewLots().filter(r=>r.at>=wk0), live=liveSrcRow(); if(live) rows.push(live);
+  const dRows=rows.filter(r=>r.at>=day0), w=sourcing(rows).ms, d=sourcing(dRows).ms, on=!!(live && live.ac && Date.now()-live.ac<=SRC_PAD);
+  // per hour: net if listed (wins at market after fees, coupons, shipping; likely another printing left out), same as the dashboard
+  const rate=(rs, ms)=>{ const H=haul(rs), h=H.priced?perHr(H.net, ms):null; return h==null?"":`<span style="color:${h>=0?"var(--green)":"var(--red)"}">${h>=0?"+":"−"}$${Math.abs(h).toFixed(0)}/hr</span>`; };
+  el.innerHTML=`<span><i class="${on?"on":""}"></i>today</span><b class="r">${durTxt(d)}</b><span class="r">${rate(dRows, d)}</span>`+
+    `<span><i style="visibility:hidden"></i>week</span><b class="r">${durTxt(w)}</b><span class="r">${rate(rows, w)}</span>`;
+  try{ fitHdr(); }catch(_){ }
 }
 // Other buyers' shipping (Derek, 2026-10-31: "apply our shipping assumptions to others so the leaderboard is fair"):
 // per stream, the shipping each of your wins added, in order (first win $0.78, 5th +$0.31, 6th +$6.66...), is charged
@@ -2554,8 +2572,18 @@ function offLine(off, how){
   return `<div class="lsx lsoff" style="color:var(--gold)">${off.length} win${off.length===1?"":"s"} left out of net: under 40% of market, likely another printing ($${paid.toFixed(2)} paid): ${names}${off.length>4?` and ${off.length-4} more`:""}. ${how}.</div>`;
 }
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && LOTSTATS_OPEN){ LOTSTATS_OPEN=false; paintLot(); paintLotStats(); } });
+// header stats button: open / closed, and this stream's room read in its color ("stats · hot"; the % in the hover)
+function paintStatsBtn(){
+  const b=$("#statsbtn"); if(!b) return; b.classList.toggle("on", !!LOTSTATS_OPEN);
+  const v=VERDICT.txt?VERDICT.txt.split(" ")[0]:"";
+  b.innerHTML=`▥<span class="gl"> stats</span>${v?` <span style="color:${VERDICT.col}">${v}</span>`:""}`;
+  b.title=`stream stats: how this room sells, your wins, buyers${VERDICT.txt?` · room ${VERDICT.txt} of market`:""}${LOTSTATS_OPEN?" · tap to hide":""}`;
+
+  try{ fitHdr(); }catch(_){ }
+}
 function paintLotStats(){
   const el=$("#lotstats"); if(!el) return;
+  try{ paintStatsBtn(); }catch(_){ }
   document.body.classList.toggle("lsopen", !!LOTSTATS_OPEN);
   if(!LOTSTATS_OPEN){ el.style.display="none"; return; }
   const all=loadLots(), sellers=[...new Set(all.slice().reverse().map(r=>r.s))];
@@ -4390,7 +4418,8 @@ loadCfg(); migrateCfg();
 document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
 $("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
 $("#srctimer").onclick = ()=>{ DASH.per="1"; if(window.__ready) dashOpen(true); else location.hash="#dash"; };
-setInterval(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 10000); setTimeout(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 0);
+setInterval(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 10000); setTimeout(()=>{ try{ paintSrcTimer(); paintStatsBtn(); }catch(_){ } }, 0); window.addEventListener("resize", ()=>{ try{ fitHdr(); }catch(_){ } });
+$("#statsbtn").onclick = ()=>{ if(!window.__ready) return; LOTSTATS_OPEN=!LOTSTATS_OPEN; paintLot(); paintLotStats(); };
 $("#dashbtn").onclick = ()=>{ if(window.__ready) dashOpen(true); else location.hash="#dash"; };   // before the catalog loads, the hash opens it on load
 $("#zoom").onclick = ()=> $("#zoom").classList.remove("open");
 
