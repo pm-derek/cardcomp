@@ -105,7 +105,11 @@
     (p || link || anchor).insertAdjacentElement("afterend", box);
     return box;
   }
-  const orderURL = (o) => "https://sellerportal.tcgplayer.com/orders/" + encodeURIComponent(o);   // the order page; its View Messages button opens the thread
+  const orderURL = (o) => "https://sellerportal.tcgplayer.com/orders/" + encodeURIComponent(o);
+  const MSGS = "https://sellerportal.tcgplayer.com/messages";
+  // "view message": the thread itself (sellerportal .../messages/<id>, found from the Messages list after a send, kept on
+  // the done entry), else the Messages list.
+  const msgLink = (d, label) => `<a href="${esc(d && d.thread ? d.thread : MSGS)}" target="_blank" title="${d && d.thread ? "the message thread" : "the Messages list (thread not found yet)"}">${label || "view message"} ↗</a>`;
   const stars = (n) => `<span class="stars ${n >= 4 ? "good" : ""}" title="${n} of 5">${"★".repeat(Math.max(0, Math.min(5, n)))}${"☆".repeat(Math.max(0, 5 - n))}</span>`;
   const rowHTML = (r) => `<div class="row${r.rating <= 3 ? " neg" : ""}" data-order="${esc(r.order)}"><img class="pic none" alt="" data-pic><div><div class="hd"><b>${esc(r.user)}</b>${stars(r.rating)}<span class="dim">ordered ${esc(r.date)} · <a href="${orderURL(r.order)}" target="_blank" title="open the order">${esc(r.order)}</a></span><span class="card" data-card></span>${r.orders > 1 ? `<span class="tag blue">${r.orders} orders in ${FB_DAYS} days</span>` : ""}<span data-tags></span></div><blockquote>${esc(r.comment)}</blockquote><div data-body><span class="dim" data-wait>waiting…</span></div></div></div>`;
   function draftHTML(text, note, flags) {
@@ -128,10 +132,15 @@
       foot.querySelector("[data-hist]").onclick = (e) => {
         e.preventDefault(); hist.hidden = !hist.hidden; if (hist.hidden) return;
         const last = sent.sort((a, b) => b[1].at - a[1].at).slice(0, 15);
-        hist.innerHTML = last.length ? last.map(([o, d]) => `<div>${new Date(d.at).toLocaleDateString()} · <b>${esc(d.user || "")}</b>${d.how === "unsure" ? ' <span class="tag red">unsure</span>' : ""} · ${esc(d.text || "")} <a href="${orderURL(o)}" target="_blank" class="dim" title="the order page; View Messages there shows the thread">${esc(o)} ↗</a></div>`).join("") : "<div>nothing yet</div>";
+        hist.innerHTML = last.length ? last.map(([o, d]) => `<div>${new Date(d.at).toLocaleDateString()} · <b>${esc(d.user || "")}</b>${d.how === "unsure" ? ' <span class="tag red">unsure</span>' : ""} · ${esc(d.text || "")} <span class="dim">${msgLink(d, "message")} · <a href="${orderURL(o)}" target="_blank" title="the order page">order ↗</a></span></div>`).join("") : "<div>nothing yet</div>";
       };
     };
     paintFoot();
+    const missing = Object.entries(done).filter(([, d]) => (d.how === "sent" || d.how === "unsure") && !d.thread && d.at > Date.now() - 30 * 864e5).map(([o]) => o);
+    if (missing.length) (async () => {   // one Messages read fills every recent send's thread link
+      for (const o of missing) { const t = await post({ type: "cardcomp-fb-thread", order: o, since: 0 }); if (t && t.ok) { done = await getDone(); if (done[o]) done[o].thread = t.url; } }
+      await new Promise((res) => chrome.storage.local.set({ fbDone: done }, res)); paintFoot();
+    })();
     if (!todo.length) { box.classList.add("quiet"); status(rows.length ? "All caught up." : "No worded feedback with a buyer name in the last " + FB_DAYS + " days.", "ok"); return; }
     nEl.textContent = todo.length; nEl.hidden = false;
     status(todo.length + " to reply to" + (todo.some((r) => r.rating <= 3) ? ", lower ratings first" : "") + ". Reading the orders one at a time…");
@@ -181,12 +190,18 @@
         if (res && res.ok) { done = await markDone(r.order, "sent", { user: r.user, text }); finish("✓ sent", false); }
         else if (res && res.clicked) {   // Send was pressed but the page gave no confirmation: maybe sent. Never again automatically.
           done = await markDone(r.order, "unsure", { user: r.user, text, why: res.why });
-          el.querySelector("[data-body]").innerHTML = `<div class="done"><b class="un">unsure</b> Send was pressed but the page did not confirm (${esc(res.why || "")}). <a href="${orderURL(r.order)}" target="_blank">open the order</a> and check View Messages before sending by hand. Not offered again.</div>`;
+          el.querySelector("[data-body]").innerHTML = `<div class="done"><b class="un">unsure</b> Send was pressed but the page did not confirm (${esc(res.why || "")}). <a href="${MSGS}" target="_blank">open Messages</a> and check the order's thread before sending by hand. Not offered again.</div>`;
           paintFoot(); post({ type: "cardcomp-fb-pending", n: list.querySelectorAll("[data-send]").length });
         } else { await unmark(r.order); done = await getDone(); fail("not sent: " + (res && res.why || "no reply from the extension")); }
       };
       function fail(why) { send.disabled = false; send.classList.remove("cancel"); send.textContent = "Send"; lock(false); note.textContent = why; note.className = "note bad"; }
-      function finish(label, odd) { el.querySelector("[data-body]").innerHTML = `<div class="done"><b${odd ? ' class="un"' : ""}>${esc(label)}</b> to ${esc(r.user)}: ${esc(ta.value.trim())} <a href="${orderURL(r.order)}" target="_blank" title="the order page; View Messages there shows the thread">view message ↗</a></div>`; paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); }
+      function finish(label, odd) { el.querySelector("[data-body]").innerHTML = `<div class="done"><b${odd ? ' class="un"' : ""}>${esc(label)}</b> to ${esc(r.user)}: ${esc(ta.value.trim())} <span data-msglink>${odd ? msgLink(done[r.order]) : '<span class="dim">finding the message…</span>'}</span></div>`;
+        if (!odd) findThread(r, el); paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); }
+      async function findThread(r, el) {
+        const t = await post({ type: "cardcomp-fb-thread", order: r.order, since: Date.now() - 90000 });
+        if (t && t.ok) { done = await getDone(); if (done[r.order]) { done[r.order].thread = t.url; await new Promise((res) => chrome.storage.local.set({ fbDone: done }, res)); } }
+        const sp = el.querySelector("[data-msglink]"); if (sp) sp.innerHTML = msgLink(t && t.ok ? { thread: t.url } : null);
+      }
       skip.onclick = async () => { done = await markDone(r.order, "skip", { user: r.user }); el.querySelector("[data-body]").innerHTML = '<div class="done">skipped</div>'; paintFoot(); const left = list.querySelectorAll("[data-send]").length; nEl.textContent = left; nEl.hidden = !left; post({ type: "cardcomp-fb-pending", n: left }); };
       redos.forEach((b) => { b.onclick = () => draft(r, el, b.getAttribute("data-redo") || ""); });
     }

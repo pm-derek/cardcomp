@@ -93,6 +93,14 @@ function fbHandle(msg, sender, reply) {
     reply({ ok: true }); return true;
   }
   if (msg.type === "cardcomp-fb-pending") { fbBadge(msg.n); reply({ ok: true }); return true; }   // the panel's own count
+  if (msg.type === "cardcomp-fb-threads") {   // messages.js read the Messages list
+    fbThreadsPut(msg.rows || []).then((m) => { FB_TWAIT.splice(0).forEach((w) => w.res(m)); reply({ ok: true }); });
+    return true;
+  }
+  if (msg.type === "cardcomp-fb-thread") {   // panel: the thread url for an order (opens the Messages list when unknown)
+    fbThread(msg.order, msg.since || 0, win).then((url) => reply(url ? { ok: true, url } : { ok: false }), (e) => reply({ ok: false, why: e.message }));
+    return true;
+  }
   if (msg.type === "cardcomp-fb-order") {   // feedback.js: open the order in the background tab, return what it shows
     fbOpenOrder(msg.order, win).then(({ info }) => reply(info ? { ok: true, info } : { ok: false, why: "the order page did not load in 30 s" }), (e) => reply({ ok: false, why: e.message }));
     return true;
@@ -109,6 +117,37 @@ function fbHandle(msg, sender, reply) {
     return true;
   }
   return false;
+}
+
+// Message threads (messages.js reads the Messages list): order -> rows, kept 300. A lookup after a send opens the list
+// in the background tab and waits for the read; the newest General Inquiry thread of that order created on or after
+// the send is the one (an order can also carry the buyer's own thread). Stored on fbDone[order].thread by the panel.
+const FB_TWAIT = [];
+const fbThreadsGet = () => new Promise((res) => chrome.storage.local.get("fbThreads", (r) => res((r && r.fbThreads) || {})));
+async function fbThreadsPut(rows) {
+  const m = await fbThreadsGet();
+  rows.forEach((r) => { if (!r.order) return; const l = (m[r.order] = m[r.order] || []); if (!l.some((x) => x.id === r.id)) l.unshift({ id: r.id, url: r.url, subject: r.subject, members: r.members, created: r.created, seen: Date.now() }); });
+  const keys = Object.keys(m); if (keys.length > 300) keys.sort((a, b) => Math.max(...m[b].map((x) => x.seen || 0)) - Math.max(...m[a].map((x) => x.seen || 0))).slice(300).forEach((k) => delete m[k]);
+  await new Promise((res) => chrome.storage.local.set({ fbThreads: m }, res));
+  return m;
+}
+function fbPickThread(list, since) {   // newest General Inquiry seen since the send, else the newest General Inquiry, else the newest row
+  if (!list || !list.length) return null;
+  const gi = list.filter((x) => /general inquiry/i.test(x.subject || ""));
+  const fresh = gi.filter((x) => !since || (x.seen || 0) >= since);
+  return (fresh[0] || gi[0] || list[0]).url;
+}
+async function fbThread(order, since, win) {
+  let m = await fbThreadsGet();
+  const have = fbPickThread(m[order], since);
+  if (have && (!since || (m[order] || []).some((x) => (x.seen || 0) >= since))) return have;
+  const got = new Promise((res) => { const w = { res }; FB_TWAIT.push(w); setTimeout(() => { const i = FB_TWAIT.indexOf(w); if (i >= 0) { FB_TWAIT.splice(i, 1); res(null); } }, 30000); });
+  const k = "fbTab", cur = await new Promise((res) => chrome.storage.session.get(k, (r) => res(r && r[k])));
+  const url = "https://sellerportal.tcgplayer.com/messages";
+  try { if (cur != null) await chrome.tabs.update(cur, { url, active: false }); else { const t = await chrome.tabs.create(Object.assign({ url, active: false }, win != null ? { windowId: win } : {})); chrome.storage.session.set({ [k]: t.id }); } }
+  catch (_) { const t = await chrome.tabs.create({ url, active: false }); chrome.storage.session.set({ [k]: t.id }); }
+  m = (await got) || m;
+  return fbPickThread(m[order], since) || null;
 }
 
 // Icon badge: how many worded, named feedbacks of the last 14 days are not yet replied to or skipped. The panel reports
