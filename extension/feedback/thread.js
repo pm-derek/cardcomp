@@ -65,6 +65,9 @@
     if (odd.length) f.push("amount not from the panel: $" + odd.join(", $"));
     if (/(once|after|when) (i|we) (get|see|have|receive)[^.]{0,30}(picture|photo|pic)|(need|require)[^.]{0,20}(picture|photo|pic)[^.]{0,20}(before|first)|without (a )?(picture|photo)/.test(low)) f.push("makes a photo a condition (TCGplayer: photos cannot be required)");
     if (/\b(rating|feedback|review)\b/.test(low)) f.push("mentions ratings or feedback");
+    // A ticked card the draft never names (live 2026-11-06: Slowking ticked, the draft apologised for a Ponyta from the thread).
+    const unnamed = ((picks || {}).cards || []).map((c) => String(c.name || "").replace(/\s*\(.*?\)\s*/g, " ").trim().split(/\s+/)[0]).filter((w) => w && w.length > 2 && !low.includes(w.toLowerCase()));
+    if (unnamed.length) f.push("does not name the ticked card" + (unnamed.length > 1 ? "s" : "") + ": " + unnamed.join(", "));
     if (/return to sender|refuse the package/.test(low) && !(facts && facts.cancel)) f.push("return-to-sender wording (only for a cancel after shipping)");
     if (low.length > 1500) f.push("long");
     return f;
@@ -124,7 +127,9 @@
       const c = box.querySelector("[data-cards]"); if (!c.querySelector("table")) return;
       let total = 0, any = false;
       c.querySelectorAll("tr[data-i]").forEach((tr) => {
-        const it = S.info.items[+tr.dataset.i], on = tr.querySelector("[data-on]").checked, pick = tr.querySelector("[data-cond]").value, lower = tr.querySelector("[data-lower]").checked;
+        const it = S.info.items[+tr.dataset.i], on = tr.querySelector("[data-on]").checked, pick = tr.querySelector("[data-cond]").value, lowerBox = tr.querySelector("[data-lower]");
+        lowerBox.disabled = pick === "DMG"; lowerBox.parentElement.style.opacity = pick === "DMG" ? ".45" : "";   // nothing below DMG
+        const lower = lowerBox.checked && pick !== "DMG";
         const cond = lower ? CONDS[Math.min(4, CONDS.indexOf(pick) + 1)] : pick;
         const p = S.prices[it.pid], v = p ? valueAt(p, cond) : null;
         tr.querySelector("[data-val]").innerHTML = v ? `${money(v.v)} <span class="src">${cond} ${v.src}</span>` : (p === undefined ? '<span class="src">reading…</span>' : '<span class="src">no price</span>');

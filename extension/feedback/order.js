@@ -16,11 +16,14 @@
     const pids = [...new Set(links.map((a) => (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1]).filter(Boolean))];   // TCGplayer product ids, for the thumbnail
     const fb = $("OrderDetails_OrderFeedback");
     // per line: name, product id, what was charged (TCG MP Price column), quantity (the issue helper's refund math)
+    // The product table is on the page twice (the Products section and the Contact Buyer drawer, 2026-11-06: every card
+    // showed twice in the thread panel), so one line per product id (else name).
+    const seenItem = new Set();
     const items = [...new Set(links.map((a) => a.closest("tr")).filter(Boolean))].map((tr) => {
       const a = tr.querySelector('[data-testid="OrderDetails_ProductList_ProductLink"]'), tds = [...tr.querySelectorAll("td")].map(txt);
       const money = (s) => { const m = /\$\s?([\d,]+\.?\d*)/.exec(s || ""); return m ? parseFloat(m[1].replace(/,/g, "")) : null; };
       return { name: txt(a), pid: (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1] || "", price: money(tds[1]), qty: parseInt(tds[2], 10) || 1, ext: money(tds[3]) };
-    });
+    }).filter((it) => { const k = (it.pid || it.name) + "|" + it.name; if (seenItem.has(k)) return false; seenItem.add(k); return true; });
     const ship = txt($("OrderDetails_ShippingInformation")), gen = txt($("OrderDetails_GeneralInfo")) + " " + txt($("OrderDetails_CustomerDetails"));
     const edd = (/Estimated Delivery Date:?\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(ship + " " + gen) || [])[1] || "";
     const shippedAt = (/SHIPPED\s*(\d{1,2}\/\d{1,2}\/\d{4}[^()]*\([A-Z]+\))/.exec(ship) || [])[1] || "";

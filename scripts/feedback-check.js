@@ -228,7 +228,7 @@ async function pageTests() {
     assert.deepStrictEqual(info.products, ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil", "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint"]);
     assert.deepStrictEqual(info.items[1], { name: "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint", pid: "90210", price: 13, qty: 1, ext: 13 }); assert.strictEqual(info.items[0].price, 17.18);
     assert.strictEqual(info.edd, "November 6, 2026"); assert.strictEqual(info.shippedAt, "10/26/2026, 12:10:46 AM (PDT)"); assert.strictEqual(info.tracking, ""); assert.strictEqual(info.orderDate, "10/24/2026, 3:17:47 PM (PDT)"); assert.strictEqual(info.status, "Completed - Paid"); assert.strictEqual(info.method, "Standard (7-10 days)");
-    ok("order info: per-line price / qty / product id, estimated delivery, shipped, no tracking, order date, status");
+    assert.strictEqual(info.items.length, 2); ok("order info: per-line price / qty / product id (the drawer's second copy of the table folded), estimated delivery, shipped, no tracking, order date, status");
     assert.strictEqual(info.feedback, "Excellent seller, great communication"); assert.strictEqual(info.fbDate, "11/5/2026, 4:17:12 PM (PST)"); assert.strictEqual(info.buyer, "Stevie Rogers"); assert.deepStrictEqual(info.pids, ["478078", "90210"]);
     ok("order info on load: order, cards, product id, feedback text + date, buyer (after the app rendered)");
     let r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "x", expect: { comment: "Fast shipping", user: "stevie r3006" } }));
@@ -277,7 +277,7 @@ async function pageTests() {
         if (m.type === "cardcomp-fb-key") return cb({ ok: true });
         if (m.type === "cardcomp-fb-order") return cb({ ok: true, info: { order: m.order, buyer: "Daniel Davis", orderDate: "10/24/2026, 3:17:47 PM (PDT)", edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard (7-10 days)", items: [{ name: "Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint", pid: "90210", price: 13, qty: 1 }, { name: "Pokemon - Gym Heroes: Erika's Jigglypuff - #7/132 - Near Mint Holofoil", pid: "90211", price: 2.44, qty: 1 }, { name: "Pokemon - SV: Prismatic Evolutions: Umbreon ex - #161/131 - Near Mint Holofoil", pid: "90212", price: 95, qty: 1 }] } });
         if (m.type === "cardcomp-fb-price") return cb(m.pid === "90210" ? { ok: true, conds: { NM: { market: 14 }, LP: { market: 9.5 }, MP: { market: 7.2 }, HP: { market: 6.6 }, DMG: { market: 6 } } } : m.pid === "90211" ? { ok: true, conds: { NM: { market: 2.5 }, DMG: { low: 0.85 } } } : { ok: true, conds: { NM: { market: 100 }, LP: { market: 80 }, MP: { market: 60 }, HP: { market: 40 }, DMG: { market: 30 } } });
-        if (m.type === "cardcomp-fb-issue") return cb({ ok: true, text: "Ah sorry to hear that. Total refund of $" + m.picks.total + ". Does that work?", cost: 0.02 });
+        if (m.type === "cardcomp-fb-issue") return cb({ ok: true, text: "Ah sorry to hear that about " + (m.picks.cards || []).map((c) => c.name).join(" and ") + ". Total refund of $" + m.picks.total + ". Does that work?", cost: 0.02 });
         cb(null); }, 5); } },
         storage: { local: { get: (k, cb) => cb(window.__store), set: (o, cb) => { Object.assign(window.__store, o); cb && cb(); } } } };
     });
@@ -305,8 +305,8 @@ async function pageTests() {
     assert.strictEqual(await p5.$eval("#ccir [data-flags]", (e) => e.textContent), ""); ok("draft with only the panel's numbers: no flag");
     await p5.fill("#ccir [data-text]", "Once I get a picture I can refund $12. Thanks for the great rating!"); await p5.waitForTimeout(50);
     const fl = await p5.$eval("#ccir [data-flags]", (e) => e.textContent);
-    assert.ok(/amount not from the panel: \$12/.test(fl) && /photo a condition/.test(fl) && /ratings/.test(fl)); ok("flags: invented amount, photo as a condition, ratings talk");
-    await p5.fill("#ccir [data-text]", "I'd refund $7 and $2, so $10 total. Does that work?"); await p5.waitForTimeout(50);
+    assert.ok(/amount not from the panel: \$12/.test(fl) && /photo a condition/.test(fl) && /ratings/.test(fl) && /does not name the ticked cards: Misty's, Erika's/.test(fl)); ok("flags: invented amount, photo as a condition, ratings talk, ticked cards not named");
+    await p5.fill("#ccir [data-text]", "Misty's Wish I'd refund $7 and Erika's Jigglypuff $2, so $10 total. Does that work?"); await p5.waitForTimeout(50);
     assert.strictEqual(await p5.$eval("#ccir [data-flags]", (e) => e.textContent), ""); ok("the panel's own numbers pass");
     // the buyer writes after the draft: refuse
     await p5.evaluate(() => { document.querySelector(".sp-messages-thread-drawer__messages-list").insertAdjacentHTML("afterbegin", '<li class="sp-messages-thread-message"><div class="sp-messages-thread-message__header"><div><div>Message From &lt;Daniel Davis&gt;</div><div class="typography-detail">Oct 30, 2026, 11:55 AM</div></div></div><div class="sp-messages-thread-message__body">Actually never mind</div></li>'); });
