@@ -525,7 +525,7 @@
         storeReady.then(async (S) => {
           let r;
           if (!S) r = { ok: false, why: "log store not loaded" };
-          else try { r = d.type === "cardcomp-log-read" ? await S.readLog(d.since) : d.type === "cardcomp-log-edit" ? await S.editLog(d.key, d.card, !!d.clear, d.patch) : await S.pruneLog(d.since, d.before); }
+          else try { r = d.type === "cardcomp-log-read" ? await S.readLog(d.since) : d.type === "cardcomp-log-edit" ? await S.editLog(d.key, d.card, !!d.clear, d.patch, d.rowPatch) : await S.pruneLog(d.since, d.before); }
           catch (e) { r = { ok: false, why: e.message }; }
           toApp(Object.assign({ type: d.type + "-ack" }, r));
         });
