@@ -134,19 +134,25 @@ the stats in this browser and from the log in your private `cardcomp-data` repo.
 
 ## Thank-you replies to TCGplayer feedback
 
-Open the Seller Portal Feedback tab (store.tcgplayer.com > Feedback). A "Thank-you replies" panel at the top lists every
-feedback from the last 14 days that has words and a buyer name (wordless auto 5s and blank users are skipped), newest
-first, minus the ones already replied to or skipped from here. For each one the extension opens the order in a
-background tab to read the cards, then drafts a short reply in your voice with your Anthropic key (Options page; about
-a cent a draft). What they said sits above the draft; edit the text if you like, then:
+Open the Seller Portal Feedback tab (store.tcgplayer.com > Feedback). A "Thank-you replies" inbox at the top lists every
+feedback from the last 14 days that has words and a buyer name (wordless auto 5s and blank users are skipped), minus the
+ones already replied to or skipped from here. Ratings of 1 to 3 come first with a red bar and a 48-hour clock from the
+feedback date. For each one the extension opens the order in a background tab to read the cards (thumbnail from the
+first product), then drafts a short reply in your voice with your Anthropic key (Options page; about a cent a draft).
+What they said sits above the draft. Edit the text if you like, then:
 
-- **Send**: the order's Contact Buyer drawer is filled (subject General Inquiry) and Send is pressed for you. The row
-  turns "✓ sent". Replies to feedback are not public on TCGplayer, so this is a direct message to the buyer.
+- **Send**: counts down 3 seconds (tap again to cancel), then fills the order's Contact Buyer drawer (subject General
+  Inquiry) and presses Send. The row turns "✓ sent". Replies to feedback are not public on TCGplayer, so this is a
+  direct message to the buyer.
 - **Skip**: never offered again ("offer again" in the footer brings skipped ones back).
-- **redo**: another draft.
+- **redo** / **shorter**: another draft.
 
-If a send does not go through, the row says why and the order tab is brought forward with the message still in the
-box, so you can press Send yourself. Nothing is sent without your tap on Send.
+A message cannot be unsent, so the safeguards are strict: before anything is typed, the order page must show this row's
+feedback text (and a buyer that fits the username), else the send is refused. Each send is locked in storage first; if
+Send was pressed but the page never confirmed, the row turns "unsure" with a link to the order and is never offered
+again (check View Messages before sending by hand). At most 10 sends a day. Drafts that mention a refund, discount,
+dollar amount, link or an apology the feedback did not call for get an amber "check" line. The extension icon shows
+how many are waiting (checked hourly with your login). "Replied from here" in the footer lists what went out.
 
 ## Footer status
 

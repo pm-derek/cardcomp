@@ -11,10 +11,11 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   async function until(fn, ms, step) { const t0 = Date.now(); for (;;) { const v = fn(); if (v) return v; if (Date.now() - t0 > ms) return null; await sleep(step || 150); } }
   function readOrder() {
-    const products = [...document.querySelectorAll('[data-testid="OrderDetails_ProductList_ProductLink"]')].map(txt).filter(Boolean);
+    const links = [...document.querySelectorAll('[data-testid="OrderDetails_ProductList_ProductLink"]')], products = links.map(txt).filter(Boolean);
     if (!products.length) return null;
+    const pids = [...new Set(links.map((a) => (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1]).filter(Boolean))];   // TCGplayer product ids, for the thumbnail
     const fb = $("OrderDetails_OrderFeedback");
-    return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
+    return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], pids, feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
       hasFeedback: !!fb, buyer: txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim() };
   }
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r); }); } catch (_) { res(null); } });
@@ -39,8 +40,23 @@
     const ok = await until(() => txt(trig) === want || li.getAttribute("aria-selected") === "true", 2500);
     return ok ? "" : "could not pick the subject";
   }
-  async function fill(text) {
-    if (!(await until(readOrder, 15000, 250))) return { ok: false, why: "order page not loaded" };
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // expect: {comment, user} from the Feedback tab row. The page must show that same feedback before anything is typed
+  // (a message cannot be unsent): the order's feedback text must match the row's, and the buyer should look like the
+  // username (first word) when the username has a plain first word at all.
+  function matches(info, expect) {
+    if (!expect) return "";
+    if (!info.feedback) return "the order page shows no feedback";
+    if (norm(info.feedback) !== norm(expect.comment)) return "the order page's feedback differs from the row (" + info.feedback.slice(0, 60) + ")";
+    // TCGplayer usernames are mostly "firstname x1234" (robert s78A1F72); a one-word handle (xMissAlyssax, PKG_Collectibles) says nothing about the name
+    const parts = norm(expect.user).split(" "), first = parts[0] || "", bfirst = (norm(info.buyer).split(" ")[0] || "");
+    if (parts.length >= 2 && first.length >= 3 && bfirst.length >= 3 && /^[a-z]+$/.test(first) && first !== bfirst && !bfirst.startsWith(first) && !first.startsWith(bfirst)) return "buyer on the order (" + info.buyer + ") does not look like " + expect.user;
+    return "";
+  }
+  async function fill(text, expect) {
+    const info = await until(readOrder, 15000, 250);
+    if (!info) return { ok: false, why: "order page not loaded" };
+    const mm = matches(info, expect); if (mm) return { ok: false, why: mm };
     const btn = $("OrderDetails_CustomerDetails_btnContactBuyer");
     if (!btn) return { ok: false, why: "no Contact Buyer button (buyer blocked, or the page changed)" };
     const drawer = $("OrderDetails_ContactBuyerDrawer");
@@ -55,14 +71,15 @@
     if (!send) return { ok: false, why: "no Send button" };
     if (send.disabled || send.getAttribute("aria-disabled") === "true") return { ok: false, why: "Send is disabled on the page" };
     send.click();
-    // Sent = the drawer closed or the box emptied. Otherwise leave everything as is for Derek to look at.
+    // Sent = the drawer closed or the box emptied. Otherwise leave everything as is for Derek to look at; clicked:true
+    // tells the panel the outcome is unknown (maybe sent), so it is never retried automatically.
     const done = await until(() => (!visible(drawer) || ta.value === "") ? true : null, 10000, 200);
-    return done ? { ok: true } : { ok: false, why: "Send did not go through, check the order tab" };
+    return done ? { ok: true, clicked: true } : { ok: false, clicked: true, why: "Send was pressed but the page did not confirm" };
   }
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg || msg.type !== "cardcomp-fb-fill") return;
     if (msg.order && msg.order !== ORDER) { reply({ ok: false, why: "tab shows another order" }); return; }
-    fill(String(msg.text || "").trim()).then(reply, (e) => reply({ ok: false, why: e.message }));
+    fill(String(msg.text || "").trim(), msg.expect || null).then(reply, (e) => reply({ ok: false, why: e.message }));
     return true;
   });
 })();
