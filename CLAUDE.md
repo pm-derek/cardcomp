@@ -385,12 +385,39 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   and replies `{ok, clicked:true}`: ok only when the drawer closed or the box emptied within 10 s; otherwise the
   failure is named, bg.js brings the tab forward with the text still in the box. Uses the page's `data-testid` labels,
   never text heuristics. The Messages tab's thread drawer is not used (renders on demand; the order page has everything).
-- Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`).
+- Issue replies (Derek, 2026-11-06: "structure responses to issues from buyers: condition issues first, lost orders,
+  wrong item; input the card, the condition and what I sold it for, pull the lower-condition price"): `thread.js`
+  (content script on `/messages/<id>`; `messages.js` shares the match and only acts on the list). Reads the thread
+  (order link `linkMessages_Home_OrderDetailsSellerOrder`, subject `h3.typography-heading-lg`,
+  `li.sp-messages-thread-message` header "Message From <X>" + `.typography-detail` date + `__body`, newest first on
+  the page, reversed), the order through `cardcomp-fb-order` (order.js now also returns `items` {name, pid, price =
+  TCG MP Price column, qty, ext}, `edd`, `shippedAt`, `tracking` ("" = No Tracking Number), `orderDate`, `status`,
+  `method`). Type from subject + buyer words (`typeOf`), changeable. Condition: per card tick, arrived condition
+  (DMG default), "one grade lower" ticked under `SMALL` $20 charged (Derek: a cheap card graded lower is paying $1-2
+  for a better review; a high-value card is priced as described), value = `cardcomp-fb-price` (bg -> `tcgFast`, every
+  condition of the printing parsed from the line's last segment) market, else the cheapest listing of that condition,
+  else NM x mid-era tier (`TIER`), refund = ceil(charged - value), extra typed by Derek (no default), total. Missing:
+  lost-after = 8 business days past the estimated delivery (`bizDays`), late flag, untracked = refund due. Draft:
+  `cardcomp-fb-issue` -> `fbIssueDraft` (opus 5.5, effort medium): `FB_ISSUE_SYSTEM` = voice samples from Derek's
+  two real threads + the playbook by type and stage (condition: photo + two paths, then numbers per card in Derek's
+  shape, then address / envelope / refund on receipt; missing: check household / neighbors / post office, name the
+  lost-after date, refund then, delivered-but-missing = TCGplayer case; wrong item: own it, three options), TCGplayer
+  rules from search summaries of help.tcgplayer.com / seller.tcgplayer.com (both hosts blocked from the sandbox,
+  not read in full); the user turn carries the numbers verbatim ("use these exactly"), the address or "not on file,
+  do not invent one", the last 12 messages. Send: countdown, lock in `chrome.storage.local.fbThreadSent[tid:nMsgs]`
+  (refuses a second send at the same message count; 60 days; `DAY_CAP` 10), then `fillAndSend`: press the top
+  `btnMessages_ThreadMessage_Reply`, the box appears above the list (`[class*="thread-reply"] textarea`, no test id
+  on the live page: seen only in Derek's screenshot, the save had it closed), native setter + input, the button whose
+  text is "Send" inside it; sent when the message count grows, the box goes or empties within 10 s, else "unsure"
+  with the text left in the box. Return address: Options page `fbAddress` (never in the repo). Checks: section 5 on
+  `scripts/feedback-mock-thread.html` (type, defaults, refund math incl. listing / tier fallbacks, draft request,
+  fill + send, lock, missing-package date). Rendered at 1280 (scratch). Not yet verified live: the reply box's markup.
+- Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`); return address `fbAddress`.
   RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list (60 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread (74 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's

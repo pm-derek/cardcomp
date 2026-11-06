@@ -15,7 +15,19 @@
     if (!products.length) return null;
     const pids = [...new Set(links.map((a) => (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1]).filter(Boolean))];   // TCGplayer product ids, for the thumbnail
     const fb = $("OrderDetails_OrderFeedback");
-    return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], pids, feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
+    // per line: name, product id, what was charged (TCG MP Price column), quantity (the issue helper's refund math)
+    const items = [...new Set(links.map((a) => a.closest("tr")).filter(Boolean))].map((tr) => {
+      const a = tr.querySelector('[data-testid="OrderDetails_ProductList_ProductLink"]'), tds = [...tr.querySelectorAll("td")].map(txt);
+      const money = (s) => { const m = /\$\s?([\d,]+\.?\d*)/.exec(s || ""); return m ? parseFloat(m[1].replace(/,/g, "")) : null; };
+      return { name: txt(a), pid: (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1] || "", price: money(tds[1]), qty: parseInt(tds[2], 10) || 1, ext: money(tds[3]) };
+    });
+    const ship = txt($("OrderDetails_ShippingInformation")), gen = txt($("OrderDetails_GeneralInfo")) + " " + txt($("OrderDetails_CustomerDetails"));
+    const edd = (/Estimated Delivery Date:?\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(ship + " " + gen) || [])[1] || "";
+    const shippedAt = (/SHIPPED\s*(\d{1,2}\/\d{1,2}\/\d{4}[^()]*\([A-Z]+\))/.exec(ship) || [])[1] || "";
+    const tracking = /No Tracking Number/i.test(ship) ? "" : (txt($("OrderDetails_ShippingInformation_TrackingDetail")) || "");
+    const orderDate = (/Order Date\s*(\d{1,2}\/\d{1,2}\/\d{4}[^(]*\([A-Z]+\))/.exec(gen) || [])[1] || "";
+    return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], pids, items, edd, shippedAt, tracking, orderDate, status: txt($("OrderDetails_OrderStatusBadges_OrderStatus")), method: (/Shipping Method\s*([^$]*?)\s*Estimated/.exec(gen) || [])[1] || "",
+      feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
       hasFeedback: !!fb, buyer: txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim() };
   }
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r); }); } catch (_) { res(null); } });
