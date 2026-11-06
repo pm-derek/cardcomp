@@ -3862,10 +3862,11 @@ const EN_TO_JP = {
 // cards are TCGCSV standalones/promos with an empty subtype array — so a subtype-only match drops
 // every promo GX and, with the Promo toggle on, relaxes to non-GX junk. Match the name as a fallback.
 const NAME_STAMPED = { gx:/\bgx\b/i, break:/\bbreak\b/i, vmax:/\bvmax\b/i, vstar:/\bvstar\b/i,
-  v:/(^|\s)v(\s|$)/i, ex:/(^|[\s-])ex(\s|$)/i };   // v/ex: exact tag only, so "melmetal v" never pulls VMAX, ex or GX
+  v:/(^|\s)v(\s|$)/i, ex:/(^|[\s-])ex(\s|$)/i, "lv.x":/\blv\.?\s*x\b|\blvx\b/i };   // v/ex: exact tag only, so "melmetal v" never pulls VMAX, ex or GX
 // true if the card carries this stage/subtype tier either in its subtypes OR (for name-stamped tiers) its name
 function stampOK(tier, r){
   if((r.st||[]).map(x=>x.toLowerCase()).includes(tier)) return true;
+  if(tier==="lv.x" && ((r.st||[]).some(x=>/level-up/i.test(x)) || /lv\.?\s*x/i.test(r.r||""))) return true;   // "Level-Up" subtype / "Rare Holo LV.X"
   const ns = NAME_STAMPED[tier];
   return !!(ns && ns.test(r.n||""));
 }
@@ -3877,6 +3878,11 @@ function parse(raw){
   // "delta", a code) is read as something else. Editing the words drops the pin.
   for(const [ins,pin] of SET_PINS){ if(pin.k!==GAME+"|"+LANG) continue; const at=text.indexOf(" "+ins+" "); if(at>=0){ f.setName=pin.s; text=text.slice(0,at)+" "+text.slice(at+ins.length+1); break; } }
   NICK.forEach(([re,v])=>{ if(re.test(text)){ f.exp.push(v); text = text.replace(re," "+v+" "); } });
+  // LV.X and levels (Derek, 2026-11-06: "lvl x, lvl 30, lvl whatever cards are not searching well"): the catalog spells
+  // it "LV.X", "LVX" or "LV X", so "lv x" in any spelling is a filter (subtype Level-Up / rarity LV.X / name), and a level
+  // number ("lv 66", "lvl.30", "level 40") is dropped: names do not carry it, and its number read as a card number.
+  if(/\b(lv|lvl|level)\s*\.?\s*x\b|\blvl?x\b/.test(text)){ f.subtype="LV.X"; text=text.replace(/\b(lv|lvl|level)\s*\.?\s*x\b|\blvl?x\b/g," "); }
+  text = text.replace(/\b(lv|lvl|level)\s*\.?\s*\d{1,3}\b/g, " ");
   const qFull = text.replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean).join(" ");
   // e-Reader: the e-card era sets with dot-code strips. Filters to the whole group, either language
   if(/\be[\s-]?reader\b|\be[\s-]?card\b/.test(text)){ f.setIn=EREADER_SETS; text=text.replace(/\be[\s-]?reader\b|\be[\s-]?card\b/g," "); }
@@ -3928,7 +3934,7 @@ function parse(raw){
   if(/(^|\s)v(\s|$)/.test(text)){ f.mech="v"; text=text.replace(/(^|\s)v(?=\s|$)/g," "); }
   else if(/(^|\s)ex(\s|$)/.test(text)){ f.mech="ex"; text=text.replace(/(^|\s)ex(?=\s|$)/g," "); }
   const SUB = [[/\bbaby\b/,"Baby"],[/\bgold star\b|\bstar\b/,"Star"],[/\bbreak\b/,"BREAK"],[/\bancient\b/,"Ancient"],[/\bfuture\b/,"Future"],[/\bmega\b/,"MEGA"],[/\bgx\b/,"GX"],[/\bprism star\b|\bprism\b/,"Prism Star"],[/\btag team\b/,"TAG TEAM"],[/\bultra beast\b|\bub\b/,"Ultra Beast"],[/\bsingle strike\b/,"Single Strike"],[/\brapid strike\b/,"Rapid Strike"],[/\bfusion( strike)?\b/,"Fusion"]];
-  for(const [re,st] of SUB){ if(re.test(text)){ f.subtype=st; text=text.replace(re," "); break; } }
+  for(const [re,st] of SUB){ if(!f.subtype && re.test(text)){ f.subtype=st; text=text.replace(re," "); break; } }
 
   if(/\b(vintage|wotc|old|classic(?!\s+collection))\b/.test(text)){ f.eraMax=2003; text=text.replace(/\b(vintage|wotc|old|classic(?!\s+collection))\b/g," "); }   // "classic collection" is a set (Celebrations / 30th Celebration), not an era
   if(/\b(modern|new|recent)\b/.test(text)){ f.eraMin=2020; text=text.replace(/\b(modern|new|recent)\b/g," "); }
