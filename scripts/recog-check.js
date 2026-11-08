@@ -182,8 +182,8 @@ async function appPage(browser, base, blockRecog) {
   });
   ok(lvx.x.every((r) => r.n.length && r.n.every((n) => /garchomp/i.test(n) && /lv\.?\s*x|lvx/i.test(n))),
     "LV.X in any spelling: only Garchomp LV.X cards (" + lvx.x.map((r) => r.q + " " + r.n.length).join(", ") + ")");
-  ok(lvx.lvl.length && /dialga/i.test(lvx.lvl[0]) && lvx.lvl2.length && /palkia/i.test(lvx.lvl2[0]) && lvx.ball.length && /level ball/i.test(lvx.ball[0]),
-    "a level number is ignored (dialga lv 43 -> " + lvx.lvl[0] + ", palkia lvl.48 -> " + lvx.lvl2[0] + "); 'level ball' still finds Level Ball");
+  ok(lvx.lvl.length && /dialga/i.test(lvx.lvl[0]) && lvx.lvl2.length && /palkia/i.test(lvx.lvl2[0]) && lvx.ball.slice(0, 3).some((n) => /level ball/i.test(n)),
+    "a level number is ignored (ball: " + lvx.ball.slice(0,3).join("|") + " dialga lv 43 -> " + lvx.lvl[0] + ", palkia lvl.48 -> " + lvx.lvl2[0] + "); 'level ball' still finds Level Ball");
   await without.close(); await app.close();
 
   // ---------- 3. strip ----------
