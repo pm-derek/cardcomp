@@ -14,12 +14,19 @@ code{color:#f5b301}.dim{color:#8b97a5;font-size:13px}#st{margin-top:10px;min-hei
 <label>Whatnot username<br><input id="wn" type="text" placeholder="e.g. derekcards"></label>
 <button id="savewn">Save</button>
 <div id="stwn"></div>
-<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
-<h2 style="margin-top:28px">Auto-recognition (experiment)</h2>
-<p class="dim">Reads the card on stream at each lot with Claude and fills CardComp's search. Switch it on and pick the model in the CardComp panel ("auto off" under the lot strip). Your key stays in this browser and is sent only to api.anthropic.com. Billing: your Console API credits.</p>
+<h2 style="margin-top:28px">Anthropic API key</h2>
+<p class="dim">Used for the thank-you replies on the Seller Portal Feedback tab (a draft per worded feedback, you press Send). The key stays in this browser and is sent only to api.anthropic.com. Billing: your Console API credits.</p>
 <label>Anthropic API key<br><input id="rkey" type="password" placeholder="sk-ant-..."></label>
 <button id="rsave">Save</button> <button id="rtest">Test</button> <button id="rclear">Remove</button>
 <div id="rst" style="margin-top:10px;min-height:1.5em"></div>
+<h2 style="margin-top:28px">Return address</h2>
+<p class="dim">Used by the issue replies on a message thread when a buyer returns cards. Stays in this browser only.</p>
+<label>Return address, one line<br><input id="fbaddr" type="text" placeholder="123 Street, City, ST 00000"></label>
+<button id="fbaddrsave">Save</button>
+<div id="fbaddrst" style="margin-top:10px;min-height:1.5em"></div>
+<!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
+<h2 style="margin-top:28px">Auto-recognition (experiment)</h2>
+<p class="dim">Reads the card on stream at each lot with Claude (the key above) and fills CardComp's search. Switch it on and pick the model in the CardComp panel ("auto off" under the lot strip).</p>
 <h3 style="margin-top:22px">CardSight, side by side</h3>
 <p class="dim">With a CardSight key (cardsight.ai, API Keys page), read-nows and lot-start reads also go to CardSight. Each read, a coin picks whose answer fills CardComp; the other is only recorded, so the log shows which is right more often. Calls are spread over the month so you never run out early. The key stays in this browser and is sent only to api.cardsight.ai.</p>
 <label>CardSight API key<br><input id="cskey" type="password" placeholder="paste the key from cardsight.ai"></label>

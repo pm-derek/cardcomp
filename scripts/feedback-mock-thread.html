@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock thread</title></head><body>
+<!-- Mock of sellerportal.tcgplayer.com/messages/<id> for scripts/feedback-check.js, from the page saved 2026-11-06: order
+     link, subject h3, tabs, the messages list (newest first) with Reply buttons; the reply box (class
+     sp-message-thread-drawer__thread-reply: subject, textarea, trash, Send) appears above the list after Reply, like the
+     screenshot of the real page. The textarea is read through "input" events; Send appends the message and clears. -->
+<div id="app"></div>
+<script>
+window.__mockThread = { replyOpened: 0, sentText: "", msgs: 3 };
+const MSGS = [
+  ["Daniel Davis", "Oct 30, 2026, 11:49 AM", "https://drive.google.com/drive/folders/x I'd like a refund, but I don't think the stamp will arrive in time."],
+  ["Me", "Oct 30, 2026, 11:28 AM", "Oh no! I must've missed that. Can you shoot me a picture?"],
+  ["Daniel Davis", "Oct 30, 2026, 11:23 AM", "Hi, I received the order and have an issue with a couple of the cards. The misty's wish is damaged, it has a large crease in the center of the art."]];
+const li = (m) => `<li class="sp-messages-thread-message"><div class="sp-messages-thread-message__header display-flex"><div class="display-flex flex-direction-column"><div>Message From &lt;${m[0]}&gt;</div><div class="typography-detail color-surface-subdued">${m[1]}</div></div></div><div class="is-open sp-messages-thread-message__body" tabindex="0">${m[2]}</div><div><div class="sp-message-thread-message__reply-button"><button class="tcg-button" aria-label="Reply to ${m[0]}" data-testid="btnMessages_ThreadMessage_Reply"><span class="tcg-standard-button__content"> Reply </span></button></div></div></li>`;
+setTimeout(() => {
+  document.getElementById("app").innerHTML = `<div class="padding-y-md"><div class="margin-b-md"><a href="https://sellerportal.tcgplayer.com/orders/92588719-D5043B-3C752" class="order-link__labelled" data-testid="linkMessages_Home_OrderDetailsSellerOrder"><span>Order: 92588719-D5043B-3C752</span></a></div><h3 class="typography-heading-lg">Condition Issue</h3></div>
+  <div class="tcg-tabs"><div class="tcg-tabs-panels"><div class="tcg-tabs-panel is-active"><div id="replyhost"></div><ul class="sp-messages-thread-drawer__messages-list reset-list">${MSGS.map(li).join("")}</ul></div></div></div>`;
+  document.querySelectorAll('[data-testid="btnMessages_ThreadMessage_Reply"]').forEach((b) => { b.onclick = () => {
+    window.__mockThread.replyOpened++;
+    const host = document.getElementById("replyhost");
+    host.innerHTML = `<div class="sp-message-thread-drawer__thread-reply"><input readonly value="Re: Condition Issue"><textarea rows="3"></textarea><button aria-label="Discard">🗑</button><button class="tcg-button tcg-standard-button--priority"><span>Send</span></button></div>`;
+    const ta = host.querySelector("textarea"); let v = ""; ta.addEventListener("input", () => { v = ta.value; });
+    host.querySelectorAll("button")[1].onclick = () => { if (!v) return; window.__mockThread.sentText = v; window.__mockThread.msgs++;
+      document.querySelector(".sp-messages-thread-drawer__messages-list").insertAdjacentHTML("afterbegin", li(["Me", "Nov 6, 2026, 1:00 PM", v])); host.innerHTML = ""; };
+  }; });
+}, 300);
+</script></body></html>

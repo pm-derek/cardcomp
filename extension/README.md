@@ -132,6 +132,52 @@ table, a dot chart of every labeled lot, and a soft / even / hot verdict for whe
 At the bottom: "Clear logged lots: last hour / today / everything". It asks first, then removes those lots from
 the stats in this browser and from the log in your private `cardcomp-data` repo. Verified TCGplayer prices stay.
 
+## Thank-you replies to TCGplayer feedback
+
+Open the Seller Portal Feedback tab (store.tcgplayer.com > Feedback). A "Thank-you replies" inbox at the top lists every
+feedback from the last 14 days that has words and a buyer name (wordless auto 5s and blank users are skipped), minus the
+ones already replied to or skipped from here. Ratings of 1 to 3 come first with a red bar and a 48-hour clock from the
+feedback date. For each one the extension opens the order in a background tab to read the cards (thumbnail from the
+first product), then drafts a short reply in your voice with your Anthropic key (Options page; about a cent a draft).
+What they said sits above the draft. Edit the text if you like, then:
+
+- **Send**: counts down 3 seconds (tap again to cancel), then fills the order's Contact Buyer drawer (subject General
+  Inquiry) and presses Send. The row turns "✓ sent". Replies to feedback are not public on TCGplayer, so this is a
+  direct message to the buyer.
+- **Skip**: never offered again ("offer again" in the footer brings skipped ones back).
+- **redo** / **shorter**: another draft.
+
+A message cannot be unsent, so the safeguards are strict: before anything is typed, the order page must show this row's
+feedback text (and a buyer that fits the username), else the send is refused. Each send is locked in storage first; if
+Send was pressed but the page never confirmed, the row turns "unsure" with a link to the order and is never offered
+again (check View Messages before sending by hand). At most 10 sends a day. Drafts that mention a refund, discount,
+dollar amount, link or an apology the feedback did not call for get an amber "check" line. The extension icon shows
+how many are waiting (checked hourly with your login). "Replied from here" in the footer lists what went out.
+
+## Issue replies on a message thread
+
+Open a buyer's thread (Messages > the subject link). A "CardComp reply" panel sits under the subject with the issue
+type read from the thread (condition issue / missing package / wrong item / other, change it if it guessed wrong).
+
+- **Condition issue**: the order's cards with what you charged. Tick the ones in question and pick the condition they
+  arrived in. The value is TCGplayer's market at that condition (the same read as the bidding grid; the cheapest
+  listing or an era estimate when there is no market), refund = charged minus value, rounded up to the dollar. Under
+  $20 charged, "one grade lower" is ticked for you (cheap goodwill); untick it to price as described. "Extra for the
+  trouble" is yours to type. The total is what the draft will say.
+- **Missing package**: the shipping facts and the wait-until date (TCGplayer's rule: estimated delivery plus 2
+  business days; reported within that window you may ask them to wait, past it the refund goes out now), so the draft
+  can ask the buyer to check with household and neighbors and name the date.
+- **Wrong card**: the three options (keep and refund the difference, return for the right card, return for a refund).
+- **Missing card**: reship if you have it, else refund that card.
+
+"Draft reply" writes the next message in your voice from the thread so far, the numbers above and TCGplayer's
+guidance (photos asked for but never required, partial refund first, return paid by you, refund on receipt). Edit
+it, then Send: 3 seconds to cancel, then the thread's own reply box is filled and sent. An amber line flags an amount
+the panel never gave, a photo made a condition, or ratings talk. The send is refused if the page moved to another
+thread or the buyer wrote since the draft, and locked to that point of the thread so a second press cannot send
+twice; 10 thread sends a day. After a send the panel says what to do on the order page, since the message moves no
+money. Save your return address on the Options page so the return option can include it.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
