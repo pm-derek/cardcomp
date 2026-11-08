@@ -701,3 +701,11 @@ Revised the same day (bridge 0.15.13): holding "closes the panel" (Derek; the ho
 shrinks / folds it), so it is a double-tap now: double-tap the picture to see it large, any tap hides it. In the
 pickers a tap picks as before, and a tap on the picked card's picture within 0.4 s shows it large. The large picture is
 dropped on a view change or a new read.
+
+## Custom fill keeps the keyboard down (2026-11-08)
+
+Derek: "I don't like how the keyboard comes up, it moves the Submit button." The minimum-bid fix focused and tapped the
+amount box before typing, which raised the keyboard and pushed Submit up. Now the 1st try sets the text with no focus
+(as before; enough on most screens), the 2nd focuses + taps, the 3rd pastes. Before the 2nd / 3rd try the keyboard is
+held hidden (`softKeyboardController.showMode = SHOW_MODE_HIDDEN`); after the fill, focus is cleared and the mode goes back
+to auto. The hint rule (an empty box's hint never counts as typed) stays. Needs the new APK.

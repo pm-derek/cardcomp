@@ -204,7 +204,7 @@ class WhatnotReader : AccessibilityService() {
             // An empty box reports its grey hint as its text, and Whatnot's hint is the minimum bid (Derek, 2026-11-08: "when
             // the suggested bid matches the stream's minimum it doesn't enter the amount"): the read-back took the hint "$3"
             // for a typed $3 and said ok with the box empty, and at other amounts the same empty box failed as "would not
-            // hold". So the hint never counts, the box is focused first, and a paste is the fallback when typing will not stick.
+            // hold". So the hint never counts, and a tap + paste is the fallback when typing will not stick.
             var box = edit.node
             fun setBox(v: String) = box.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
                 android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, v) })
@@ -226,20 +226,29 @@ class WhatnotReader : AccessibilityService() {
                     box.performAction(AccessibilityNodeInfo.ACTION_PASTE)
                 } catch (_: Exception) { false }
             }
-            box.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            // No focus or tap on the first try (Derek, 2026-11-08: "I don't like how the keyboard comes up, it moves the
+            // Submit button"): setting the text needs no focus and keeps the keyboard down. Only when that does not hold is
+            // the box focused / tapped / pasted into, and then let go so the keyboard closes and Submit stays put.
+            // While the box is touched the keyboard is held hidden (softKeyboardController), so it never slides up mid-fill.
+            var touched = false
+            fun touch() { if (!touched) { touched = true; try { softKeyboardController.showMode = SHOW_MODE_HIDDEN } catch (_: Exception) {} } }
+            fun letGo() { if (touched) { try { box.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS) } catch (_: Exception) {}
+                try { softKeyboardController.showMode = SHOW_MODE_AUTO } catch (_: Exception) {} } }
             var got: Int? = null
             for (attempt in 0 until 3) {
-                if (attempt == 1) { box.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(120) }
+                if (attempt == 1) { touch(); box.performAction(AccessibilityNodeInfo.ACTION_FOCUS); box.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(120) }
+                if (attempt == 2) touch()
                 if (attempt < 2) { setBox(""); Thread.sleep(80); setBox(amount.toString()) }
                 else { setBox(""); Thread.sleep(80); paste(amount.toString()) }
                 Thread.sleep(180)
                 got = boxAmount()
                 if (got == amount) {
+                    letGo()
                     val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
                     return org.json.JSONObject().put("ok", true).put("how", if (attempt < 2) "typed" else "pasted").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
                 }
             }
-            setBox("")
+            setBox(""); letGo()
             return no("the box would not hold $" + amount + (if (got != null) " (it showed $" + got + ")" else " (it stayed empty)") + ": cleared it, type the amount")
         }
         fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
