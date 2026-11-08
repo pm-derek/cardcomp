@@ -174,6 +174,16 @@ async function appPage(browser, base, blockRecog) {
   const a = await snap(app), b = await snap(without);
   const diff = a.filter((x, i) => x !== b[i]);
   ok(diff.length === 0, `${corpus.length} searches identical with and without the experiment` + (diff[0] ? " (first diff: " + diff[0].slice(0, 120) + ")" : ""));
+  // LV.X / levels (Derek, 2026-11-06: "lvl x, lvl 30, lvl whatever cards are not searching well")
+  const lvx = await app.evaluate(() => {
+    const look = (q) => { setGame("pkmn"); setLang("en", true); run(q); return [...document.querySelectorAll("#results .card")].map((e) => { const c = CARDS.find((x) => x.id === e.dataset.id); return c ? c.n : e.dataset.id; }); };
+    const x = ["garchomp lvx", "garchomp lv x", "garchomp lv.x", "garchomp lvl x", "garchomp level x", "garchomp c lv.x", "Garchomp C LV.X"].map((q) => ({ q, n: look(q) }));
+    return { x, lvl: look("dialga lv 43"), lvl2: look("palkia lvl.48"), ball: look("level ball") };
+  });
+  ok(lvx.x.every((r) => r.n.length && r.n.every((n) => /garchomp/i.test(n) && /lv\.?\s*x|lvx/i.test(n))),
+    "LV.X in any spelling: only Garchomp LV.X cards (" + lvx.x.map((r) => r.q + " " + r.n.length).join(", ") + ")");
+  ok(lvx.lvl.length && /dialga/i.test(lvx.lvl[0]) && lvx.lvl2.length && /palkia/i.test(lvx.lvl2[0]) && lvx.ball.slice(0, 3).some((n) => /level ball/i.test(n)),
+    "a level number is ignored (ball: " + lvx.ball.slice(0,3).join("|") + " dialga lv 43 -> " + lvx.lvl[0] + ", palkia lvl.48 -> " + lvx.lvl2[0] + "); 'level ball' still finds Level Ball");
   await without.close(); await app.close();
 
   // ---------- 3. strip ----------

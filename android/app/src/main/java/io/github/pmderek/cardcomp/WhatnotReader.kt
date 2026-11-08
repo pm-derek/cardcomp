@@ -195,30 +195,52 @@ class WhatnotReader : AccessibilityService() {
         }
         // the sheet: everything between its title row and Submit; the amount is the biggest "$N" there
         val sheet = all.filter { it.r.top >= submit.r.top - (submit.r.height() * 12) && it.r.bottom <= submit.r.bottom }
-        val edit = sheet.firstOrNull { it.node.isEditable }
+        // the amount box: the editable nearest above Submit, never the chat box ("Say something…" can sit in the zone)
+        val edit = sheet.filter { it.node.isEditable && !it.text.contains("say something", true) && it.r.bottom <= submit.r.top + 4 }.maxByOrNull { it.r.top }
         if (edit != null) {
             // Clear, type, read back (2026-10-31 audit: $19 sent became a $1,919 max, $16 became $116: the box kept what was
             // in it, the fill said ok without looking, and the amount was pasted on top). Only an exact read-back is ok; a box
             // that will not hold the amount is cleared, so a wrong number never waits behind Submit.
-            fun setBox(v: String) = edit.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
+            // An empty box reports its grey hint as its text, and Whatnot's hint is the minimum bid (Derek, 2026-11-08: "when
+            // the suggested bid matches the stream's minimum it doesn't enter the amount"): the read-back took the hint "$3"
+            // for a typed $3 and said ok with the box empty, and at other amounts the same empty box failed as "would not
+            // hold". So the hint never counts, the box is focused first, and a paste is the fallback when typing will not stick.
+            var box = edit.node
+            fun setBox(v: String) = box.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,
                 android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, v) })
             fun boxAmount(): Int? {
-                val e = wn().firstOrNull { it.node.isEditable && it.r.bottom <= submit.r.bottom && it.r.top >= submit.r.top - submit.r.height() * 12 } ?: return null
-                return e.text.replace(Regex("[^0-9]"), "").toIntOrNull()
+                if (!box.refresh()) {   // the node was re-made: find the box again
+                    val e = wn().filter { it.node.isEditable && !it.text.contains("say something", true) && it.r.bottom <= submit.r.top + 4 && it.r.top >= submit.r.top - submit.r.height() * 12 }.maxByOrNull { it.r.top } ?: return null
+                    box = e.node
+                }
+                if (box.isShowingHintText) return null
+                return (box.text ?: "").toString().replace(Regex("[^0-9]"), "").toIntOrNull()
             }
+            fun paste(v: String): Boolean {
+                return try {
+                    (getSystemService(android.content.ClipboardManager::class.java))?.setPrimaryClip(android.content.ClipData.newPlainText("bid", v))
+                    box.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                    val len = (box.text ?: "").length
+                    box.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, android.os.Bundle().apply {
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0); putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, if (box.isShowingHintText) 0 else len) })
+                    box.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                } catch (_: Exception) { false }
+            }
+            box.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             var got: Int? = null
             for (attempt in 0 until 3) {
-                setBox(""); Thread.sleep(80)
-                if (!setBox(amount.toString())) continue
-                Thread.sleep(150)
+                if (attempt == 1) { box.performAction(AccessibilityNodeInfo.ACTION_CLICK); Thread.sleep(120) }
+                if (attempt < 2) { setBox(""); Thread.sleep(80); setBox(amount.toString()) }
+                else { setBox(""); Thread.sleep(80); paste(amount.toString()) }
+                Thread.sleep(180)
                 got = boxAmount()
                 if (got == amount) {
                     val fin = wn().firstOrNull { SUBMIT.matches(it.text) }   // still a max bid after the amount went in
-                    return org.json.JSONObject().put("ok", true).put("how", "typed").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
+                    return org.json.JSONObject().put("ok", true).put("how", if (attempt < 2) "typed" else "pasted").put("exact", fin?.text?.contains("Exact", true) ?: exact).put("maxOn", switched)
                 }
             }
             setBox("")
-            return no("the box would not hold $" + amount + (if (got != null) " (it showed $" + got + ")" else "") + ": cleared it, type the amount")
+            return no("the box would not hold $" + amount + (if (got != null) " (it showed $" + got + ")" else " (it stayed empty)") + ": cleared it, type the amount")
         }
         fun amountNode(list: List<N>) = list.filter { dollars(it.text) != null && it.r.bottom < submit.r.top }.maxByOrNull { it.r.height() }
         var am = amountNode(sheet) ?: return no("no amount in the Custom sheet")
