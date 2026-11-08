@@ -997,6 +997,11 @@ async function appPage(browser, base, blockRecog) {
     o.parse = (() => { let n = 0; const P = JSON.parse; JSON.parse = function () { n++; return P.apply(this, arguments); }; try { for (let i = 0; i < 50; i++) { loadLots(); shipOf(win); shipOfBuyer(L[2]); } } finally { JSON.parse = P; } return n; })();
     o.same = loadLots() === loadLots();
     o.likely = likelyOther(vap) && !likelyOther(win);
+    // a tapped win far under market is a steal, not another printing (savage4cards 2026-11-08: $1 Zekrom on a $14 market);
+    // the same lot won by someone else, or a win you only opened, still is
+    const steal = (x) => lotRow(Object.assign({ startedAt: t - 20000, at: t, bids: 1, seller: "sSteal", final: 1 }, x));
+    o.steal = !likelyOther(steal({ me: true, card: card({ condMarket: 14, market: 14 }) })) && !likelyOther(steal({ me: true, card: card({ condMarket: 14, market: 14, label: "fixed" }) }))
+      && likelyOther(steal({ me: false, winner: "rivalx", card: card({ condMarket: 14, market: 14 }) })) && likelyOther(steal({ me: true, card: card({ condMarket: 14, market: 14, label: "view" }) }));
     const H = haul(streamRows("sAud")), S = dashSum(L), St = lotStats("sAud", "stream");
     o.haul = H.n === 2 && H.off === 1 && Math.abs(H.net - (np - 10 - ship)) < 0.01 && Math.abs(H.margin - (np - 10 - ship) / (10 + ship)) < 0.001;
     o.dash = S.off.length === 1 && S.priced.length === 1 && Math.abs(S.net - (np - 10 - ship)) < 0.01 && S.spent === 36;
@@ -1030,6 +1035,7 @@ async function appPage(browser, base, blockRecog) {
     return o;
   });
   ok(au.parse <= 1 && au.same, "stats: lots parsed once per stored version (" + au.parse + " parses for 150 calls)");
+  ok(au.steal, "stats: a tapped $1 win on a $14 card counts in net (a steal); opened-only and others' lots keep the 40% rule");
   ok(au.likely && au.haul && au.dash && au.sheet && au.lead && au.dashTxt, "stats: a win under 40% of market is spent only, not net / margin; nets after coupons and shipping " + JSON.stringify(au));
   ok(au.buyers && au.worth && au.cal && au.stale && au.reset, "stats: no rival without a beaten max, no 'I' buyer, worth today by NM move, 7 days from midnight, stale stream empty, removeLot resets buyers");
   ok(au.failed === "7,9" && au.noFailed === "9", "log read: rows on failed day files kept (" + au.failed + "), replaced without failed (" + au.noFailed + ")");

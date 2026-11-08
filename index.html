@@ -2463,9 +2463,14 @@ const costOf=r=>Math.max(0, (+r.f||0)-(r.me?(+r.cp||0):0));
 // market is most likely a cheaper printing than the one opened or tapped (the rule "passed" lots already used). Your
 // opened-only wins whose max set in Whatnot sat under half the margin bid count too (you knew it was the cheaper one).
 // They count toward spent, never toward net, margin or best buys, and are named so the card can be fixed.
+// Your tapped wins are trusted (Derek, 2026-11-08, savage4cards, 105 wins: "a lot of cards win for way under market, a lot
+// of $1 wins for real"): you sent a bid for that card and won it, so a $1 win on a $14 card is a steal, not a misread.
+// 51 of the stream's wins (94 of 122 in the whole log) were tapped and left out of net. A card picked later ("fixed")
+// counts the same. Opened-only wins keep the rule (the $26 Vaporeon was one), and so do lots someone else won.
 const OFF_PCT=0.4;
 function likelyOther(r){
   if(!(r && r.m>0 && r.f>0)) return false;
+  if(r.me && (r.lab==="tap" || r.lab==="fixed")) return false;
   if(r.f<OFF_PCT*r.m) return true;
   return !!(r.me && r.lab==="view" && r.pm>0 && r.pm<0.5*bidForMargin(r.m, getNum("tgtmargin",10)/100));
 }
