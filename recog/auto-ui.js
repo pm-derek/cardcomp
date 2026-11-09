@@ -22,7 +22,9 @@
   const ADOPT = {};  // pre-start reading key -> the lot that reused it (either message can arrive first)
 
   const css = document.createElement("style");
-  css.textContent = "#autoline{display:none;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.4;color:var(--dim);padding:4px 9px;margin-top:4px}" +
+  css.textContent = "#autoline{display:none;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.4;color:var(--dim);padding:4px 9px;margin-top:4px;box-sizing:border-box;min-height:42px}" +
+    "@media (max-width:600px){#autoline:not(.all){max-height:66px;overflow:hidden;cursor:pointer}}body.phone #autoline:not(.all){max-height:66px;overflow:hidden;cursor:pointer}" +   // phones: 3 lines, tap the line for the rest (a full reading ran 6 lines and pushed the results 51 px)
+
     "#autoline .modes{display:inline-flex;margin-right:6px;border:1px solid var(--line);border-radius:6px;overflow:hidden;vertical-align:middle}" +
     "#autoline .modes span{cursor:pointer;padding:3px 8px;color:var(--faint)}#autoline .modes span+span{border-left:1px solid var(--line)}" +
     "#autoline .modes span.on{color:#000;background:var(--green)}#autoline .modes span.on[data-m=off]{background:var(--line);color:var(--ink)}#autoline .modes span.on[data-m=manual]{background:var(--gold)}" +
@@ -140,8 +142,17 @@
     e.preventDefault(); readNow();
   }, true);
 
+  // Steady layout (Derek, 2026-11-09: "buttons move a split second as results show, I misclick"): the line keeps two
+  // lines of room and never shrinks while the same results are up ("reading X" -> the full read -> "picture: matching"
+  // grew it under the results); it can shrink again on the next search (typing, or a fill), when the results are new.
+  let HOLD_H = 0;
+  function holdLine() { const el = $("#autoline"); if (!el || el.style.display === "none") return; el.style.minHeight = ""; const h = el.getBoundingClientRect().height; if (h > HOLD_H) HOLD_H = h; el.style.minHeight = HOLD_H + "px"; }
+  function releaseLine() { HOLD_H = 0; holdLine(); }
+  document.addEventListener("click", (e) => { const al = e.target && e.target.closest && e.target.closest("#autoline"); if (al && !e.target.closest("a,button,select,.modes,.zhauto,.rn,#autoshow")) { al.classList.toggle("all"); if (!al.classList.contains("all")) releaseLine(); } }, true);
+  new MutationObserver(() => holdLine()).observe(document.body, { childList: true, subtree: true, characterData: true });   // every writer of the line, before the frame paints
   function fill(m, r) {
     const q = $("#q"); if (!q || typeof render !== "function") return;
+    releaseLine();
     q.value = queryText(r);
     const qc = $("#qclear"); if (qc) qc.style.display = "block";
     try { if (typeof LANG !== "undefined" && m.lang && m.lang !== LANG && typeof setLang === "function") setLang(m.lang, true); } catch (_) {}
@@ -378,7 +389,7 @@
     for (const k of Object.keys(AUTO)) if (+k < Date.now() - 15 * 60e3) delete AUTO[k];
   };
 
-  document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") TOUCH = ENGAGED = Date.now(); }, true);
+  document.addEventListener("input", (e) => { if (e.target && e.target.id === "q") { TOUCH = ENGAGED = Date.now(); releaseLine(); } }, true);
   document.addEventListener("pointermove", (e) => { if (e.target && e.target.closest && e.target.closest("#results")) HOVER = Date.now(); }, true);
   document.addEventListener("pointerdown", (e) => { if (e.target && e.target.closest && e.target.closest("#results,#sug")) TOUCH = ENGAGED = Date.now(); }, true);
   window.addEventListener("message", (e) => {
