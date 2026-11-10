@@ -27,7 +27,7 @@
   .ex span:hover{border-color:var(--gold);color:var(--ink)}
   #read{color:var(--blue);font-size:13px;margin:14px 2px 4px;min-height:16px}
   #read .f{color:var(--gold)}
-  #status{color:var(--dim);font-size:12px;margin:6px 2px 10px}
+  #status{color:var(--dim);font-size:12px;margin:6px 2px 10px;height:15px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* steady: the count appearing used to move results 14 px */
   .card{display:flex;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:7px;margin-top:5px}
   .card img{width:60px;height:84px;object-fit:contain;border-radius:6px;background:#0e1115;flex:none}
   /* Bigger pictures (Derek, 2026-10: "picture previews need to be bigger", to check the card on stream against the
@@ -48,9 +48,9 @@
   .card.open .detail{display:block}
   .muted{color:var(--dim);font-size:12px;line-height:1.5}
   .pchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
-  .sug{display:none;gap:6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .sug{display:flex;visibility:hidden;min-height:35px;gap:6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .sug::-webkit-scrollbar{display:none}
-  .sug.on{display:flex}
+  .sug.on{visibility:visible}   /* steady layout (Derek, 2026-11-09: "buttons move a split second as results show, I misclick"): the chips row keeps its space when empty; hiding it on blur moved every result 43 px up under the finger */
   /* phone (Derek, 2026-10-23: Chrome's autofill bar over the keyboard hid the chips): chips sit above the search box, so
      nothing that pops up over the keyboard can cover them. Side panel / desktop keep them below. */
   @media (max-width:600px){ #sug{order:1} #qrow{order:2} }
@@ -155,6 +155,11 @@
     .condgrid .pc{display:none}
   }
   .condgrid .cadd{width:48px;height:40px;background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:9px;color:var(--ink);cursor:pointer;font-size:13px;line-height:1;padding:0}
+  /* lot strip: fixed lines, so a longer name or a new note never moves the results (steady layout, 2026-11-09) */
+  #lotstrip .lsA{line-height:20px;height:40px;overflow:hidden}
+  #lotstrip .lsL{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:20px;line-height:20px}
+  body.phone #lotstrip .lsA{height:60px}
+  @media (max-width:600px){ #lotstrip .lsA{height:60px} }
   #hdrR{position:absolute;top:9px;right:16px;display:flex;align-items:center;gap:6px}   /* header right: timer, stats, dashboard, settings (Derek, 2026-11-06) */
   .gear{background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit}
   .gear:hover{color:var(--ink);border-color:var(--gold)}
@@ -2224,6 +2229,7 @@ function paintLot(){
   const color=LOT_FLASH ? "var(--green)" : d.me ? "var(--green)" : over ? "var(--red)" : "var(--gold)";
   el.style.borderLeftColor=color;
   const parts=[];
+  if(LOT_FLASH) parts.push(`<span style="color:var(--green)">${LOT_FLASH}</span>`);   // inline: a line of its own moved the results for 12 s
   if(d.cur!=null) parts.push(`<b style="color:${color};font-size:15px">now $${d.cur}</b>`);
   if(d.next!=null) parts.push(`next $${d.next}`);
   if(d.timer) parts.push(`<b>${d.timer}</b>`);
@@ -2233,24 +2239,25 @@ function paintLot(){
   else if(d.me) parts.push(`<span style="color:var(--green)">you lead</span>`);
   else if(d.lead){ const b=buyerProfiles().get(d.lead), tg=b&&b.tags.length?b.tags[0]:"";   // a tagged buyer leading: the price is probably near value (sharp) or past it (whale)
     parts.push(tg ? `<span title="${escH(buyerTxt(Object.assign({u:d.lead}, b)))}" style="color:${TAG_COL[tg]}">⚠ ${tg} buyer leads: ${escH(d.lead).slice(0,14)}</span>` : `lead ${escH(d.lead).slice(0,14)}`); }
-  { const here=taggedHere(); if(here.length){ const n=t=>here.filter(b=>b.tags.includes(t)).length;
-    parts.push(`<span title="${escH(here.map(buyerTxt).join("\n"))}" style="color:var(--dim)">here: ${["sharp","rival","whale"].filter(n).map(t=>`<b style="color:${TAG_COL[t]}">${t} ${n(t)}</b>`).join(" · ")}</span>`); } }
+  const herePart=(()=>{ const here=taggedHere(); if(!here.length) return ""; const n=t=>here.filter(b=>b.tags.includes(t)).length;
+    return `<span title="${escH(here.map(buyerTxt).join("\n"))}" style="color:var(--dim)">here: ${["sharp","rival","whale"].filter(n).map(t=>`<b style="color:${TAG_COL[t]}">${t} ${n(t)}</b>`).join(" · ")}</span>`; })();
   if(tap && tap.bid<1) parts.push(`<span style="color:var(--dim)">your max under $1</span>`);
   else if(over && !d.me) parts.push(`<span style="color:var(--red)">over your $${tap.bid}</span>`); else if(tap) parts.push(`<span style="color:var(--dim)">your max $${tap.bid}</span>`);
   if(d.placedMax!=null && !d.ended) parts.push(`<span style="color:var(--green)">max set $${d.placedMax}</span>`);   // read from Whatnot's "Max bid added $13"
   const H=VERDICT.haul;   // this stream, from the stats store: "won 3 · $24 · +$4.20"
   if(H && H.n) parts.push(`<span style="color:var(--ink)" title="spent on wins + this stream's shipping, net after coupons and shipping${H.off?`; ${H.off} win${H.off===1?"":"s"} left out of net: under 40% of market, likely another printing`:""}${H.unl?`; ${H.unl} without a card`:""}">won ${H.n} · $${Math.round(H.spent)}${H.coupons>0?` <span style="color:var(--dim)">after $${H.coupons.toFixed(2)} coupons</span>`:""}${H.ship>0?` <span style="color:var(--dim)">+ $${H.ship.toFixed(2)} ship</span>`:""}${H.priced?` · <span style="color:${H.net>=0?"var(--green)":"var(--red)"}">${H.net>=0?"+":"−"}$${Math.abs(H.net).toFixed(2)}</span>`:""}${H.ms>=60000?` <span style="color:var(--dim)" title="time sourcing this stream (lots on screen, within 2 min of a scan, tap, card opened, lead or win)${H.hr!=null?`, net per hour`:""}">· ${durTxt(H.ms)}${H.hr!=null?` ${H.hr>=0?"":"−"}$${Math.abs(H.hr).toFixed(0)}/hr`:""}</span>`:""}</span>`);
   else if(LOT_N) parts.push(`<span style="color:var(--faint)">lots ${LOT_N} · won 0</span>`);
+  if(herePart) parts.push(herePart);
   if(document.body.classList.contains("phone") || innerWidth<=600) parts.push(`<span class="lotstatbtn" style="cursor:pointer;color:var(--blue)">${LOTSTATS_OPEN?"hide stats":"stats"}${VERDICT.txt?` <span style="color:${VERDICT.col}">· ${VERDICT.txt}</span>`:""}</span>`);
   // Priced out (current bid at or past the max you sent, or Whatnot refused it): one tap bids the minimum,
   // with what that price would net so the nudge is a decision, not a reflex
-  let nudge="";
+  let nudge="";   // inline in the live line now (its own line with a tall button moved the results when you got priced out)
   const pricedOut=!d.ended && !d.me && tap && tap.bid>=1 && d.next!=null && (over || (LOT_UNDER && LOT_UNDER.at>=LOT_START));
   if(pricedOut){
     const mkt=tap.condMarket||tap.market||0, net=mkt>0 ? netProceeds(listSale(mkt))-d.next : null;
-    nudge=`<div style="margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="color:var(--red)">priced out: next bid $${d.next}</span>`+
-      `<button class="lotnudge" data-bid="${d.next}" data-keep="1" style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:8px;color:var(--ink);font:inherit;font-size:13px;padding:7px 12px;cursor:pointer">bid $${d.next}</button>`+
-      (net!=null?`<span style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)} at $${d.next}</span>`:"")+`</div>`;
+    nudge=`<span style="color:var(--red)">priced out: next $${d.next}</span> `+
+      `<button class="lotnudge" data-bid="${d.next}" data-keep="1" style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:6px;color:var(--ink);font:inherit;font-size:12px;line-height:16px;padding:1px 10px;cursor:pointer;vertical-align:1px">bid $${d.next}</button>`+
+      (net!=null?` <span style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)} at $${d.next}</span>`:"");
   }
   // what this lot will be logged as: the card you tapped a bid on, else the card you opened, else nothing
   const pre=d.ended ? "next lot " : "";   // after "Sold", what you open or tap belongs to the next lot
@@ -2259,13 +2266,17 @@ function paintLot(){
             : `<span style="color:var(--faint)">${pre}not labeled: open or tap a card</span>`;
   // ✕ clear: drop the card queued for this slot (a wrong search, a late tap) so the lot logs unlabeled until the next tap / open
   const clr=(tap||view) ? ` <span class="lotclr" title="clear the card for this lot" style="cursor:pointer;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-left:4px">✕ clear</span>` : "";
-  const late=LATE_NOTE && Date.now()-LATE_NOTE<3000 ? `<div style="margin-top:2px;font-size:11px;color:var(--gold)">late tap: counted for the card that just sold, not the next one</div>` : "";
+  const late=LATE_NOTE && Date.now()-LATE_NOTE<3000 ? `<span style="color:var(--gold)" title="counted for the card that just sold, not the next one">late tap: counted for the card that sold</span> · ` : "";
   // title not read (new layout): one tap copies what the reader saw, to paste to Claude
   const noTitle=!d.title || d.title==="(untitled lot)";
   const nm=d.title ? lotQuery(d.title) : "";
-  const title=d.title ? `<div style="margin-top:3px;font-size:11.5px;color:var(--dim)">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</div>` : "";
-  const dbg=noTitle ? `<div style="margin-top:2px;font-size:11px;color:var(--faint)">lot title not read · <span class="lotdbg" style="cursor:pointer;color:var(--blue)">${DBG_NOTE||"copy debug"}</span></div>` : "";
-  el.innerHTML=(LOT_FLASH?`<div style="color:var(--green)">${LOT_FLASH}</div>`:"")+parts.join(" · ")+nudge+title+`<div style="margin-top:2px;font-size:11.5px">${lab}${clr}</div>`+late+dbg;
+  const title=d.title ? `<span title="${escH(d.title)}">${escH(d.title).slice(0,48)}${d.sub?` · ${escH(d.sub).slice(0,24)}`:""}${nm?` · <span class="lotchip" style="cursor:pointer;color:var(--blue)" title="search this">search ${escH(nm)}</span>`:""}</span>` : "";
+  const dbg=noTitle ? `<span style="color:var(--faint)">lot title not read · <span class="lotdbg" style="cursor:pointer;color:var(--blue)">${DBG_NOTE||"copy debug"}</span></span>` : "";
+  if(nudge){ const i=parts.findIndex(p=>/over your \$/.test(p)); parts.splice(i>=0?i+1:parts.length, 0, nudge); }   // priced out right after "over your $X" (the phone's small card mirrors both)
+  // four fixed lines: live (2 lines, 3 on phones, clipped past that), title / debug, logging (late note first)
+  el.innerHTML=`<div class="lsA">${parts.join(" · ")}</div>`+
+    `<div class="lsL" style="font-size:11.5px;color:var(--dim)">${[title, dbg].filter(Boolean).join(" · ")||"&nbsp;"}</div>`+
+    `<div class="lsL" style="font-size:11.5px">${late}${lab}${clr}</div>`;
   const cl=el.querySelector(".lotclr"); if(cl) cl.onclick=(e)=>{ e.stopPropagation(); const n=Date.now(); LOT_START=Math.max(LOT_START, n); LOT_VIEW_START=n; TAPS_THIS_LOT=TAPS_THIS_LOT.filter(t=>t.t>n); paintLot(); };
   const db=el.querySelector(".lotdbg"); if(db) db.onclick=(e)=>{ e.stopPropagation(); DBG_NOTE="reading…"; paintLot(); extPost({type:"cardcomp-snapshot"}); };
   const ch=el.querySelector(".lotchip"); if(ch) ch.onclick=()=>{ const q=$("#q"); if(q){ q.value=nm; run(q.value); } };
