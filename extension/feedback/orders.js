@@ -39,7 +39,7 @@
         const have = r.buyerTd.querySelector(".ccbuy");
         if (have && have.__cchtml) continue;
         if (have) have.remove();   // a re-render copied the chip as markup only (no hover card): draw it again
-        const s = await window.ccBuyer.stats(r.buyer, r.at);
+        const s = await window.ccBuyer.stats(r.buyer, r.at, r.order);   // the order id: the row always counts itself, at its exact time when the history has one
         const c = window.ccBuyer.chip(s, r.at);
         if (c && !r.buyerTd.querySelector(".ccbuy")) {
           r.host.appendChild(c);

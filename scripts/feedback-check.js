@@ -71,6 +71,14 @@ async function bgTests() {
   const bs = ctx.fbBuyerStats(store.fbBuyers, "CHRIS  thomas", 0); assert.strictEqual(bs.n, 3); assert.ok(Math.abs(bs.spent - 37.29) < 1e-9); assert.strictEqual(bs.name, "Chris Thomas"); ok("stats: 3 orders, $37.29, mixed-case spelling kept");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[1].at).before, 1); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at).before, 2); ok("as of the Oct 29 order they had 1, as of Nov 9 they had 2");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "nobody", 0), null); ok("unknown buyer: null");
+  // date-only rows (the grid's "Nov-09-2026") against stored exact times: a row always counts itself
+  { const d = (s) => new Date(s).getTime(); const hist = { "danny lu": { name: "danny lu", orders: { O1: { at: d("2026-09-01T00:00:00"), total: 20 }, O2: { at: d("2026-09-20T00:00:00"), total: 30 }, O3: { at: d("2026-10-02T15:10:00"), total: 25 }, O4: { at: d("2026-10-20T00:00:00"), total: 39.33 }, O5: { at: d("2026-11-09T09:15:00"), total: 10 }, O6: { at: d("2026-11-09T19:39:01"), total: 21.9 }, O7: { at: d("2026-11-10T00:00:00"), total: 2.28 } } } };
+    const mid9 = d("2026-11-09T00:00:00"), mid10 = d("2026-11-10T00:00:00");
+    let s = ctx.fbBuyerStats(hist, "danny lu", mid9, "O6"); assert.deepStrictEqual([s.before, s.spentBefore], [6, 146.23]); ok("a grid row dated Nov 9 whose order is stored at 7:39 PM counts itself: 6 orders, not 5");
+    s = ctx.fbBuyerStats(hist, "danny lu", mid9, "O5"); assert.strictEqual(s.before, 5); ok("the same day's earlier order (stored 9:15 AM) reads 5: exact times still order the day");
+    s = ctx.fbBuyerStats(hist, "danny lu", mid10, "O7"); assert.deepStrictEqual([s.before, s.spentBefore], [7, 148.51]); ok("the Nov 10 row reads 7");
+    s = ctx.fbBuyerStats(hist, "danny lu", mid9, ""); assert.strictEqual(s.before, 6); ok("a date-only question with no order id counts every order of that day");
+    s = ctx.fbBuyerStats(hist, "danny lu", mid9, "NEW"); assert.strictEqual(s.before, 6); ok("an order id the history does not hold yet changes nothing"); }
   { const s = ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", 0);
     assert.strictEqual(s.first, parsed[1].at); assert.strictEqual(s.firstTotal, 5.39); assert.strictEqual(s.lastTotal, 10); assert.ok(s.last > parsed[0].at); ok("LTV: first order Oct 29 $5.39, last order (today) $10, lifetime $37.29");
     const asOf = ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at); assert.strictEqual(asOf.before, 2); assert.strictEqual(asOf.spentBefore, 27.29); ok("as of the Nov 9 order: 2 orders, $27.29 spent by then"); }
