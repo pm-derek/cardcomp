@@ -103,7 +103,7 @@ function fbHandle(msg, sender, reply) {
   if (msg.type === "cardcomp-fb-buyers-import") { fbBuyersMerge(fbParseCSV(msg.csv || "")).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
   if (msg.type === "cardcomp-fb-buyer") {   // stats + the feedback this buyer left (newest first)
     Promise.all([fbBuyersGet(), fbFeedbackGet()]).then(([m, f]) => {
-      const s = fbBuyerStats(m, msg.name, msg.at || 0), b = m[fbBuyerKey(msg.name)];
+      const s = fbBuyerStats(m, msg.name, msg.at || 0, msg.order || ""), b = m[fbBuyerKey(msg.name)];
       const fb = fbFeedbackFor(f, msg.name, Object.keys(b && b.orders || {}).concat(msg.order ? [msg.order] : []));
       reply({ ok: true, stats: s || fb.length ? Object.assign(s || { n: 0, name: msg.name, spent: 0 }, { fb }) : null });
     });
@@ -268,22 +268,30 @@ async function fbBuyersMerge(orders) {
     const b = (m[k] = m[k] || { name: String(o.buyer).trim(), orders: {} });
     if (!b.orders[id]) added++;
     const prev = b.orders[id] || {};
-    const exact = (t) => t && new Date(t).getHours() + new Date(t).getMinutes() + new Date(t).getSeconds() > 0;   // a time of day, not the import's midnight
-    b.orders[id] = { at: exact(o.at) || !prev.at ? (o.at || 0) : prev.at, total: o.total != null ? o.total : (prev.total != null ? prev.total : null) };
+    b.orders[id] = { at: fbExact(o.at) || !prev.at ? (o.at || 0) : prev.at, total: o.total != null ? o.total : (prev.total != null ? prev.total : null) };
     if (/[a-z]/.test(String(o.buyer)) && /[A-Z]/.test(String(o.buyer))) b.name = String(o.buyer).trim();   // prefer a mixed-case spelling
   });
   await new Promise((res) => chrome.storage.local.set({ fbBuyers: m }, res));
   return { added, buyers: Object.keys(m).length, orders: Object.values(m).reduce((s, b) => s + Object.keys(b.orders).length, 0) };
 }
-function fbBuyerStats(m, name, at) {
+const fbExact = (t) => !!t && new Date(t).getHours() + new Date(t).getMinutes() + new Date(t).getSeconds() > 0;   // a time of day, not a date-only midnight (CSV import, the grid's "Nov-09-2026")
+// order: the order the count is for (a list row, an order page). It always counts itself, and when the history holds its
+// exact time that time is used. Derek, 2026-11-10: danny lu's two rows read "5 orders" and "7 orders": the grid row asked
+// "up to Nov 9, midnight" while that same order was stored at 7:39 PM (from the old table), so it left itself out.
+function fbBuyerStats(m, name, at, order) {
   const b = m[fbBuyerKey(name)]; if (!b) return null;
+  const own = order && b.orders[order] ? b.orders[order] : null;
+  if (own && fbExact(own.at)) at = own.at;
   const os = Object.values(b.orders); if (!os.length) return null;
   const ats = os.map((o) => o.at || 0).filter(Boolean);
   // "before": orders up to this one. Exact times (Orders list rows) order strictly, so two orders on one day read 2 and
   // 3 (Derek, 2026-11-10: "the most recent order should mark the most recent count"); a date-only time (the CSV import,
   // midnight) on the same day cannot be placed, so it counts.
   const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
-  const upTo = (o) => !o.at || o.at <= at || (o.at === dayStart(o.at) && dayStart(o.at) <= dayStart(at));
+  // A date-only question ("up to Nov 9") counts every order of that day; an exact one counts earlier times plus that
+  // day's date-only orders.
+  const byDay = !fbExact(at);
+  const upTo = (o) => o === own || !o.at || (byDay ? dayStart(o.at) <= dayStart(at) : o.at <= at || (!fbExact(o.at) && dayStart(o.at) <= dayStart(at)));
   // Lifetime value (Derek, 2026-11-10: "total $ spent, like LTV; last order date and $; 1st order date and $"): the
   // first and last order by time with their amounts, the lifetime total, and the total up to this order (spentBefore).
   const dated = os.filter((o) => o.at).sort((x, y) => x.at - y.at), fo = dated[0], lo = dated[dated.length - 1];

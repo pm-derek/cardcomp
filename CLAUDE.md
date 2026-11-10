@@ -448,6 +448,13 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   layouts (labeled cells first, positions as the fallback). Extension 0.9.15; feedback-check section 6 has a grid mock.
   The address now carries the query (`?searchRange=LastThreeMonths&page=1&size=25&sortBy=...&qfid=All`). Only the list
   was re-saved: the order page, Messages and thread pages were not checked for the same change.
+- A row counts itself (Derek, 2026-11-10, danny lu's two Ready to Ship rows read "5 orders" and "7 orders": "where does
+  6 go?"): the grid row asks with a date-only time (Nov 9, midnight) while the history held that same order at 7:39 PM
+  from the old table, so `o.at <= at` left the row's own order out. `fbBuyerStats(m, name, at, order)`: the order asked
+  about always counts; when the history has its exact time (`fbExact`) that time replaces the row's date; a date-only
+  question counts every order of that day (by `dayStart`), an exact one counts earlier times plus that day's date-only
+  orders. orders.js passes the row's order id (`ccBuyer.stats(name, at, order)`, the same field the feedback join
+  uses). Extension 0.9.17; checks in feedback-check section 1.
 - Open-order totals (Derek, 2026-11-10: "a sum of the orders whose status is Ready to Ship: product, shipping, total; as
   I generate a new pull sheet this is the sales I've made"): orders.js `openBar(rows)` draws `#ccopen` after
   `OrderIndex_QuickFilters_Container` (else before the grid / table): count, product, shipping and total of the rows on
@@ -505,7 +512,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (136 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (141 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
