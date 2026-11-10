@@ -31,7 +31,8 @@
     if (!window.ccBuyer) return;
     for (const a of document.querySelectorAll('a[data-testid="linkMessages_Home_Thread"]')) {
       const tr = a.closest("tr"); if (!tr) continue;
-      const cell = tr.querySelectorAll("td")[1]; if (!cell || cell.querySelector(".ccbuy")) continue;
+      const cell = tr.querySelectorAll("td")[1]; if (!cell) continue;
+      const have = cell.querySelector(".ccbuy"); if (have && have.__cchtml) continue; if (have) have.remove();   // markup-only copy after a re-render
       const names = txt(cell).split(",").map((s) => s.trim()).filter((s) => s && !/^me$/i.test(s) && !/tcgplayer/i.test(s));
       if (!names.length) continue;
       const s = await window.ccBuyer.stats(names[0], 0), chip = window.ccBuyer.chip(s, 0);

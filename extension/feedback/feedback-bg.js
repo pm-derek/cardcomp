@@ -271,8 +271,13 @@ function fbBuyerStats(m, name, at) {
   // midnight) on the same day cannot be placed, so it counts.
   const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const upTo = (o) => !o.at || o.at <= at || (o.at === dayStart(o.at) && dayStart(o.at) <= dayStart(at));
-  return { n: os.length, first: ats.length ? Math.min(...ats) : 0, last: ats.length ? Math.max(...ats) : 0, spent: os.reduce((s, o) => s + (o.total || 0), 0),
-    before: at ? os.filter(upTo).length : os.length, name: b.name };
+  // Lifetime value (Derek, 2026-11-10: "total $ spent, like LTV; last order date and $; 1st order date and $"): the
+  // first and last order by time with their amounts, the lifetime total, and the total up to this order (spentBefore).
+  const dated = os.filter((o) => o.at).sort((x, y) => x.at - y.at), fo = dated[0], lo = dated[dated.length - 1];
+  const sum = (arr) => Math.round(arr.reduce((s, o) => s + (o.total || 0), 0) * 100) / 100;
+  const upToOs = at ? os.filter(upTo) : os;
+  return { n: os.length, first: fo ? fo.at : 0, last: lo ? lo.at : 0, firstTotal: fo ? fo.total : null, lastTotal: lo ? lo.total : null, spent: sum(os),
+    before: upToOs.length, spentBefore: sum(upToOs), name: b.name };
 }
 // TCGplayer's Order List CSV (Options page import). Quoted fields, commas inside quotes, CRLF.
 function fbParseCSV(text) {
