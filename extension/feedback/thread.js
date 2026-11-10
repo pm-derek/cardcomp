@@ -99,6 +99,11 @@
     const o = await post({ type: "cardcomp-fb-order", order: th.order });
     S.info = o && o.ok ? o.info : null;
     const stEl = box.querySelector("[data-st]"); stEl.textContent = S.info ? "" : "order page not read (" + (o && o.why || "no reply") + ")";
+    if (S.info && S.info.buyer && window.ccBuyer) {   // repeat-buyer badge beside the buyer's name, history for the draft
+      S.buyerStats = await window.ccBuyer.stats(S.info.buyer, 0);
+      const chip = window.ccBuyer.chip(S.buyerStats, 0);
+      const h = box.querySelector("h4"); const nm = document.createElement("span"); nm.className = "dim"; nm.textContent = S.info.buyer; h.appendChild(nm); if (chip) h.appendChild(chip);
+    }
     paint();
     box.querySelector("[data-type]").onchange = (e) => { S.type = e.target.value; paint(); };
     if (S.info && S.type === "condition") pricesFor();
@@ -171,7 +176,7 @@
       if (S.type === "missing" && info) { const mf = missingFacts(info, th.msgs); facts = { edd: info.edd, shippedAt: info.shippedAt, tracking: info.tracking, method: info.method, waitUntil: mf.waitUntil, late: mf.late, reportedLate: mf.reportedLate }; }
       const cur = readThread(); S.draftFor = { tid: TID, order: th.order, n: cur ? cur.msgs.length : th.msgs.length };   // what this draft answers; checked again at send
       d.innerHTML = '<div class="dim">drafting…</div>';
-      const r = await post({ type: "cardcomp-fb-issue", kind: S.type, thread: { subject: th.subject, msgs: th.msgs.slice(-12) }, order: info ? { order: th.order, items: (info.items || []).map((it) => ({ name: nameOf(it.name), printing: printingOf(it.name), soldAs: condOf(it.name), charged: it.price, qty: it.qty })), orderDate: info.orderDate, buyer: info.buyer } : { order: th.order }, picks: p, facts, address: S.addr });
+      const r = await post({ type: "cardcomp-fb-issue", kind: S.type, thread: { subject: th.subject, msgs: th.msgs.slice(-12) }, order: info ? { order: th.order, items: (info.items || []).map((it) => ({ name: nameOf(it.name), printing: printingOf(it.name), soldAs: condOf(it.name), charged: it.price, qty: it.qty })), orderDate: info.orderDate, buyer: info.buyer, history: window.ccBuyer ? window.ccBuyer.line(S.buyerStats) : "" } : { order: th.order }, picks: p, facts, address: S.addr });
       const text = r && r.ok ? r.text : "";
       S.picks = p; S.facts = facts;
       const fl = r && r.ok ? issueFlags(text, p, facts) : [];

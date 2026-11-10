@@ -153,6 +153,11 @@
       const info = o && o.ok ? o.info : null;
       if (info) {
         r.products = info.products; r.fbDate = info.fbDate; r.pageFeedback = info.feedback; r.buyer = info.buyer; card.textContent = cardsLine(info.products);
+        if (window.ccBuyer && info.buyer) {   // the buyer history (Options import + pages seen) beats the 14-day guess
+          const bs = await window.ccBuyer.stats(info.buyer, 0); r.history = window.ccBuyer.line(bs);
+          const old = el.querySelector(".hd .tag.blue"); const chip = window.ccBuyer.chip(bs, 0);
+          if (bs) { if (old) old.remove(); if (chip) el.querySelector(".hd").insertBefore(chip, tags); }
+        }
         if (info.pids && info.pids[0]) { pic.src = "https://tcgplayer-cdn.tcgplayer.com/product/" + info.pids[0] + "_200w.jpg"; pic.onload = () => pic.classList.remove("none"); }
         if (r.rating <= 3 && fbWhen(info.fbDate)) { const left = Math.round((fbWhen(info.fbDate) + 48 * 36e5 - Date.now()) / 36e5); tags.innerHTML = `<span class="tag red">${left > 0 ? "reply within 48h: " + left + "h left" : "48h window passed"}</span>`; }
       } else body.innerHTML = '<span class="dim">order page not read (' + esc(o && o.why || "no reply") + '), drafting without the cards…</span>';

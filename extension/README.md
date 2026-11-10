@@ -178,6 +178,15 @@ thread or the buyer wrote since the draft, and locked to that point of the threa
 twice; 10 thread sends a day. After a send the panel says what to do on the order page, since the message moves no
 money. Save your return address on the Options page so the return option can include it.
 
+## Repeat buyers
+
+Seller Portal > Orders > Export Orders gives a CSV of every order. Import it once on the extension's Options page
+(Order history). From then on a small "3 orders" chip (gold from 5) follows the buyer's name on the Orders list, the
+order page, a message thread's CardComp panel and the thank-you inbox; hover shows since when, the last order and the
+total spent. First-time buyers get nothing (most buyers are new). Orders you open afterwards are added as you browse,
+so a re-import is only a tidy-up. Names are matched ignoring case ("Chris Thomas" and "CHRIS THOMAS" are one buyer).
+Drafts know the history too ("a regular, 7 orders since March"). Everything stays in this browser.
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`
