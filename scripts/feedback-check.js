@@ -397,6 +397,7 @@ async function pageTests() {
     const chips = await p6.$$eval("tr", (trs) => trs.map((tr) => { const c = tr.querySelector(".ccbuy"); return c ? c.textContent + "|" + c.className : ""; }));
     assert.deepStrictEqual(chips.filter(Boolean), ["3 orders · $37.29|ccbuy rep", "23 orders · $400.00|ccbuy reg"]); ok("badges: Chris Thomas '3 orders · $37.29' blue, Brandon Ayers '23 orders · $400.00' gold; danny lu (first order) and the Oct 29 Chris row (their first then) get nothing");
     assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2);
+    assert.strictEqual(await p6.$eval("#ccopen", (e) => e.textContent.replace(/\s+/g, " ").trim()), "Ready to Ship 4 orders product $48.67 shipping $0.00 total $48.67"); ok("old table layout: open-order totals from the cell positions");
     await p6.evaluate(() => { const tb = document.querySelector("tbody"); tb.innerHTML = tb.innerHTML; });   // Vue re-render
     await p6.waitForTimeout(800);
     assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2); assert.ok(await p6.$$eval(".ccbuy", (es) => es.every((e) => e.__cchtml))); ok("re-render: badged again (live chips, not the copied markup), never twice");
@@ -419,6 +420,12 @@ async function pageTests() {
     const gchips = await p6g.$$eval("tr", (trs) => trs.map((tr) => { const c = tr.querySelector(".ccbuy"); return c ? c.textContent + "|" + c.parentElement.className + "|" + c.parentElement.style.whiteSpace : ""; }));
     assert.deepStrictEqual(gchips.filter(Boolean), ["3 orders · $37.29|tcg-grid-row-cell-content|normal", "23 orders · $400.00|tcg-grid-row-cell-content|normal"]); ok("grid layout: chips inside the buyer cell's content, which is allowed to wrap (the grid clips at the column width); first-order rows get none");
     assert.strictEqual(await p6g.$$eval('td[data-grid-header-value="buyerName"]', (tds) => tds.filter((td) => !td.querySelector(".ccbuy")).every((td) => td.firstElementChild.style.whiteSpace === "nowrap")), true); ok("cells without a chip are left as the page drew them");
+    const barTxt = () => p6g.$eval("#ccopen", (e) => e.textContent.replace(/\s+/g, " ").trim());
+    assert.strictEqual(await barTxt(), "Ready to Ship 4 orders product $48.67 shipping $5.96 total $48.67"); assert.strictEqual(await p6g.$eval("#ccopen", (e) => e.nextElementSibling.getAttribute("data-testid")), "OrderIndex_Grid"); ok("open-order totals above the grid: 4 Ready to Ship rows, product / shipping / total summed from the labeled cells");
+    await p6g.evaluate(() => { const tr = document.querySelectorAll("tr")[3]; tr.querySelector('td[data-grid-header-value="orderStatus"] div').textContent = "Shipped - In Transit"; const nav = document.createElement("a"); nav.setAttribute("data-testid", "linkOrders"); nav.innerHTML = '<span>Orders</span><span class="tcg-badge">9</span>'; document.body.prepend(nav); });
+    await p6g.waitForFunction(() => /3 orders/.test(document.getElementById("ccopen").textContent), null, { timeout: 5000 });
+    assert.strictEqual(await barTxt(), "Ready to Ship 3 orders product $36.67 shipping $4.47 total $36.67 3 of your 9 open orders are on this page: raise Rows Per Page or use the Ready to Ship filter to total them all"); ok("a shipped row leaves the sum; when the Orders badge says 9 open and 3 are on the page, the line says so");
+    let reps = 0; await p6g.exposeFunction("__rep6", () => { reps++; }); await p6g.evaluate(() => new MutationObserver(() => window.__rep6()).observe(document.getElementById("ccopen"), { childList: true, subtree: true, characterData: true })); await p6g.waitForTimeout(900); assert.strictEqual(reps, 0); ok("the line is not repainted while nothing changes");
     await c6.close();
     console.log("7. customers.html: leaderboard, tiles, chart, quiet regulars, feedback");
     const c7 = await browser.newContext({ viewport: { width: 1280, height: 900 } }), p7 = await c7.newPage();

@@ -190,6 +190,11 @@ buyers are new). Orders you open afterwards are added as you browse,
 so a re-import is only a tidy-up. Names are matched ignoring case ("Chris Thomas" and "CHRIS THOMAS" are one buyer).
 Drafts know the history too ("a regular, 7 orders since March"). Everything stays in this browser.
 
+Open-order totals: above the Orders list one line sums the rows whose status is Ready to Ship: "Ready to Ship 14
+orders · product $413.29 · shipping $4.47 · total $417.76", the sales you are about to pull. It sums what is on the
+page; when the Orders menu badge shows more open orders than the page holds, the line says "14 of your 30 open orders
+are on this page" so a partial sum is never read as the whole (raise Rows Per Page or use the Ready to Ship filter).
+
 TCGplayer changed the Orders list from a table to a grid on 2026-11-10 (extension 0.9.15 reads both). The grid shows
 order dates without a time, so two orders from one buyer on the same day both show the same count on that list; the
 order page still has the exact time.
