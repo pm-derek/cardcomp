@@ -190,6 +190,29 @@ buyers are new). Orders you open afterwards are added as you browse,
 so a re-import is only a tidy-up. Names are matched ignoring case ("Chris Thomas" and "CHRIS THOMAS" are one buyer).
 Drafts know the history too ("a regular, 7 orders since March"). Everything stays in this browser.
 
+## Customers page
+
+Options page > "Customers page", or "customers" in the thank-you inbox footer. Top buyers by lifetime spend (orders,
+average order, first and last order, days since, the feedback they left you; click a row for their orders), tiles
+(repeat buyers, revenue from repeat orders, average order, median days between orders, how many came back within 90
+days, feedback average), orders per month as new vs returning buyers (hover for the numbers, "table" for the rows),
+regulars gone quiet (3+ orders, nothing for twice their usual gap and 60+ days), and your feedback by rating with the
+latest low ratings that have words. "load feedback history" reads every page of your Feedback tab once (your login,
+nothing leaves the browser); after that the inbox and the hourly badge check keep it current, and "new feedback only"
+tops it up. With the history loaded, the order page, the thread panel and the buyer chip's card also show what that
+buyer said about you before ("Feedback for you: 2 ratings · avg 4.5★" and the worded ones), and the drafts know it.
+
+## Scan & Identify check
+
+On Seller Portal > Scan & Identify in the expanded view (scan and catalog pictures side by side) every identified scan
+gets a likeness score next to its name: green "match 0.91" looks right, amber "check" worth a look, red "⚠ 0.42" the
+scan does not look like the catalog picture. A dark bar at the bottom left counts them; "review" opens the flagged ones
+one at a time in a big side-by-side view (arrow keys or j / k step, F presses that scan's Find New Match, Esc closes;
+click any score for the same view). Scans matched to the same card carry "×N same match"; after you re-match one of
+them the bar offers "open the next one's Find New Match with <new card> typed", one click per copy instead of
+retyping. The scores are a first guess: tell Claude what wrong matches score and the thresholds get tuned. Not checked
+yet: 1st Edition vs Unlimited and cosmos holo calls (needs a few scan photos of each to build from).
+
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`

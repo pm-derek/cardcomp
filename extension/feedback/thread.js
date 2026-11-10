@@ -103,7 +103,8 @@
       S.buyerStats = await window.ccBuyer.stats(S.info.buyer, 0);
       const chip = window.ccBuyer.chip(S.buyerStats, 0);
       const h = box.querySelector("h4"); const nm = document.createElement("span"); nm.className = "dim"; nm.textContent = S.info.buyer; h.appendChild(nm); if (chip) h.appendChild(chip);
-      const d = window.ccBuyer.detail(S.buyerStats); if (d) h.insertAdjacentElement("afterend", d);
+      const d = window.ccBuyer.detail(S.buyerStats), q = window.ccBuyer.said(S.buyerStats); let after = h;
+      for (const el of [d, q]) if (el) { after.insertAdjacentElement("afterend", el); after = el; }
     }
     paint();
     box.querySelector("[data-type]").onchange = (e) => { S.type = e.target.value; paint(); };

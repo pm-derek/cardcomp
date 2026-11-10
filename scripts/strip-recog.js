@@ -16,7 +16,7 @@ const DRY = process.argv.includes("--dry");
 const DIRS = ["recog", "extension/recog"];
 const FILES = ["scripts/recog-score-log.js", "scripts/recog-check.js", "scripts/recog-mock.html", "scripts/strip-recog.js"];
 const MANIFEST_PERMS = ["activeTab"];                 // permissions added only for the experiment
-const MANIFEST_HOSTS = ["https://api.cardsight.ai/*", "https://tcgplayer-cdn.tcgplayer.com/*", "https://images.pokemontcg.io/*"];   // api.anthropic.com stays: the feedback thank-yous (extension/feedback/) use it
+const MANIFEST_HOSTS = ["https://api.cardsight.ai/*", "https://images.pokemontcg.io/*"];   // api.anthropic.com stays (feedback thank-yous, extension/feedback/); tcgplayer-cdn stays (Scan & Identify check, extension/scan/)
 const SKIP = new Set([".git", "node_modules", "docs"]);
 const log = [];
 const rel = (p) => path.relative(ROOT, p);
@@ -56,7 +56,16 @@ m.host_permissions = (m.host_permissions || []).filter((p) => !MANIFEST_HOSTS.in
 if (JSON.stringify(m) !== before) { log.push("extension/manifest.json: removed the shortcut, content script and permissions"); if (!DRY) fs.writeFileSync(mp, JSON.stringify(m, null, 2) + "\n"); }
 
 // 3. folders and scripts
-for (const d of DIRS) { const p = path.join(ROOT, d); if (fs.existsSync(p)) { log.push(d + "/: deleted"); if (!DRY) fs.rmSync(p, { recursive: true }); } }
+// extension/recog/imgmatch.js stays: the Scan & Identify check (extension/scan/) compares scan and catalog photos with it.
+const KEEP = new Set(["extension/recog/imgmatch.js"]);
+for (const d of DIRS) {
+  const p = path.join(ROOT, d); if (!fs.existsSync(p)) continue;
+  const kept = walk(p, []).filter((f) => KEEP.has(rel(f)));
+  if (!kept.length) { log.push(d + "/: deleted"); if (!DRY) fs.rmSync(p, { recursive: true }); continue; }
+  for (const f of walk(p, [])) if (!KEEP.has(rel(f))) { if (!DRY) fs.rmSync(f); }
+  for (const e of fs.readdirSync(p)) { const q = path.join(p, e); if (fs.statSync(q).isDirectory()) { if (!DRY) fs.rmSync(q, { recursive: true }); } else if (!KEEP.has(rel(q)) && !DRY) fs.rmSync(q); }
+  log.push(d + "/: deleted except " + kept.map(rel).join(", "));
+}
 for (const f of FILES) { const p = path.join(ROOT, f); if (fs.existsSync(p)) { log.push(f + ": deleted"); if (!DRY) fs.rmSync(p); } }
 
 // 4. anything left that still mentions the experiment

@@ -22,17 +22,32 @@
 .ccbuyd{font:12px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#5f6b7a;margin-top:2px;white-space:nowrap}
 #ccbuypop{position:fixed;z-index:2147483647;background:#fff;color:#1f2a37;border:1px solid #d5dbe3;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);padding:9px 12px;font:12px/1.55 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;min-width:230px;pointer-events:none}
 #ccbuypop b{font-size:13px;color:#111}#ccbuypop table{border-collapse:collapse;margin-top:4px}#ccbuypop td{padding:1px 10px 1px 0;white-space:nowrap}#ccbuypop td:last-child{text-align:right;padding-right:0;font-variant-numeric:tabular-nums}
-#ccbuypop .k{color:#5f6b7a}#ccbuypop .ltv{color:#1849a9;font-weight:700}#ccbuypop .nth{color:#8a5a00;margin-top:4px}`;
+#ccbuypop .k{color:#5f6b7a}#ccbuypop .ltv{color:#1849a9;font-weight:700}#ccbuypop .nth{color:#8a5a00;margin-top:4px}
+#ccbuypop .fbh,.ccsaid .fbh{margin-top:6px;padding-top:6px;border-top:1px solid #e6eaf0;color:#5f6b7a}#ccbuypop .fbq,.ccsaid .fbq{margin-top:2px;max-width:360px;white-space:normal}
+.ccsaid{font:12px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2a37;margin-top:4px}.ccsaid .fbh{border:0;padding:0;margin:0}.ccsaid .k{color:#5f6b7a}
+.good{color:#067647}.bad{color:#b54708}`;
     document.head.appendChild(st);
   }
   // The hover card: one shared element, placed under the chip (above it near the bottom edge), closed on leave.
   let pop = null, popFor = null, hideT = null;
+  const starsOf = (n) => "★".repeat(Math.max(0, Math.min(5, n))) + "☆".repeat(Math.max(0, 5 - Math.min(5, n)));
+  // The feedback they left (stats.fb, newest first): a line per worded one (up to max), else the ratings alone.
+  function fbLines(fb, max) {
+    fb = fb || []; if (!fb.length) return "";
+    const worded = fb.filter((x) => x.c);
+    const avg = fb.reduce((s, x) => s + (x.r || 0), 0) / fb.length;
+    let h = `<div class="fbh">Feedback for you: ${fb.length} rating${fb.length === 1 ? "" : "s"} · avg ${avg.toFixed(1)}★${worded.length ? "" : " · no words"}</div>`;
+    for (const x of worded.slice(0, max)) h += `<div class="fbq"><span class="${x.r >= 4 ? "good" : "bad"}">${starsOf(x.r)}</span> “${esc(x.c)}” <span class="k">${esc(day(x.at))}</span></div>`;
+    if (worded.length > max) h += `<div class="k">+${worded.length - max} more</div>`;
+    return h;
+  }
   function popHTML(s, k) {
     const avg = s.n ? s.spent / s.n : 0;
-    return `<b>${esc(s.name || "")}</b><div><span class="ltv">${usd(s.spent)}</span> <span class="k">lifetime · ${s.n} order${s.n === 1 ? "" : "s"} · avg ${usd(avg)}</span></div>
+    return `<b>${esc(s.name || "")}</b>` + (s.n ? `<div><span class="ltv">${usd(s.spent)}</span> <span class="k">lifetime · ${s.n} order${s.n === 1 ? "" : "s"} · avg ${usd(avg)}</span></div>
 <table><tr><td class="k">First</td><td>${esc(day(s.first))}</td><td>${s.firstTotal != null ? usd(s.firstTotal) : ""}</td></tr>
-<tr><td class="k">Last</td><td>${esc(day(s.last))}</td><td>${s.lastTotal != null ? usd(s.lastTotal) : ""}</td></tr></table>` +
-      (k && k !== s.n ? `<div class="nth">this order was their ${ord(k)} · ${usd(s.spentBefore != null ? s.spentBefore : s.spent)} by then</div>` : "");
+<tr><td class="k">Last</td><td>${esc(day(s.last))}</td><td>${s.lastTotal != null ? usd(s.lastTotal) : ""}</td></tr></table>` : "") +
+      (k && k !== s.n ? `<div class="nth">this order was their ${ord(k)} · ${usd(s.spentBefore != null ? s.spentBefore : s.spent)} by then</div>` : "") +
+      fbLines(s.fb, 2);
   }
   function show(el) {
     clearTimeout(hideT);
@@ -71,8 +86,24 @@
     el.textContent = `first ${day(stats.first)} ${stats.firstTotal != null ? usd(stats.firstTotal) : ""} · last ${day(stats.last)} ${stats.lastTotal != null ? usd(stats.lastTotal) : ""} · avg ${usd(stats.spent / stats.n)}`.replace(/\s+/g, " ");
     return el;
   }
+  // "What they said about you" for pages with room (order page, thread panel): up to 3 worded feedbacks, else the ratings.
+  function said(stats) {
+    if (!stats || !stats.fb || !stats.fb.length) return null;
+    style();
+    const el = document.createElement("div"); el.className = "ccsaid"; el.innerHTML = fbLines(stats.fb, 3);
+    return el;
+  }
   async function stats(name, atMs) { const r = await post({ type: "cardcomp-fb-buyer", name, at: atMs || 0 }); return r && r.ok ? r.stats : null; }
   async function merge(orders) { return post({ type: "cardcomp-fb-buyers-merge", orders }); }
-  const line = (s) => !s || !s.n || s.n < 2 ? "" : `${s.n} orders since ${mon(s.first)}, ${usd(s.spent)} lifetime, first ${day(s.first)} (${usd(s.firstTotal)}), last ${day(s.last)} (${usd(s.lastTotal)})`;
-  window.ccBuyer = { chip, detail, stats, merge, line, esc };
+  // One line for the drafts: orders and spend, plus the newest worded feedback they left before this one.
+  const line = (s, skipOrder) => {
+    if (!s) return "";
+    const parts = [];
+    if (s.n >= 2) parts.push(`${s.n} orders since ${mon(s.first)}, ${usd(s.spent)} lifetime, first ${day(s.first)} (${usd(s.firstTotal)}), last ${day(s.last)} (${usd(s.lastTotal)})`);
+    const past = (s.fb || []).filter((x) => x.order !== skipOrder);
+    if (past.length) { const w = past.find((x) => x.c); parts.push(`${past.length} earlier feedback rating${past.length === 1 ? "" : "s"} for you, avg ${(past.reduce((a, x) => a + (x.r || 0), 0) / past.length).toFixed(1)} of 5` + (w ? `, newest with words (${day(w.at)}, ${w.r} of 5): "${w.c}"` : "")); }
+    return parts.join("; ");
+  };
+  const customersURL = () => { try { return chrome.runtime.getURL("feedback/customers.html"); } catch (_) { return "#"; } };
+  window.ccBuyer = { chip, detail, said, stats, merge, line, esc, customersURL };
 })();
