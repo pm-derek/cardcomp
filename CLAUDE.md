@@ -438,6 +438,16 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,
   `-import` (CSV text), `-buyer` {name, at} -> stats, `-summary` (Options page line). Checks: section 1 (parser,
   merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13; 0.9.14 adds the feedback history, Customers page and Scan & Identify check below.
+- Orders list is a grid now (TCGplayer, 2026-11-10; Derek: "looks like an update to the orders page"): the table labels
+  are gone (`OrderIndex_Table` / `OrderIndex_Table_OrderLink`), the grid uses `OrderIndex_Grid` /
+  `OrderIndex_Grid_OrderLink`, `tr.tcg-grid-row`, and every `td` carries `data-grid-header-value` (orderNumber, buyerName,
+  orderDate, orderStatus, shippingType, productAmount, shippingAmount, totalAmount, rowActions). Dates read "Nov-09-2026",
+  no time (parsed as local midnight, so the list no longer gives exact times: same-day orders of one buyer both count,
+  like a CSV import; the order page still gives the time). `.tcg-grid-row-cell-content` is nowrap + overflow hidden at
+  a fixed column width, so orders.js appends the chip inside it and sets that one cell to wrap. orders.js reads both
+  layouts (labeled cells first, positions as the fallback). Extension 0.9.15; feedback-check section 6 has a grid mock.
+  The address now carries the query (`?searchRange=LastThreeMonths&page=1&size=25&sortBy=...&qfid=All`). Only the list
+  was re-saved: the order page, Messages and thread pages were not checked for the same change.
 - Feedback history + Customers page (Derek, 2026-11-10: "a dashboard with a leaderboard of my top customers and relevant
   stats; on the order sheet what the customer has said about me"): `fbFeedback` in chrome.storage.local (order -> {u, r,
   c, at}), fed by every row the inbox reads (`cardcomp-fb-feedback-merge`), the hourly badge check (page 1) and
@@ -487,7 +497,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (129 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (132 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's

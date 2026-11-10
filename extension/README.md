@@ -190,6 +190,10 @@ buyers are new). Orders you open afterwards are added as you browse,
 so a re-import is only a tidy-up. Names are matched ignoring case ("Chris Thomas" and "CHRIS THOMAS" are one buyer).
 Drafts know the history too ("a regular, 7 orders since March"). Everything stays in this browser.
 
+TCGplayer changed the Orders list from a table to a grid on 2026-11-10 (extension 0.9.15 reads both). The grid shows
+order dates without a time, so two orders from one buyer on the same day both show the same count on that list; the
+order page still has the exact time.
+
 ## Customers page
 
 Options page > "Customers page", or "customers" in the thank-you inbox footer. Light or dark (follows your system; the
