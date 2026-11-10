@@ -431,7 +431,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   `OrderIndex_Table` rows: order link, buyer, date, total; MutationObserver re-badges on re-render) and order page
   (order.js, buyer + Order Amount) seen; idempotent on order id (`fbBuyersMerge`). `badge.js` (listed before each
   portal script) draws one chip for repeat buyers only: "3 orders" blue, gold from 5, nothing on a first order; on a
-  list row the count is as of that order's date (`before`), the hover has since / last / total spent. Shown on the
+  list row the count is as of that order (`before`: exact Orders-list times order strictly, so two orders on one day read 2 and 3; a date-only import time on the same day counts; a list row's exact time replaces the import's midnight), the hover has since / last / total spent. Shown on the
   Orders list, the order page's Buyer block, the thread panel header (with the buyer's name) and the thank-you inbox
   (replaces the 14-day "N orders" tag when the history knows the buyer). Both drafts get `history` ("3 orders since
   Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,

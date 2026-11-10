@@ -255,7 +255,8 @@ async function fbBuyersMerge(orders) {
     const b = (m[k] = m[k] || { name: String(o.buyer).trim(), orders: {} });
     if (!b.orders[id]) added++;
     const prev = b.orders[id] || {};
-    b.orders[id] = { at: o.at || prev.at || 0, total: o.total != null ? o.total : (prev.total != null ? prev.total : null) };
+    const exact = (t) => t && new Date(t).getHours() + new Date(t).getMinutes() + new Date(t).getSeconds() > 0;   // a time of day, not the import's midnight
+    b.orders[id] = { at: exact(o.at) || !prev.at ? (o.at || 0) : prev.at, total: o.total != null ? o.total : (prev.total != null ? prev.total : null) };
     if (/[a-z]/.test(String(o.buyer)) && /[A-Z]/.test(String(o.buyer))) b.name = String(o.buyer).trim();   // prefer a mixed-case spelling
   });
   await new Promise((res) => chrome.storage.local.set({ fbBuyers: m }, res));
@@ -265,9 +266,13 @@ function fbBuyerStats(m, name, at) {
   const b = m[fbBuyerKey(name)]; if (!b) return null;
   const os = Object.values(b.orders); if (!os.length) return null;
   const ats = os.map((o) => o.at || 0).filter(Boolean);
-  const endOfDay = (t) => { const d = new Date(t); d.setHours(23, 59, 59, 999); return d.getTime(); };
+  // "before": orders up to this one. Exact times (Orders list rows) order strictly, so two orders on one day read 2 and
+  // 3 (Derek, 2026-11-10: "the most recent order should mark the most recent count"); a date-only time (the CSV import,
+  // midnight) on the same day cannot be placed, so it counts.
+  const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const upTo = (o) => !o.at || o.at <= at || (o.at === dayStart(o.at) && dayStart(o.at) <= dayStart(at));
   return { n: os.length, first: ats.length ? Math.min(...ats) : 0, last: ats.length ? Math.max(...ats) : 0, spent: os.reduce((s, o) => s + (o.total || 0), 0),
-    before: at ? os.filter((o) => !o.at || o.at <= endOfDay(at)).length : os.length, name: b.name };
+    before: at ? os.filter(upTo).length : os.length, name: b.name };
 }
 // TCGplayer's Order List CSV (Options page import). Quoted fields, commas inside quotes, CRLF.
 function fbParseCSV(text) {
