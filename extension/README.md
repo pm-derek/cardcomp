@@ -181,9 +181,12 @@ money. Save your return address on the Options page so the return option can inc
 ## Repeat buyers
 
 Seller Portal > Orders > Export Orders gives a CSV of every order. Import it once on the extension's Options page
-(Order history). From then on a small "3 orders" chip (gold from 5) follows the buyer's name on the Orders list, the
-order page, a message thread's CardComp panel and the thank-you inbox; hover shows since when, the last order and the
-total spent. First-time buyers get nothing (most buyers are new). Orders you open afterwards are added as you browse,
+(Order history). From then on a small "3 orders · $37.29" chip (count and lifetime spend; gold from 5 orders) follows the
+buyer's name on the Orders list, the order page, a message thread's CardComp panel and the thank-you inbox. Hover or tap
+it for the card: lifetime total, average order, first and last order with date and amount. On an Orders list row the
+chip reads as of that order; the card says "this order was their 2nd". The order page and thread panel also show
+"first Oct 29, 2026 $5.39 · last Nov 9, 2026 $21.90 · avg $12.43" in plain view. First-time buyers get nothing (most
+buyers are new). Orders you open afterwards are added as you browse,
 so a re-import is only a tidy-up. Names are matched ignoring case ("Chris Thomas" and "CHRIS THOMAS" are one buyer).
 Drafts know the history too ("a regular, 7 orders since March"). Everything stays in this browser.
 

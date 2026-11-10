@@ -430,13 +430,14 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   2,932 orders, 2,644 buyers, 121 repeat, back to 2025-10-30) and by every Orders list row (`orders.js`, the
   `OrderIndex_Table` rows: order link, buyer, date, total; MutationObserver re-badges on re-render) and order page
   (order.js, buyer + Order Amount) seen; idempotent on order id (`fbBuyersMerge`). `badge.js` (listed before each
-  portal script) draws one chip for repeat buyers only: "3 orders" blue, gold from 5, nothing on a first order; on a
-  list row the count is as of that order (`before`: exact Orders-list times order strictly, so two orders on one day read 2 and 3; a date-only import time on the same day counts; a list row's exact time replaces the import's midnight), the hover has since / last / total spent. Shown on the
+  portal script) draws one chip for repeat buyers only: "3 orders · $37.29" (count and lifetime spend; Derek, 2026-11-10:
+  "total $ spent, like LTV; last order date and $; 1st order date and $") blue, gold from 5, nothing on a first order; on a
+  list row the count and spend are as of that order (`before` / `spentBefore`: exact Orders-list times order strictly, so two orders on one day read 2 and 3; a date-only import time on the same day counts; a list row's exact time replaces the import's midnight). Hover / focus / tap opens one shared card (`#ccbuypop`, fixed, flips above near the bottom): name, lifetime $, orders, avg, First / Last rows with date and amount (`firstTotal` / `lastTotal`), "this order was their 2nd · $27.29 by then" on list rows. `detail(stats)` is the same as a plain line ("first ... · last ... · avg ..."), under the name on the order page and the thread panel header. Shown on the
   Orders list, the order page's Buyer block, the thread panel header (with the buyer's name) and the thank-you inbox
   (replaces the 14-day "N orders" tag when the history knows the buyer). Both drafts get `history` ("3 orders since
   Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,
   `-import` (CSV text), `-buyer` {name, at} -> stats, `-summary` (Options page line). Checks: section 1 (parser,
-  merge, ordinal) and section 6 (mock Orders list, re-render). Extension 0.9.12.
+  merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13.
 - Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`); return address `fbAddress`.
   RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
