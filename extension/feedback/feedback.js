@@ -47,6 +47,7 @@
       rows = rows.concat(more);
       if (older(more)) break;
     }
+    post({ type: "cardcomp-fb-feedback-merge", rows });   // every row read joins the feedback history (Customers page, order page)
     const seen = new Set(), rep = {}, uniq = rows.filter((r) => r.order && !seen.has(r.order) && seen.add(r.order));
     uniq.forEach((r) => { if (r.user && dateOf(r.date) >= cutoff()) rep[r.user] = (rep[r.user] || 0) + 1; });   // orders per buyer in the window, worded or not
     return uniq.filter(wanted).map((r) => { r.orders = rep[r.user] || 1; return r; });
@@ -86,7 +87,7 @@
 #ccfb .row.neg{border-left-color:#d92d20;background:#fff7f6}#ccfb .row.flag{border-left-color:#f79009}
 #ccfb .pic{width:56px;height:78px;border-radius:5px;background:#f1f4f8;object-fit:cover;display:block}#ccfb .pic.none{visibility:hidden}
 #ccfb .hd{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}#ccfb .hd b{font-weight:600}#ccfb .hd .stars{color:#b54708;letter-spacing:-1px}#ccfb .hd .stars.good{color:#067647}
-#ccfb .hd .card{color:#0d6efd}#ccfb .tag{font-size:11.5px;border-radius:999px;padding:1px 8px;background:#eef2f6;color:#3f4b5b}#ccfb .tag.red{background:#fee4e2;color:#b42318}#ccfb .tag.blue{background:#e0ecff;color:#1849a9}
+#ccfb .hd .card{color:#0d6efd}#ccfb .past{font-size:12px;margin:-4px 0 6px}#ccfb .tag{font-size:11.5px;border-radius:999px;padding:1px 8px;background:#eef2f6;color:#3f4b5b}#ccfb .tag.red{background:#fee4e2;color:#b42318}#ccfb .tag.blue{background:#e0ecff;color:#1849a9}
 #ccfb blockquote{margin:5px 0 8px;padding:5px 10px;border-left:3px solid #d9dee5;color:#3f4b5b}
 #ccfb textarea{width:100%;box-sizing:border-box;min-height:60px;background:#fff;border:1px solid #c9d0d9;border-radius:7px;color:#1f2933;font:inherit;padding:8px 10px;resize:vertical}#ccfb textarea:focus{outline:2px solid #0d6efd33;border-color:#0d6efd}
 #ccfb .act{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}#ccfb .act .note{color:#5f6b7a;font-size:12.5px;margin-left:auto}#ccfb .flags{font-size:12.5px;color:#b54708;margin-top:4px}
@@ -127,7 +128,7 @@
     post({ type: "cardcomp-fb-pending", n: todo.length });   // icon badge
     const paintFoot = () => {
       const sent = Object.entries(done).filter(([, d]) => d.how === "sent" || d.how === "unsure"), ns = Object.values(done).filter((d) => d.how === "skip").length;
-      foot.innerHTML = `<span>${rows.length} worded in the last ${FB_DAYS} days</span><span><a href="#" data-hist>replied from here: ${sent.length}</a></span><span>skipped: ${ns}${ns ? ' <a href="#" data-unskip>offer again</a>' : ""}</span><span>today: ${sentToday(done)} of ${FB_DAY_CAP}</span>`;
+      foot.innerHTML = `<span>${rows.length} worded in the last ${FB_DAYS} days</span><span><a href="${esc(chrome.runtime.getURL("feedback/customers.html"))}" target="_blank" title="top buyers, repeat rate, feedback history">customers ↗</a></span><span><a href="#" data-hist>replied from here: ${sent.length}</a></span><span>skipped: ${ns}${ns ? ' <a href="#" data-unskip>offer again</a>' : ""}</span><span>today: ${sentToday(done)} of ${FB_DAY_CAP}</span>`;
       const u = foot.querySelector("[data-unskip]"); if (u) u.onclick = async (e) => { e.preventDefault(); const d = await getDone(); Object.keys(d).forEach((k) => { if (d[k].how === "skip") delete d[k]; }); chrome.storage.local.set({ fbDone: d }, () => location.reload()); };
       foot.querySelector("[data-hist]").onclick = (e) => {
         e.preventDefault(); hist.hidden = !hist.hidden; if (hist.hidden) return;
@@ -154,9 +155,11 @@
       if (info) {
         r.products = info.products; r.fbDate = info.fbDate; r.pageFeedback = info.feedback; r.buyer = info.buyer; card.textContent = cardsLine(info.products);
         if (window.ccBuyer && info.buyer) {   // the buyer history (Options import + pages seen) beats the 14-day guess
-          const bs = await window.ccBuyer.stats(info.buyer, 0); r.history = window.ccBuyer.line(bs);
+          const bs = await window.ccBuyer.stats(info.buyer, 0); r.history = window.ccBuyer.line(bs, r.order);
           const old = el.querySelector(".hd .tag.blue"); const chip = window.ccBuyer.chip(bs, 0);
-          if (bs) { if (old) old.remove(); if (chip) el.querySelector(".hd").insertBefore(chip, tags); }
+          if (bs && bs.n) { if (old) old.remove(); if (chip) el.querySelector(".hd").insertBefore(chip, tags); }
+          const past = bs && bs.fb ? bs.fb.filter((x) => x.order !== r.order && x.c) : [];   // what they said before this one
+          if (past.length) { const q = document.createElement("div"); q.className = "dim past"; q.textContent = `earlier: ${past[0].r}★ “${past[0].c}” (${new Date(past[0].at).toLocaleDateString()})${past.length > 1 ? " +" + (past.length - 1) + " more" : ""}`; el.querySelector("blockquote").insertAdjacentElement("afterend", q); }
         }
         if (info.pids && info.pids[0]) { pic.src = "https://tcgplayer-cdn.tcgplayer.com/product/" + info.pids[0] + "_200w.jpg"; pic.onload = () => pic.classList.remove("none"); }
         if (r.rating <= 3 && fbWhen(info.fbDate)) { const left = Math.round((fbWhen(info.fbDate) + 48 * 36e5 - Date.now()) / 36e5); tags.innerHTML = `<span class="tag red">${left > 0 ? "reply within 48h: " + left + "h left" : "48h window passed"}</span>`; }

@@ -101,7 +101,16 @@ function fbHandle(msg, sender, reply) {
   if (msg.type === "cardcomp-fb-pending") { fbBadge(msg.n); reply({ ok: true }); return true; }   // the panel's own count
   if (msg.type === "cardcomp-fb-buyers-merge") { fbBuyersMerge(msg.orders || []).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
   if (msg.type === "cardcomp-fb-buyers-import") { fbBuyersMerge(fbParseCSV(msg.csv || "")).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
-  if (msg.type === "cardcomp-fb-buyer") { fbBuyersGet().then((m) => reply({ ok: true, stats: fbBuyerStats(m, msg.name, msg.at || 0) })); return true; }
+  if (msg.type === "cardcomp-fb-buyer") {   // stats + the feedback this buyer left (newest first)
+    Promise.all([fbBuyersGet(), fbFeedbackGet()]).then(([m, f]) => { const s = fbBuyerStats(m, msg.name, msg.at || 0), fb = fbFeedbackFor(f, msg.name); reply({ ok: true, stats: s || fb.length ? Object.assign(s || { n: 0, name: msg.name, spent: 0 }, { fb }) : null }); });
+    return true;
+  }
+  if (msg.type === "cardcomp-fb-feedback-merge") { fbFeedbackMerge(msg.rows || []).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
+  if (msg.type === "cardcomp-fb-feedback-load") { fbFeedbackLoad(!!msg.full).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
+  if (msg.type === "cardcomp-fb-customers") {   // the Customers page: every buyer with orders and feedback
+    Promise.all([fbBuyersGet(), fbFeedbackGet()]).then(([m, f]) => reply({ ok: true, buyers: m, feedback: f }));
+    return true;
+  }
   if (msg.type === "cardcomp-fb-buyers-summary") {
     fbBuyersGet().then((m) => { const bs = Object.values(m), n = bs.reduce((s, b) => s + Object.keys(b.orders).length, 0), rep = bs.filter((b) => Object.keys(b.orders).length > 1).length;
       const ats = bs.flatMap((b) => Object.values(b.orders).map((o) => o.at || 0)).filter(Boolean);
@@ -279,6 +288,43 @@ function fbBuyerStats(m, name, at) {
   return { n: os.length, first: fo ? fo.at : 0, last: lo ? lo.at : 0, firstTotal: fo ? fo.total : null, lastTotal: lo ? lo.total : null, spent: sum(os),
     before: upToOs.length, spentBefore: sum(upToOs), name: b.name };
 }
+// Feedback history (Derek, 2026-11-10: "on the order sheet, what the customer has said about me"): every Feedback tab row
+// seen, keyed by order: fbFeedback {order: {u: user, r: rating, c: comment, at}}. Fed by the inbox (the pages it reads),
+// the hourly badge check (page 1) and the Customers page's "load feedback history" (every page, with Derek's login).
+const fbFeedbackGet = () => new Promise((res) => chrome.storage.local.get("fbFeedback", (x) => res((x && x.fbFeedback) || {})));
+const fbDateMs = (s) => { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim()); return m ? new Date(+m[3], +m[1] - 1, +m[2]).getTime() : 0; };
+async function fbFeedbackMerge(rows) {
+  const f = await fbFeedbackGet(); let added = 0;
+  for (const r of rows) {
+    if (!r || !r.order) continue;
+    if (!f[r.order]) added++;
+    f[r.order] = { u: String(r.user || "").trim(), r: +r.rating || 0, c: String(r.comment || "").trim(), at: fbDateMs(r.date) || (f[r.order] && f[r.order].at) || 0 };
+  }
+  if (added || rows.length) await new Promise((res) => chrome.storage.local.set({ fbFeedback: f }, res));
+  return { added, total: Object.keys(f).length };
+}
+// The feedback one buyer left, newest first: [{order, at, r, c}].
+function fbFeedbackFor(f, name) {
+  const k = fbBuyerKey(name); if (!k) return [];
+  return Object.entries(f).filter(([, v]) => fbBuyerKey(v.u) === k).map(([order, v]) => ({ order, at: v.at, r: v.r, c: v.c })).sort((a, b) => b.at - a.at);
+}
+// Read the Feedback tab page by page (25 rows each) with Derek's login. full = every page (cap 400); else stop once a
+// whole page is already known. A page with no feedback table = signed out.
+async function fbFeedbackLoad(full) {
+  const known = await fbFeedbackGet(); let pages = 0, added = 0, total = Object.keys(known).length;
+  for (let n = 1; n <= 400; n++) {
+    let html;
+    try { const r = await fetch("https://store.tcgplayer.com/admin/Seller/Feedback?page=" + n, { credentials: "include" }); if (!r.ok) throw new Error("HTTP " + r.status); html = await r.text(); }
+    catch (e) { return { pages, added, total, stopped: "page " + n + ": " + e.message }; }
+    const rows = fbParseHTML(html);
+    if (!rows) return { pages, added, total, stopped: n === 1 ? "signed out of the Seller Portal" : "page " + n + " had no feedback table" };
+    pages++;
+    if (!rows.length) break;
+    const r = await fbFeedbackMerge(rows); added += r.added; total = r.total;
+    if (!full && !r.added) break;
+  }
+  return { pages, added, total };
+}
 // TCGplayer's Order List CSV (Options page import). Quoted fields, commas inside quotes, CRLF.
 function fbParseCSV(text) {
   const rows = [], s = String(text || "").replace(/^﻿/, ""); let i = 0, row = [], cell = "", q = false;
@@ -331,6 +377,7 @@ async function fbCheck() {
   try { const r = await fetch("https://store.tcgplayer.com/admin/Seller/Feedback", { credentials: "include" }); if (!r.ok) return; html = await r.text(); } catch (_) { return; }
   const rows = fbParseHTML(html);
   if (!rows) { fbBadge(0); return; }   // signed out
+  fbFeedbackMerge(rows).catch(() => {});
   const done = await new Promise((res) => chrome.storage.local.get("fbDone", (x) => res((x && x.fbDone) || {})));
   fbBadge(fbPendingOf(rows, done));
 }

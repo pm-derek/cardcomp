@@ -20,7 +20,7 @@ async function bgTests() {
     fetch: async (url, opt) => { calls.push({ url, opt }); return { ok: status === 200, status, json: async () => reply, text: async () => JSON.stringify({ error: { message: "nope" } }) }; },
     chrome: { storage: { local: { get: (k, cb) => cb(store), set: (o, cb) => { Object.assign(store, o); cb && cb(); } }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft; this.fbParseCSV = fbParseCSV; this.fbBuyersMerge = fbBuyersMerge; this.fbBuyerStats = fbBuyerStats;", ctx);
+  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft; this.fbParseCSV = fbParseCSV; this.fbBuyersMerge = fbBuyersMerge; this.fbBuyerStats = fbBuyerStats; this.fbFeedbackMerge = fbFeedbackMerge; this.fbFeedbackFor = fbFeedbackFor; this.fbFeedbackLoad = fbFeedbackLoad;", ctx);
   const row = { order: "1-A", user: "david b0501", rating: 5, comment: "Card in excellent condition. Good packaging.", date: "10/27/2026", products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"], fbDate: "11/2/2026" };
   let r = await ctx.fbDraft(row);
   assert.strictEqual(r.ok, true); assert.strictEqual(r.text, "Thanks so much, glad the Samurott V got there fast!"); ok("draft text (quotes stripped, thinking block ignored)");
@@ -79,6 +79,18 @@ async function bgTests() {
   await ctx.fbBuyersMerge([{ order: "92588719-A", buyer: "Chris Thomas", at: d9 + 13 * 36e5, total: 21.9 }, { order: "92588719-F", buyer: "Chris Thomas", at: d9 + 19 * 36e5 + 39 * 6e4, total: 3 }]);
   assert.strictEqual(store.fbBuyers["chris thomas"].orders["92588719-A"].at, d9 + 13 * 36e5); ok("a list row's exact time replaces the import's midnight for the same order");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 13 * 36e5).before, 2); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 19 * 36e5 + 39 * 6e4).before, 3); ok("same day, two orders: the 1 PM row counts 2, the 7:39 PM row counts 3");
+  // feedback history: every Feedback tab row seen, by order; per buyer newest first; the loader with a mocked fetch
+  store.fbFeedback = {};
+  let fm = await ctx.fbFeedbackMerge([{ order: "FB-1", date: "10/03/2026", rating: 5, comment: "Fast shipping, great card", user: "Chris Thomas" }, { order: "FB-2", date: "10/20/2026", rating: 4, comment: "", user: "CHRIS THOMAS" }, { order: "FB-3", date: "11/01/2026", rating: 2, comment: "Card was bent", user: "Someone Else" }]);
+  assert.deepStrictEqual([fm.added, fm.total], [3, 3]); fm = await ctx.fbFeedbackMerge([{ order: "FB-1", date: "10/03/2026", rating: 5, comment: "Fast shipping, great card", user: "Chris Thomas" }]); assert.deepStrictEqual([fm.added, fm.total], [0, 3]); ok("feedback history: merged by order, idempotent");
+  const ff = ctx.fbFeedbackFor(store.fbFeedback, "chris thomas"); assert.strictEqual(ff.length, 2); assert.strictEqual(ff[0].order, "FB-2"); assert.strictEqual(ff[1].c, "Fast shipping, great card"); assert.strictEqual(new Date(ff[1].at).getMonth(), 9); ok("per buyer (case-folded), newest first, dates parsed");
+  { const realFetch = ctx.fetch; const page = (rows) => '<table class="display dTable"><tr><th></th></tr>' + rows.map((r) => `<tr><td>East Bay Trader</td><td><a>${r[0]}</a></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3] || "<i>No Comment Left</i>"}</td><td>${r[4]}</td></tr>`).join("") + "</table>";
+    const pages = { 1: page([["FB-9", "11/09/2026", 5, "Thanks!", "New Buyer"], ["FB-3", "11/01/2026", 2, "Card was bent", "Someone Else"]]), 2: page([["FB-2", "10/20/2026", 4, "", "CHRIS THOMAS"], ["FB-1", "10/03/2026", 5, "Fast shipping, great card", "Chris Thomas"]]), 3: page([]) };
+    const hits = []; ctx.fetch = async (u) => { const n = +/page=(\d+)/.exec(u)[1]; hits.push(n); return { ok: true, text: async () => pages[n] || page([]) }; };
+    let r = await ctx.fbFeedbackLoad(true); assert.deepStrictEqual([r.pages, r.added, r.total, hits.join()], [3, 1, 4, "1,2,3"]); ok("load full: every page until an empty one, 1 new (FB-9)");
+    hits.length = 0; r = await ctx.fbFeedbackLoad(false); assert.deepStrictEqual([r.pages, r.added, hits.join()], [1, 0, "1"]); ok("load new only: stops at the first page with nothing new");
+    ctx.fetch = async () => ({ ok: true, text: async () => "<html>login</html>" }); r = await ctx.fbFeedbackLoad(true); assert.ok(/signed out/.test(r.stopped)); ok("no feedback table = signed out, reported");
+    ctx.fetch = realFetch; }
   // threads: stored from the Messages list read, the newest General Inquiry since the send wins
   const t0 = Date.now();
   let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
@@ -388,6 +400,61 @@ async function pageTests() {
     await p6.mouse.move(0, 0); await p6.waitForTimeout(300); assert.strictEqual(await p6.$eval("#ccbuypop", (e) => e.style.display), "none"); ok("card closes when the pointer leaves");
     assert.ok(/first Oct 29, 2026 \$5\.39 · last Nov 9, 2026 \$21\.90 · avg \$12\.43/.test(await p6.evaluate(() => window.ccBuyer.detail({ n: 3, first: Date.parse("2026-10-29"), last: Date.parse("2026-11-09"), firstTotal: 5.39, lastTotal: 21.9, spent: 37.29 }).textContent))); ok("detail line (order page, thread panel): first, last, avg");
     await c6.close();
+    console.log("7. customers.html: leaderboard, tiles, chart, quiet regulars, feedback");
+    const c7 = await browser.newContext({ viewport: { width: 1280, height: 900 } }), p7 = await c7.newPage();
+    await p7.addInitScript(() => {
+      const d = (s) => Date.parse(s);
+      const buyers = { "chris thomas": { name: "Chris Thomas", orders: { A: { at: d("2026-03-01"), total: 5.39 }, B: { at: d("2026-06-01"), total: 21.9 }, C: { at: d("2026-11-09"), total: 10 } } }, "danny lu": { name: "danny lu", orders: { D: { at: d("2026-11-09"), total: 3.33 } } }, "brandon ayers": { name: "Brandon Ayers", orders: Object.fromEntries([...Array(6)].map((_, i) => ["E" + i, { at: d("2026-0" + (i + 1) + "-15"), total: 20 }])) }, "old regular": { name: "Old Regular", orders: { F: { at: d("2025-12-01"), total: 30 }, G: { at: d("2026-01-01"), total: 30 }, H: { at: d("2026-02-01"), total: 40 } } } };
+      const feedback = { A: { u: "Chris Thomas", r: 5, c: "Fast shipping, great card", at: d("2026-03-05") }, C: { u: "CHRIS THOMAS", r: 4, c: "", at: d("2026-11-10") }, X: { u: "Someone Else", r: 2, c: "Card was bent", at: d("2026-11-01") } };
+      window.chrome = { runtime: { lastError: null, getURL: (p) => "chrome-extension://x/" + p, sendMessage: (m, cb) => setTimeout(() => { if (m.type === "cardcomp-fb-customers") return cb({ ok: true, buyers, feedback }); if (m.type === "cardcomp-fb-feedback-load") return cb({ ok: true, pages: 2, added: 1, total: 4 }); cb(null); }, 5) } };
+    });
+    await p7.goto("file://" + path.join(EXT, "feedback", "customers.html"));
+    await p7.waitForSelector("#lb table");
+    const sub = await p7.$eval("#sub", (e) => e.textContent); assert.ok(/4 buyers · 13 orders · \$261/.test(sub), sub); ok("summary: buyers, orders, revenue");
+    const tiles = await p7.$$eval(".tile", (es) => es.map((e) => e.textContent.replace(/\s+/g, " ").trim()));
+    assert.ok(/^3 ?repeat buyers ?75% of buyers/.test(tiles[0]), tiles[0]); assert.ok(/revenue from repeat orders/.test(tiles[1]) && /\$202 on 2nd\+ orders/.test(tiles[1]), tiles[1]); assert.ok(/3\.67★ ?feedback average ?3 ratings · 67% with words/.test(tiles[5]), tiles[5]); ok("tiles: repeat buyers, repeat revenue, feedback average");
+    const lb = await p7.$$eval("#lb tbody tr", (trs) => trs.map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, " ").trim())));
+    assert.strictEqual(lb[0][1], "Brandon Ayers6 orders"); assert.strictEqual(lb[0][3], "$120.00"); assert.strictEqual(lb[1][1], "Old Regular3 orders"); assert.strictEqual(lb[2][1], "Chris Thomas3 orders"); assert.ok(/4\.5 · 2 · “Fast shipping, great card”/.test(lb[2][8]), lb[2][8]); assert.strictEqual(lb[3][1], "danny lu"); ok("leaderboard by lifetime spend, chips for repeat buyers, feedback column");
+    await p7.click("#lb th[data-k=n]"); const lb2 = await p7.$$eval("#lb tbody tr", (trs) => trs.map((tr) => tr.children[1].textContent)); assert.strictEqual(lb2[0], "Brandon Ayers6 orders"); await p7.click("#lb th[data-k=n]"); assert.strictEqual(await p7.$eval("#lb tbody tr td:nth-child(2)", (e) => e.textContent), "danny lu"); ok("sortable columns (orders desc, then asc)");
+    await p7.click('#lb tbody tr[data-k="brandon ayers"]'); assert.ok(/Orders.*E5/.test(await p7.$eval("#lb tr.det", (e) => e.textContent))); ok("a row opens its orders");
+    const quiet = await p7.$eval("#quiet", (e) => e.textContent); assert.ok(/Old Regular/.test(quiet) && /Brandon/.test(quiet) && !/Chris/.test(quiet) && !/danny/.test(quiet), quiet); ok("regulars gone quiet: Old Regular (last Feb) and Brandon (monthly, last June), not Chris (ordered Nov 9), never a one-order buyer");
+    assert.strictEqual(await p7.$$eval("#chart svg g[data-i]", (g) => g.length), 12); const rt = await p7.$eval("#rt", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Nov 26 ?2 ?1 ?1/.test(rt) && /Jul 26 ?0 ?0 ?0/.test(rt), rt); ok("chart: one column per month Dec 25 to Nov 26 (empty months kept), table view (Nov: 2 orders, 1 new, 1 returning; July empty)");
+    await p7.hover("#chart svg g[data-i] rect.hit"); assert.ok(/orders/.test(await p7.$eval("#tip", (e) => e.textContent))); ok("chart hover tooltip");
+    assert.ok(/Card was bent/.test(await p7.$eval("#fbsum", (e) => e.textContent))); ok("feedback: ratings bars and the latest low ratings with words");
+    await p7.fill("#q", "chris"); assert.strictEqual(await p7.$$eval("#lb tbody tr", (t) => t.length), 1); ok("search filters the leaderboard");
+    await p7.click("#loadnew"); await p7.waitForFunction(() => /2 pages read, 1 new, 4 feedback stored/.test(document.getElementById("fbst").textContent)); ok("load feedback: progress line from the background's reply");
+    await p7.screenshot({ path: path.join(require("os").tmpdir(), "cc-customers.png") });
+    await c7.close();
+
+    console.log("8. scan.js on a mock Scan & Identify page");
+    const c8 = await browser.newContext({ viewport: { width: 1280, height: 900 } }), p8 = await c8.newPage(); const posted8 = [];
+    await c8.exposeFunction("__msg8", (m) => { posted8.push(m); });
+    await p8.addInitScript(() => {
+      const SIM = { s1: 0.91, s2: 0.42, s3: 0.93, s4: 0.63 };
+      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg8(m); setTimeout(() => { if (m.type === "cardcomp-scan-sim") { const k = /#(s\d)/.exec(m.scan)[1]; return cb({ ok: true, s: SIM[k] }); } cb(null); }, 10); } } };
+    });
+    const px = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const row8 = (id, seq, name, num, set, variant) => `<div class="manage-scans-identified-items-grid__expanded-container"><div class="manage-scans-identified-items-grid__expanded-images-container"><div><div class="image-cell"><img class="image-cell__image image-cell__image--expanded" lazy="loaded" src="${px}#${id}"></div><p class="typography-detail">Scan Image</p></div><div><div class="image-cell"><img class="image-cell__image image-cell__image--expanded" lazy="loaded" src="${px}#cat"></div><p class="typography-detail">Catalog Image</p></div></div><div class="manage-scans-identified-items-grid__expanded-body"><div class="manage-scans-identified-items-grid__expanded-details-container"><p class="typography-body font-weight-700 margin-0">${name}</p><p class="typography-detail font-weight-600 margin-0">Card #: <span>${num}</span></p><p class="typography-detail font-weight-600 margin-0">Set: <span>${set}</span></p><div class="manage-scans-identified-items-grid__variant-row"><span class="manage-scans-identified-items-grid__variant-view-text">${variant}</span></div><p class="typography-detail font-weight-600 margin-0">Scan sequence #: <span>${seq}</span></p></div><div class="manage-scans-identified-items-grid__expanded-actions-wrapper"><button data-testid="identified-item-find-new-match" onclick="document.querySelector('.find-catalog-match-drawer .tcg-drawer').style.display='block'">Find New Match</button></div></div></div>`;
+    const scanHTML = `<html><body><h1>Scan &amp; Identify</h1><div id="grid">${row8("s1", 160, "Archaludon - 107/142", "107/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s2", 161, "Okidogi", "111/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s3", 162, "Okidogi", "111/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s4", 163, "Noivern", "150/182", "SV04: Paradox Rift", "Holofoil, Common, Near Mint, English")}</div><div class="find-catalog-match-drawer"><div class="tcg-drawer--right is-modal tcg-drawer" style="display: none;"><div class="find-catalog-match-details"><div class="find-catalog-match-details__filter-search-bar"><input type="text" placeholder="Search"></div></div></div></div></body></html>`;
+    await c8.route("https://sellerportal.tcgplayer.com/scan-identify**", (r) => r.fulfill({ contentType: "text/html", body: scanHTML }));
+    await p8.goto("https://sellerportal.tcgplayer.com/scan-identify");
+    await p8.addScriptTag({ path: path.join(EXT, "scan", "scan.js") });
+    await p8.waitForFunction(() => document.querySelectorAll(".ccsc.ok,.ccsc.chk,.ccsc.bad").length === 4, null, { timeout: 8000 });
+    const badges = await p8.$$eval(".manage-scans-identified-items-grid__expanded-container", (cs) => cs.map((c) => c.querySelector(".ccsc").className.replace("ccsc ", "") + ":" + c.querySelector(".ccsc").textContent + (c.querySelector(".ccgrp") ? "|" + c.querySelector(".ccgrp").textContent : "")));
+    assert.deepStrictEqual(badges, ["ok:match 0.91", "bad:⚠ 0.42|×2 same match", "ok:match 0.93|×2 same match", "chk:check 0.63"]); ok("scores: green / red / amber badges, both Okidogi rows carry '×2 same match'");
+    assert.ok(posted8.filter((m) => m.type === "cardcomp-scan-sim").every((m) => /#cat$/.test(m.cat))); ok("each row sent its scan and catalog picture to the background");
+    const bar = await p8.$eval("#ccscanbar", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/4 scans 2 look right 1 check 1 likely wrong/.test(bar), bar); ok("bar counts");
+    await p8.click("#ccscanbar [data-review]"); await p8.waitForSelector("#ccscanview"); let v = await p8.$eval("#ccscanview", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Okidogi/.test(v) && /0\.42/.test(v) && /1 of 2 flagged/.test(v), v); ok("review opens the big view on the worst flagged scan");
+    await p8.keyboard.press("ArrowRight"); v = await p8.$eval("#ccscanview", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Noivern/.test(v) && /2 of 2/.test(v), v); await p8.keyboard.press("ArrowRight"); v = await p8.$eval("#ccscanview", (e) => e.textContent); assert.ok(/Okidogi/.test(v)); ok("arrow keys step through the flagged scans and wrap");
+    await p8.keyboard.press("f"); await p8.waitForFunction(() => !document.getElementById("ccscanview")); assert.strictEqual(await p8.$eval(".find-catalog-match-drawer .tcg-drawer", (e) => e.style.display), "block"); ok("F closes the view and presses that scan's Find New Match");
+    await p8.evaluate(() => { document.querySelector(".find-catalog-match-drawer .tcg-drawer").style.display = "none"; });
+    // Derek re-matched the 2nd row (name changes): the bar offers the other Okidogi
+    await p8.evaluate(() => { const c = document.querySelectorAll(".manage-scans-identified-items-grid__expanded-container")[1]; c.querySelector("p.font-weight-700").firstChild.textContent = "Okidogi ex - 111/142"; c.querySelector("img").src = c.querySelector("img").src.replace("#s2", "#s1"); });
+    await p8.waitForFunction(() => /1 more scan had/.test(document.getElementById("ccscanbar").textContent), null, { timeout: 5000 });
+    assert.ok(/Okidogi ex/.test(await p8.$eval("#ccscanbar [data-fixnext]", (e) => e.textContent))); ok("after a re-match the bar offers the remaining scan with the new card's name");
+    await p8.click("#ccscanbar [data-fixnext]"); await p8.waitForFunction(() => document.querySelector(".find-catalog-match-drawer input").value !== "", null, { timeout: 6000 });
+    assert.strictEqual(await p8.$eval(".find-catalog-match-drawer input", (e) => e.value), "Okidogi ex 111"); assert.ok(!/more scan/.test(await p8.$eval("#ccscanbar", (e) => e.textContent))); ok("fix next: opens the other scan's Find New Match with the name and number typed, offer cleared");
+    await c8.close();
   } finally { await browser.close(); }
 }
 (async () => {

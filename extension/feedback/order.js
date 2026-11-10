@@ -45,9 +45,10 @@
     await window.ccBuyer.merge([{ order: ORDER, buyer: info.buyer, at, total }]);
     const s = await window.ccBuyer.stats(info.buyer, at), chip = window.ccBuyer.chip(s, at);
     const host = $("OrderDetails_CustomerDetails_BuyerDetails");
-    if (chip && host && !host.querySelector(".ccbuy")) {
-      const p = [...host.querySelectorAll("p,span,div")].find((el) => txt(el) === info.buyer) || host; p.appendChild(chip);
-      const d = window.ccBuyer.detail(s); if (d) (p.parentElement || host).insertBefore(d, p.nextSibling);   // first / last / avg, in plain view
+    if (host && !host.querySelector(".ccbuy") && !host.querySelector(".ccsaid") && (chip || (s && s.fb && s.fb.length))) {
+      const p = [...host.querySelectorAll("p,span,div")].find((el) => txt(el) === info.buyer) || host; if (chip) p.appendChild(chip);
+      const d = window.ccBuyer.detail(s), q = window.ccBuyer.said(s);   // first / last / avg, and what they said about you, in plain view
+      let after = p; for (const el of [d, q]) if (el) { (after.parentElement || host).insertBefore(el, after.nextSibling); after = el; }
     }
   });
 

@@ -4,6 +4,7 @@ importScripts("store.js");
 importScripts("tcgfast.js");   // fast TCGplayer read (no page)
 try { importScripts("recog/recog-bg.js"); } catch (_) {}   // RECOG auto-recognition experiment, removed by scripts/strip-recog.js
 importScripts("feedback/feedback-bg.js");   // FEEDBACK: thank-you replies to TCGplayer feedback (drafts + order-page send)
+importScripts("scan/scan-bg.js");   // SCAN: Scan & Identify check (scan photo vs catalog photo)
 const TO_APP = new Set(["cardcomp-tcg-price", "cardcomp-lot", "cardcomp-lot-end"]);
 if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -58,6 +59,7 @@ const winOf = (msg, sender) => (sender && sender.tab ? sender.tab.windowId : msg
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg) return;
   if (fbHandle(msg, sender, reply)) return true;   // FEEDBACK: cardcomp-fb-* (feedback/feedback-bg.js)
+  if (scanHandle(msg, sender, reply)) return true;   // SCAN: cardcomp-scan-sim (scan/scan-bg.js)
   if (msg.type === "cardcomp-tcg-post") { tcgPostRelay(msg).then(reply); return true; }
   if (msg.type === "cardcomp-tcg-skus") { tcgSkus(msg).then(reply, (e) => reply({ ok: false, skus: {}, errs: [e.message] })); return true; }   // purchases export: SKUs per product   // CardComp's own TCGplayer listings request (Chinese copy prices)
   if (msg.type === "cardcomp-tcg-fast") {   // condition market / cheapest listing / recent sales straight from TCGplayer's data services

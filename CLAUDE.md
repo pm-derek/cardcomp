@@ -437,13 +437,45 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   (replaces the 14-day "N orders" tag when the history knows the buyer). Both drafts get `history` ("3 orders since
   Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,
   `-import` (CSV text), `-buyer` {name, at} -> stats, `-summary` (Options page line). Checks: section 1 (parser,
-  merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13.
+  merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13; 0.9.14 adds the feedback history, Customers page and Scan & Identify check below.
+- Feedback history + Customers page (Derek, 2026-11-10: "a dashboard with a leaderboard of my top customers and relevant
+  stats; on the order sheet what the customer has said about me"): `fbFeedback` in chrome.storage.local (order -> {u, r,
+  c, at}), fed by every row the inbox reads (`cardcomp-fb-feedback-merge`), the hourly badge check (page 1) and
+  `fbFeedbackLoad(full)` (`cardcomp-fb-feedback-load`: Feedback tab pages with Derek's login, full = every page until an
+  empty one, cap 400; else stop at the first page with nothing new; no table = signed out). `cardcomp-fb-buyer` replies
+  now carry `fb` (that buyer's feedback, newest first, name case-folded) even for buyers with no order history; the
+  hover card lists "Feedback for you: N ratings · avg X★" plus up to 2 worded ones, `ccBuyer.said(stats)` is the same
+  block (3) under the name on the order page and thread panel, the inbox row shows "earlier: 5★ “...” (date)" for
+  feedback before the current one, and `line(stats, skipOrder)` gives the drafts the earlier ratings and newest words.
+  `feedback/customers.html` + `customers.js` (extension page; Options page link, inbox footer "customers ↗";
+  `cardcomp-fb-customers` returns both stores): tiles (repeat buyers, revenue from 2nd+ orders, avg order, median gap,
+  came back within 90 days of a first order 90+ days old, feedback avg / worded %), monthly columns new (#d97706) vs
+  returning (#1849a9) buyers (validated pair on white; empty months kept; hover tooltip; table view), regulars gone quiet
+  (3+ orders, silent 2x their median gap and 60+ days), ratings bars + latest 1-3★ with words, sortable leaderboard
+  (lifetime, orders, avg, first, last, since, feedback; top 50, search, row opens the orders with their feedback).
+  Checks: feedback-check section 1 (store, loader with mocked fetch) and 7 (page on mock data).
+- Scan & Identify check (Derek, 2026-11-10, pain points: "manually reviewing each scan image with the catalog image",
+  "clicking find new match for 5 of the same card"; also 1st Ed / Unlimited, cosmos holo and stamp misreads, not built:
+  no sample scans yet): `extension/scan/scan.js` (content script `sellerportal.tcgplayer.com/scan-identify*`) reads each
+  `.manage-scans-identified-items-grid__expanded-container` (expanded view only: imgs labeled "Scan Image" / "Catalog
+  Image", name `p.font-weight-700` (own text nodes only, since our badges live inside it), Card # / Set lines, variant
+  text, scan sequence, `[data-testid=identified-item-find-new-match]`) and asks `cardcomp-scan-sim {scan, cat}`;
+  `scan/scan-bg.js` (imported by bg.js, SCAN tag) fetches both pictures (host permissions: the two
+  `tcgplayer-ims-image-upload-bucket-prd-us-east-1` S3 hosts for scans, tcgplayer-cdn for catalog photos) and returns
+  `IM.sim` of their `IM.cardCells` templates (recog/imgmatch.js, so strip-recog now keeps that one file and the
+  tcgplayer-cdn host). Badge after the name: ok >= 0.70 / check >= 0.50 / bad (first guesses, untested on real scan
+  photos: the saved page had no image files), row left-edge tint, `#ccscanbar` counts + "review", `#ccscanview` big
+  side-by-side (arrows / j k, F = Find New Match, Esc). Groups: same name + variant -> "×N same match" chip (click
+  highlights). Re-match: when a row's name changes after scoring (`onRematch`) the bar offers `fixNext`: scroll, click
+  that row's Find New Match, wait for the drawer (`.find-catalog-match-drawer`), type "<new name> <number>" into its
+  search input (native setter + input + Enter). The drawer's result markup is unknown, so picking the result and Save
+  Match stay with Derek. Checks: feedback-check section 8 (mock page from the saved markup, 4 rows, mocked sims).
 - Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`); return address `fbAddress`.
   RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list (92 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (122 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
