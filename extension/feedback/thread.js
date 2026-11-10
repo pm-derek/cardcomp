@@ -100,10 +100,10 @@
     S.info = o && o.ok ? o.info : null;
     const stEl = box.querySelector("[data-st]"); stEl.textContent = S.info ? "" : "order page not read (" + (o && o.why || "no reply") + ")";
     if (S.info && S.info.buyer && window.ccBuyer) {   // repeat-buyer badge beside the buyer's name, history for the draft
-      S.buyerStats = await window.ccBuyer.stats(S.info.buyer, 0);
+      S.buyerStats = await window.ccBuyer.stats(S.info.buyer, 0, th.order);
       const chip = window.ccBuyer.chip(S.buyerStats, 0);
       const h = box.querySelector("h4"); const nm = document.createElement("span"); nm.className = "dim"; nm.textContent = S.info.buyer; h.appendChild(nm); if (chip) h.appendChild(chip);
-      const d = window.ccBuyer.detail(S.buyerStats), q = window.ccBuyer.said(S.buyerStats); let after = h;
+      const d = window.ccBuyer.detail(S.buyerStats), q = window.ccBuyer.said(S.buyerStats, th.order); let after = h;
       for (const el of [d, q]) if (el) { after.insertAdjacentElement("afterend", el); after = el; }
     }
     paint();

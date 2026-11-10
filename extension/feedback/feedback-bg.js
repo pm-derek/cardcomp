@@ -102,7 +102,11 @@ function fbHandle(msg, sender, reply) {
   if (msg.type === "cardcomp-fb-buyers-merge") { fbBuyersMerge(msg.orders || []).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
   if (msg.type === "cardcomp-fb-buyers-import") { fbBuyersMerge(fbParseCSV(msg.csv || "")).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
   if (msg.type === "cardcomp-fb-buyer") {   // stats + the feedback this buyer left (newest first)
-    Promise.all([fbBuyersGet(), fbFeedbackGet()]).then(([m, f]) => { const s = fbBuyerStats(m, msg.name, msg.at || 0), fb = fbFeedbackFor(f, msg.name); reply({ ok: true, stats: s || fb.length ? Object.assign(s || { n: 0, name: msg.name, spent: 0 }, { fb }) : null }); });
+    Promise.all([fbBuyersGet(), fbFeedbackGet()]).then(([m, f]) => {
+      const s = fbBuyerStats(m, msg.name, msg.at || 0), b = m[fbBuyerKey(msg.name)];
+      const fb = fbFeedbackFor(f, msg.name, Object.keys(b && b.orders || {}).concat(msg.order ? [msg.order] : []));
+      reply({ ok: true, stats: s || fb.length ? Object.assign(s || { n: 0, name: msg.name, spent: 0 }, { fb }) : null });
+    });
     return true;
   }
   if (msg.type === "cardcomp-fb-feedback-merge") { fbFeedbackMerge(msg.rows || []).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
@@ -292,7 +296,7 @@ function fbBuyerStats(m, name, at) {
 // seen, keyed by order: fbFeedback {order: {u: user, r: rating, c: comment, at}}. Fed by the inbox (the pages it reads),
 // the hourly badge check (page 1) and the Customers page's "load feedback history" (every page, with Derek's login).
 const fbFeedbackGet = () => new Promise((res) => chrome.storage.local.get("fbFeedback", (x) => res((x && x.fbFeedback) || {})));
-const fbDateMs = (s) => { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim()); return m ? new Date(+m[3], +m[1] - 1, +m[2]).getTime() : 0; };
+const fbDateMs = (s) => { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(String(s || "").trim()); return m ? new Date(+m[3], +m[1] - 1, +m[2]).getTime() : 0; };   // "11/5/2026" or "11/5/2026, 4:17:12 PM (PST)"
 async function fbFeedbackMerge(rows) {
   const f = await fbFeedbackGet(); let added = 0;
   for (const r of rows) {
@@ -303,10 +307,14 @@ async function fbFeedbackMerge(rows) {
   if (added || rows.length) await new Promise((res) => chrome.storage.local.set({ fbFeedback: f }, res));
   return { added, total: Object.keys(f).length };
 }
-// The feedback one buyer left, newest first: [{order, at, r, c}].
-function fbFeedbackFor(f, name) {
-  const k = fbBuyerKey(name); if (!k) return [];
-  return Object.entries(f).filter(([, v]) => fbBuyerKey(v.u) === k).map(([order, v]) => ({ order, at: v.at, r: v.r, c: v.c })).sort((a, b) => b.at - a.at);
+// The feedback one buyer left, newest first: [{order, at, r, c}]. Feedback rows carry the TCGplayer username ("robert
+// s78A1F72") while orders carry the buyer's name ("Robert Smith"), so the join is by order id (the buyer's orders in
+// fbBuyers plus the order on the page) first, username match second. Derek, 2026-11-10: single-order buyers leave
+// reviews too and were missed when only the username matched.
+function fbFeedbackFor(f, name, orders) {
+  const k = fbBuyerKey(name), ids = new Set((orders || []).filter(Boolean));
+  if (!k && !ids.size) return [];
+  return Object.entries(f).filter(([order, v]) => ids.has(order) || (k && fbBuyerKey(v.u) === k)).map(([order, v]) => ({ order, at: v.at, r: v.r, c: v.c })).sort((a, b) => b.at - a.at);
 }
 // Read the Feedback tab page by page (25 rows each) with Derek's login. full = every page (cap 400); else stop once a
 // whole page is already known. A page with no feedback table = signed out.

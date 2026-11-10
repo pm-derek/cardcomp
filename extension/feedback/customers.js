@@ -14,6 +14,13 @@
   const stars = (n) => `<span class="stars ${n >= 4 ? "good" : "bad"}" title="${n} of 5">${"★".repeat(Math.max(0, Math.min(5, n)))}${"☆".repeat(Math.max(0, 5 - Math.min(5, n)))}</span>`;
   const DAY = 864e5;
   let DATA = null, SORT = { k: "spent", d: -1 }, SHOWALL = false;
+  // Theme: follows the system unless Derek picked one (localStorage ccCustomersTheme); the chart reads its colors from
+  // the CSS tokens so both modes use a validated pair (light #1849a9 / #d97706, dark #3987e5 / #bf8418).
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const isDark = () => document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; $("theme").textContent = isDark() ? "☀ light" : "☾ dark"; if (DATA) paint(); }
+  try { applyTheme(localStorage.getItem("ccCustomersTheme") || ""); } catch (_) { applyTheme(""); }
+  $("theme").onclick = () => { const t = isDark() ? "light" : "dark"; try { localStorage.setItem("ccCustomersTheme", t); } catch (_) {} applyTheme(t); };
 
   // One record per buyer: orders sorted by time, totals, first / last, gaps, feedback.
   function build(buyers, feedback) {
@@ -48,8 +55,18 @@
       tile(orders.length ? usd(rev / orders.length) : "–", "average order", rep.length ? "repeat buyers " + usd(rep.reduce((s, b) => s + b.spent, 0) / rep.reduce((s, b) => s + b.n, 0)) : "") +
       tile(rep.length ? Math.round(median(rep.map((b) => b.gap).filter(Boolean))) + " d" : "–", "median days between orders", "repeat buyers") +
       tile(cohort.length ? Math.round(back.length / cohort.length * 100) + "%" : "–", "came back within 90 days", cohort.length ? `of ${cohort.length.toLocaleString()} buyers whose first order is 90+ days old` : "needs 90 days of history") +
-      tile(fbAll.length ? (fbAll.reduce((s, f) => s + f.r, 0) / fbAll.length).toFixed(2) + "★" : "–", "feedback average", fbAll.length ? `${fbAll.length.toLocaleString()} ratings · ${Math.round(worded.length / fbAll.length * 100)}% with words` : "load feedback history");
+      tile(fbAll.length ? (fbAll.reduce((s, f) => s + f.r, 0) / fbAll.length).toFixed(2) + "★" : "–", "feedback average", fbAll.length ? `${fbAll.length.toLocaleString()} ratings · ${Math.round(worded.length / fbAll.length * 100)}% with words` : "load feedback history") +
+      (() => {   // concentration: how much of the revenue the top 10% of buyers bring
+        const sp = B.map((b) => b.spent).sort((x, y) => y - x), k = Math.max(1, Math.round(sp.length / 10)), top = sp.slice(0, k).reduce((s, v) => s + v, 0);
+        return tile(rev && B.length >= 10 ? Math.round(top / rev * 100) + "%" : "–", "of revenue from the top 10% of buyers", B.length >= 10 ? `${k} buyers · ${usd0(top)}` : "needs 10+ buyers");
+      })() +
+      (() => {   // feedback rate on orders in the history, and how long buyers take to leave it
+        const byId = new Map(orders.map((o) => [o.id, o])), withFb = Object.entries(DATA.feedback || {}).filter(([id]) => byId.has(id));
+        const days = withFb.map(([id, f]) => (f.at - byId.get(id).at) / DAY).filter((d) => d >= 0 && d < 120);
+        return tile(orders.length && withFb.length ? Math.round(withFb.length / orders.length * 100) + "%" : "–", "of orders get feedback", days.length ? `median ${Math.round(median(days))} days after the order` : (fbAll.length ? "none matched to an order yet" : "load feedback history"));
+      })();
     paintChart(orders);
+    paintCohorts(B, now);
     paintQuiet(B, now);
     paintFb(fbAll);
     paintLb();
@@ -74,15 +91,16 @@
     const W = 1000, H = 200, L = 36, Bt = 8, Bb = 24, max = Math.max(1, ...rows.map((r) => r.n + r.r)), cw = (W - L) / rows.length, bw = Math.min(40, cw * 0.7);
     const y = (v) => Bt + (H - Bt - Bb) * (1 - v / max);
     const lbl = (m) => mon(new Date(Math.floor(m / 12), m % 12, 1));
-    let g = `<div class="leg"><span><i style="background:#1849a9"></i>returning buyers</span><span><i style="background:#d97706"></i>new buyers</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="orders per month">`;
+    const RET = cssVar("--c-ret") || "#1849a9", NEW = cssVar("--c-new") || "#d97706", GRID = cssVar("--grid") || "#eef1f5", DIM = cssVar("--dim") || "#5f6b7a";
+    let g = `<div class="leg"><span><i style="background:${RET}"></i>returning buyers</span><span><i style="background:${NEW}"></i>new buyers</span></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="orders per month">`;
     const ticks = [0, Math.round(max / 2), max];
-    for (const t of ticks) g += `<line x1="${L}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#eef1f5"/><text x="${L - 6}" y="${y(t) + 4}" font-size="11" fill="#5f6b7a" text-anchor="end">${t}</text>`;
+    for (const t of ticks) g += `<line x1="${L}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="${GRID}"/><text x="${L - 6}" y="${y(t) + 4}" font-size="11" fill="${DIM}" text-anchor="end">${t}</text>`;
     rows.forEach((r, i) => {
       const x = L + i * cw + (cw - bw) / 2, yr = y(r.r), yn = y(r.r + r.n);
-      g += `<g data-i="${i}"><rect x="${x}" y="${yr}" width="${bw}" height="${Math.max(0, y(0) - yr)}" fill="#1849a9" rx="2"/>` +
-        `<rect x="${x}" y="${yn}" width="${bw}" height="${Math.max(0, yr - yn - (r.r ? 2 : 0))}" fill="#d97706" rx="2"/>` +
+      g += `<g data-i="${i}"><rect x="${x}" y="${yr}" width="${bw}" height="${Math.max(0, y(0) - yr)}" fill="${RET}" rx="2"/>` +
+        `<rect x="${x}" y="${yn}" width="${bw}" height="${Math.max(0, yr - yn - (r.r ? 2 : 0))}" fill="${NEW}" rx="2"/>` +
         `<rect x="${L + i * cw}" y="0" width="${cw}" height="${H}" fill="transparent" class="hit"/>` +
-        (rows.length <= 18 ? `<text x="${x + bw / 2}" y="${H - 8}" font-size="11" fill="#5f6b7a" text-anchor="middle">${lbl(r.m)}</text>` : "") + `</g>`;
+        (rows.length <= 18 ? `<text x="${x + bw / 2}" y="${H - 8}" font-size="11" fill="${DIM}" text-anchor="middle">${lbl(r.m)}</text>` : "") + `</g>`;
     });
     g += `</svg><div class="tip" id="tip"></div><div class="rt" id="rt"><table><tr><th>Month</th><th class="n">Orders</th><th class="n">New</th><th class="n">Returning</th><th class="n">Revenue</th></tr>${rows.map((r) => `<tr><td>${lbl(r.m)}</td><td class="n">${r.n + r.r}</td><td class="n">${r.n}</td><td class="n">${r.r}</td><td class="n">${usd0(r.rev)}</td></tr>`).join("")}</table></div>`;
     c.innerHTML = g;
@@ -93,6 +111,22 @@
       gr.addEventListener("mouseleave", () => { tip.style.display = "none"; });
     });
     $("rtog").onclick = (e) => { e.preventDefault(); $("rt").classList.toggle("on"); };
+  }
+
+  // Cohorts: buyers by the month of their first order; share with a 2nd order within 30 / 60 / 90 / 180 days. A cell is
+  // blank until the cohort is that old. Shaded one hue, light to dark (sequential), the number always printed.
+  function paintCohorts(B, now) {
+    const WIN = [30, 60, 90, 180], byM = new Map();
+    for (const b of B) { if (!b.first) continue; const d = new Date(b.first), m = d.getFullYear() * 12 + d.getMonth(); const e = byM.get(m) || { m, n: 0, back: WIN.map(() => 0), rev2: 0 }; e.n++; WIN.forEach((w, i) => { if (b.os.some((o) => o.at > b.first && o.at - b.first <= w * DAY)) e.back[i]++; }); byM.set(m, e); }
+    const ms = [...byM.keys()].sort((a, b) => a - b).slice(-12), el = $("cohort");
+    if (ms.length < 2) { el.innerHTML = '<div class="dim">Needs two or more months of orders.</div>'; return; }
+    const lbl = (m) => mon(new Date(Math.floor(m / 12), m % 12, 1)), endOf = (m) => new Date(Math.floor(m / 12), m % 12 + 1, 1).getTime();
+    const h0 = cssVar("--heat0") || "#eaf1fd", h1 = cssVar("--heat1") || "#1849a9";
+    const mix = (a, b, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b); return "rgb(" + x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",") + ")"; };
+    const maxP = Math.max(0.01, ...ms.flatMap((m) => { const e = byM.get(m); return e.back.map((k) => k / e.n); }));
+    el.innerHTML = `<table><thead><tr><th>First order</th><th class="n">Buyers</th>${WIN.map((w) => `<th class="c" style="text-align:center">back in ${w} d</th>`).join("")}</tr></thead><tbody>` +
+      ms.map((m) => { const e = byM.get(m); return `<tr><td>${lbl(m)}</td><td class="n">${e.n}</td>` + WIN.map((w, i) => { if (now - endOf(m) < w * DAY) return '<td class="c"><span class="dim">–</span></td>'; const p = e.back[i] / e.n, t = p / maxP; return `<td class="c"><span style="background:${mix(h0, h1, t)};color:${t > 0.55 ? "#fff" : "inherit"}" title="${e.back[i]} of ${e.n}">${Math.round(p * 100)}%</span></td>`; }).join("") + "</tr>"; }).join("") +
+      `</tbody></table><div class="note">A cell counts buyers whose second order came within that many days of their first. Blank: the month is not that old yet.</div>`;
   }
 
   // Repeat buyers (3+ orders) who are overdue: no order for longer than twice their usual gap, and 60+ days.
@@ -114,12 +148,12 @@
     let rows = DATA.buyers.filter((b) => !q || b.k.includes(q));
     const v = (b) => SORT.k === "name" ? b.name.toLowerCase() : SORT.k === "since" ? (b.last ? now - b.last : Infinity) : SORT.k === "fb" ? (b.fbAvg == null ? -1 : b.fbAvg) : SORT.k === "avg" ? b.spent / b.n : b[SORT.k] || 0;
     rows.sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * SORT.d || b.spent - a.spent; });
-    const total = rows.length; if (!SHOWALL && !q) rows = rows.slice(0, 50);
+    const total = rows.length, maxSpent = Math.max(0.01, ...DATA.buyers.map((b) => b.spent)); if (!SHOWALL && !q) rows = rows.slice(0, 50);
     $("lbn").textContent = total ? `${rows.length} of ${total.toLocaleString()} buyers` + (!SHOWALL && !q && total > 50 ? " · " : "") : "";
     if (!SHOWALL && !q && total > 50) { const a = document.createElement("a"); a.href = "#"; a.textContent = "show all"; a.onclick = (e) => { e.preventDefault(); SHOWALL = true; paintLb(); }; $("lbn").appendChild(a); }
     const th = (k, l, n) => `<th class="${n ? "n" : ""}${SORT.k === k ? " on" : ""}" data-k="${k}">${l}${SORT.k === k ? (SORT.d < 0 ? " ↓" : " ↑") : ""}</th>`;
     $("lb").innerHTML = rows.length ? `<table><thead><tr><th>#</th>${th("name", "Buyer")}${th("n", "Orders", 1)}${th("spent", "Lifetime", 1)}${th("avg", "Avg order", 1)}${th("first", "First")}${th("last", "Last")}${th("since", "Since last", 1)}${th("fb", "Feedback")}</tr></thead><tbody>` +
-      rows.map((b, i) => `<tr class="x" data-k="${esc(b.k)}"><td class="dim">${i + 1}</td><td><b>${esc(b.name)}</b>${b.n >= 2 ? `<span class="chip${b.n >= 5 ? " reg" : ""}">${b.n} orders</span>` : ""}</td><td class="n">${b.n}</td><td class="n">${usd(b.spent)}</td><td class="n">${usd(b.spent / b.n)}</td><td>${day(b.first)}</td><td>${day(b.last)}</td><td class="n">${b.last ? Math.round((now - b.last) / DAY) + " d" : ""}</td><td>${b.fb.length ? `${stars(Math.round(b.fbAvg))} <span class="dim">${b.fbAvg.toFixed(1)} · ${b.fb.length}${b.fb.some((f) => f.c) ? ' · “' + esc(b.fb.find((f) => f.c).c).slice(0, 40) + (b.fb.find((f) => f.c).c.length > 40 ? "…" : "") + '”' : ""}</span>` : '<span class="dim">–</span>'}</td></tr>`).join("") + "</tbody></table>" : '<div class="empty">No buyers match.</div>';
+      rows.map((b, i) => { const quiet = b.n >= 3 && b.last && now - b.last > Math.max(60 * DAY, 2 * b.gap * DAY); return `<tr class="x" data-k="${esc(b.k)}"><td class="dim">${i + 1}</td><td><b>${esc(b.name)}</b>${b.n >= 2 ? `<span class="chip${b.n >= 5 ? " reg" : ""}">${b.n} orders</span>` : ""}</td><td class="n">${b.n}</td><td class="n money"><i style="width:${Math.round(b.spent / maxSpent * 100)}%"></i><span>${usd(b.spent)}</span></td><td class="n">${usd(b.spent / b.n)}</td><td>${day(b.first)}</td><td>${day(b.last)}</td><td class="n${quiet ? " quiet" : ""}" title="${quiet ? "a regular gone quiet: usually every " + Math.round(b.gap) + " days" : ""}">${b.last ? Math.round((now - b.last) / DAY) + " d" : ""}${quiet ? " ⚠" : ""}</td><td${b.fb.length && b.fbAvg <= 3 ? ' class="low"' : ""}>${b.fb.length ? `${stars(Math.round(b.fbAvg))} <span class="dim">${b.fbAvg.toFixed(1)} · ${b.fb.length}${b.fb.some((f) => f.c) ? ' · “' + esc(b.fb.find((f) => f.c).c).slice(0, 40) + (b.fb.find((f) => f.c).c.length > 40 ? "…" : "") + '”' : ""}</span>` : '<span class="dim">–</span>'}</td></tr>`; }).join("") + "</tbody></table>" : '<div class="empty">No buyers match.</div>';
     $("lb").querySelectorAll("th[data-k]").forEach((h) => { h.onclick = () => { const k = h.dataset.k; SORT = SORT.k === k ? { k, d: -SORT.d } : { k, d: k === "name" || k === "first" ? 1 : -1 }; paintLb(); }; });
     $("lb").querySelectorAll("tr.x").forEach((tr) => { tr.onclick = () => toggleDetail(tr); });
   }

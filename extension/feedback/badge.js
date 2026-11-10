@@ -24,7 +24,9 @@
 #ccbuypop b{font-size:13px;color:#111}#ccbuypop table{border-collapse:collapse;margin-top:4px}#ccbuypop td{padding:1px 10px 1px 0;white-space:nowrap}#ccbuypop td:last-child{text-align:right;padding-right:0;font-variant-numeric:tabular-nums}
 #ccbuypop .k{color:#5f6b7a}#ccbuypop .ltv{color:#1849a9;font-weight:700}#ccbuypop .nth{color:#8a5a00;margin-top:4px}
 #ccbuypop .fbh,.ccsaid .fbh{margin-top:6px;padding-top:6px;border-top:1px solid #e6eaf0;color:#5f6b7a}#ccbuypop .fbq,.ccsaid .fbq{margin-top:2px;max-width:360px;white-space:normal}
-.ccsaid{font:12px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2a37;margin-top:4px}.ccsaid .fbh{border:0;padding:0;margin:0}.ccsaid .k{color:#5f6b7a}
+.ccsaid{font:13px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2a37;margin:8px 0;padding:8px 12px;background:#f3f7ff;border:1px solid #c7d7f5;border-left:4px solid #1849a9;border-radius:8px;max-width:560px}
+.ccsaid.neg{background:#fff6f5;border-color:#f3c4c0;border-left-color:#b42318}
+.ccsaid .fbh{border:0;padding:0;margin:0 0 2px;font-weight:600;color:#1f2a37}.ccsaid .fbq{margin-top:3px;white-space:normal}.ccsaid .fbq .good,.ccsaid .fbq .bad{font-size:14px;letter-spacing:-1px}.ccsaid .k{color:#5f6b7a}
 .good{color:#067647}.bad{color:#b54708}`;
     document.head.appendChild(st);
   }
@@ -32,12 +34,12 @@
   let pop = null, popFor = null, hideT = null;
   const starsOf = (n) => "★".repeat(Math.max(0, Math.min(5, n))) + "☆".repeat(Math.max(0, 5 - Math.min(5, n)));
   // The feedback they left (stats.fb, newest first): a line per worded one (up to max), else the ratings alone.
-  function fbLines(fb, max) {
+  function fbLines(fb, max, cur) {
     fb = fb || []; if (!fb.length) return "";
     const worded = fb.filter((x) => x.c);
     const avg = fb.reduce((s, x) => s + (x.r || 0), 0) / fb.length;
     let h = `<div class="fbh">Feedback for you: ${fb.length} rating${fb.length === 1 ? "" : "s"} · avg ${avg.toFixed(1)}★${worded.length ? "" : " · no words"}</div>`;
-    for (const x of worded.slice(0, max)) h += `<div class="fbq"><span class="${x.r >= 4 ? "good" : "bad"}">${starsOf(x.r)}</span> “${esc(x.c)}” <span class="k">${esc(day(x.at))}</span></div>`;
+    for (const x of worded.slice(0, max)) h += `<div class="fbq"><span class="${x.r >= 4 ? "good" : "bad"}">${starsOf(x.r)}</span> “${esc(x.c)}” <span class="k">${esc(day(x.at))}${cur && x.order === cur ? " · this order" : ""}</span></div>`;
     if (worded.length > max) h += `<div class="k">+${worded.length - max} more</div>`;
     return h;
   }
@@ -87,13 +89,15 @@
     return el;
   }
   // "What they said about you" for pages with room (order page, thread panel): up to 3 worded feedbacks, else the ratings.
-  function said(stats) {
+  // Shown whenever the buyer left any feedback, one order or twenty (a visible panel, not a hover). cur = the order on
+  // this page, marked "this order"; the panel turns red when a rating is 3 or under.
+  function said(stats, cur) {
     if (!stats || !stats.fb || !stats.fb.length) return null;
     style();
-    const el = document.createElement("div"); el.className = "ccsaid"; el.innerHTML = fbLines(stats.fb, 3);
+    const el = document.createElement("div"); el.className = "ccsaid" + (stats.fb.some((x) => x.r && x.r <= 3) ? " neg" : ""); el.innerHTML = fbLines(stats.fb, 3, cur);
     return el;
   }
-  async function stats(name, atMs) { const r = await post({ type: "cardcomp-fb-buyer", name, at: atMs || 0 }); return r && r.ok ? r.stats : null; }
+  async function stats(name, atMs, order) { const r = await post({ type: "cardcomp-fb-buyer", name, at: atMs || 0, order: order || "" }); return r && r.ok ? r.stats : null; }
   async function merge(orders) { return post({ type: "cardcomp-fb-buyers-merge", orders }); }
   // One line for the drafts: orders and spend, plus the newest worded feedback they left before this one.
   const line = (s, skipOrder) => {
