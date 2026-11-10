@@ -22,7 +22,9 @@
       if (!rows.length) return;
       await window.ccBuyer.merge(rows.map((r) => ({ order: r.order, buyer: r.buyer, at: r.at, total: r.total })));
       for (const r of rows) {
-        if (r.buyerTd.querySelector(".ccbuy")) continue;
+        const have = r.buyerTd.querySelector(".ccbuy");
+        if (have && have.__cchtml) continue;
+        if (have) have.remove();   // a re-render copied the chip as markup only (no hover card): draw it again
         const s = await window.ccBuyer.stats(r.buyer, r.at);
         const c = window.ccBuyer.chip(s, r.at);
         if (c && !r.buyerTd.querySelector(".ccbuy")) r.buyerTd.appendChild(c);

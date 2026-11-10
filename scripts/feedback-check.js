@@ -71,6 +71,9 @@ async function bgTests() {
   const bs = ctx.fbBuyerStats(store.fbBuyers, "CHRIS  thomas", 0); assert.strictEqual(bs.n, 3); assert.ok(Math.abs(bs.spent - 37.29) < 1e-9); assert.strictEqual(bs.name, "Chris Thomas"); ok("stats: 3 orders, $37.29, mixed-case spelling kept");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[1].at).before, 1); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at).before, 2); ok("as of the Oct 29 order they had 1, as of Nov 9 they had 2");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "nobody", 0), null); ok("unknown buyer: null");
+  { const s = ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", 0);
+    assert.strictEqual(s.first, parsed[1].at); assert.strictEqual(s.firstTotal, 5.39); assert.strictEqual(s.lastTotal, 10); assert.ok(s.last > parsed[0].at); ok("LTV: first order Oct 29 $5.39, last order (today) $10, lifetime $37.29");
+    const asOf = ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at); assert.strictEqual(asOf.before, 2); assert.strictEqual(asOf.spentBefore, 27.29); ok("as of the Nov 9 order: 2 orders, $27.29 spent by then"); }
   // two orders on one day: the Orders list's exact times break the tie, the import's midnight would not
   const d9 = parsed[0].at;   // Nov 9 midnight from the CSV (order A)
   await ctx.fbBuyersMerge([{ order: "92588719-A", buyer: "Chris Thomas", at: d9 + 13 * 36e5, total: 21.9 }, { order: "92588719-F", buyer: "Chris Thomas", at: d9 + 19 * 36e5 + 39 * 6e4, total: 3 }]);
@@ -358,7 +361,7 @@ async function pageTests() {
     const c6 = await browser.newContext(), p6 = await c6.newPage(); const posted6 = [];
     await c6.exposeFunction("__msg", (m) => { posted6.push(m); });
     await p6.addInitScript(() => {
-      const STATS = { "chris thomas": { n: 3, first: Date.parse("2026-10-29"), last: Date.parse("2026-11-09"), spent: 37.29 }, "brandon ayers": { n: 23, first: Date.parse("2025-11-02"), last: Date.parse("2026-11-01"), spent: 400 } };
+      const STATS = { "chris thomas": { name: "Chris Thomas", n: 3, first: Date.parse("2026-10-29"), last: Date.parse("2026-11-09"), firstTotal: 5.39, lastTotal: 21.9, spent: 37.29, spentBefore: 37.29 }, "brandon ayers": { name: "Brandon Ayers", n: 23, first: Date.parse("2025-11-02"), last: Date.parse("2026-11-01"), firstTotal: 8, lastTotal: 12, spent: 400, spentBefore: 400 } };
       window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); setTimeout(() => {
         if (m.type === "cardcomp-fb-buyers-merge") return cb({ ok: true, added: m.orders.length });
         if (m.type === "cardcomp-fb-buyer") { const s = STATS[String(m.name).toLowerCase()]; return cb({ ok: true, stats: s ? Object.assign({}, s, { before: m.at && m.at < Date.parse("2026-11-01") ? 1 : s.n }) : null }); }
@@ -374,12 +377,16 @@ async function pageTests() {
     const merged = posted6.find((m) => m.type === "cardcomp-fb-buyers-merge");
     assert.strictEqual(merged.orders.length, 4); assert.deepStrictEqual(merged.orders[0], { order: "92588719-1", buyer: "danny lu", at: Date.parse("11/9/2026, 7:39:01 PM"), total: 21.9 }); ok("Orders list: every row joins the buyer history (order, buyer, date, total)");
     const chips = await p6.$$eval("tr", (trs) => trs.map((tr) => { const c = tr.querySelector(".ccbuy"); return c ? c.textContent + "|" + c.className : ""; }));
-    assert.deepStrictEqual(chips.filter(Boolean), ["3 orders|ccbuy rep", "regular · 23 orders|ccbuy reg".replace("regular · ", "")]); ok("badges: Chris Thomas '3 orders' blue, Brandon Ayers '23 orders' gold; danny lu (first order) and the Oct 29 Chris row (their first then) get nothing");
+    assert.deepStrictEqual(chips.filter(Boolean), ["3 orders · $37.29|ccbuy rep", "23 orders · $400.00|ccbuy reg"]); ok("badges: Chris Thomas '3 orders · $37.29' blue, Brandon Ayers '23 orders · $400.00' gold; danny lu (first order) and the Oct 29 Chris row (their first then) get nothing");
     assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2);
     await p6.evaluate(() => { const tb = document.querySelector("tbody"); tb.innerHTML = tb.innerHTML; });   // Vue re-render
     await p6.waitForTimeout(800);
-    assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2); ok("re-render: badged again, never twice");
-    assert.ok(/3 orders since Oct 2026/.test(await p6.$eval(".ccbuy", (e) => e.title)) && /\$37\.29 total/.test(await p6.$eval(".ccbuy", (e) => e.title))); ok("hover: since, last, total spent");
+    assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2); assert.ok(await p6.$$eval(".ccbuy", (es) => es.every((e) => e.__cchtml))); ok("re-render: badged again (live chips, not the copied markup), never twice");
+    await p6.hover(".ccbuy"); await p6.waitForSelector("#ccbuypop", { state: "visible" });
+    const popTxt = await p6.$eval("#ccbuypop", (e) => e.textContent.replace(/\s+/g, " "));
+    assert.ok(/Chris Thomas/.test(popTxt) && /\$37\.29 lifetime · 3 orders · avg \$12\.43/.test(popTxt) && /First\s*Oct 29, 2026\s*\$5\.39/.test(popTxt) && /Last\s*Nov 9, 2026\s*\$21\.90/.test(popTxt), popTxt); ok("hover card: lifetime $, order count, average, first and last order with date and amount");
+    await p6.mouse.move(0, 0); await p6.waitForTimeout(300); assert.strictEqual(await p6.$eval("#ccbuypop", (e) => e.style.display), "none"); ok("card closes when the pointer leaves");
+    assert.ok(/first Oct 29, 2026 \$5\.39 · last Nov 9, 2026 \$21\.90 · avg \$12\.43/.test(await p6.evaluate(() => window.ccBuyer.detail({ n: 3, first: Date.parse("2026-10-29"), last: Date.parse("2026-11-09"), firstTotal: 5.39, lastTotal: 21.9, spent: 37.29 }).textContent))); ok("detail line (order page, thread panel): first, last, avg");
     await c6.close();
   } finally { await browser.close(); }
 }
