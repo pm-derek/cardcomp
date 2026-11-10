@@ -71,6 +71,11 @@ async function bgTests() {
   const bs = ctx.fbBuyerStats(store.fbBuyers, "CHRIS  thomas", 0); assert.strictEqual(bs.n, 3); assert.ok(Math.abs(bs.spent - 37.29) < 1e-9); assert.strictEqual(bs.name, "Chris Thomas"); ok("stats: 3 orders, $37.29, mixed-case spelling kept");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[1].at).before, 1); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at).before, 2); ok("as of the Oct 29 order they had 1, as of Nov 9 they had 2");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "nobody", 0), null); ok("unknown buyer: null");
+  // two orders on one day: the Orders list's exact times break the tie, the import's midnight would not
+  const d9 = parsed[0].at;   // Nov 9 midnight from the CSV (order A)
+  await ctx.fbBuyersMerge([{ order: "92588719-A", buyer: "Chris Thomas", at: d9 + 13 * 36e5, total: 21.9 }, { order: "92588719-F", buyer: "Chris Thomas", at: d9 + 19 * 36e5 + 39 * 6e4, total: 3 }]);
+  assert.strictEqual(store.fbBuyers["chris thomas"].orders["92588719-A"].at, d9 + 13 * 36e5); ok("a list row's exact time replaces the import's midnight for the same order");
+  assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 13 * 36e5).before, 2); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 19 * 36e5 + 39 * 6e4).before, 3); ok("same day, two orders: the 1 PM row counts 2, the 7:39 PM row counts 3");
   // threads: stored from the Messages list read, the newest General Inquiry since the send wins
   const t0 = Date.now();
   let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
