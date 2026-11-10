@@ -31,6 +31,7 @@
     const orderDate = (/Order Date\s*(\d{1,2}\/\d{1,2}\/\d{4}[^(]*\([A-Z]+\))/.exec(gen) || [])[1] || "";
     return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], pids, items, edd, shippedAt, tracking, orderDate, status: txt($("OrderDetails_OrderStatusBadges_OrderStatus")), method: (/Shipping Method\s*([^$]*?)\s*Estimated/.exec(gen) || [])[1] || "",
       feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
+      fbRating: document.querySelectorAll('[data-testid="OrderDetails_Feedback_FullHeart"]').length || parseInt(txt($("OrderDetails_OrderFeedback_Rating")), 10) || 0,
       hasFeedback: !!fb, buyer: txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim() };
   }
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r); }); } catch (_) { res(null); } });
@@ -43,11 +44,12 @@
     const at = Date.parse(String(info.orderDate || "").replace(/\s*\([A-Z]{2,4}\)\s*$/, "")) || 0;
     const total = (() => { const t = txt($("OrderDetails_TransactionDetails")); const m = /Order Amount\s*\$\s?([\d,]+\.?\d*)/.exec(t); return m ? parseFloat(m[1].replace(/,/g, "")) : (info.items || []).reduce((s, it) => s + (it.ext || 0), 0); })();
     await window.ccBuyer.merge([{ order: ORDER, buyer: info.buyer, at, total }]);
-    const s = await window.ccBuyer.stats(info.buyer, at), chip = window.ccBuyer.chip(s, at);
+    if (info.feedback || info.fbRating) await post({ type: "cardcomp-fb-feedback-merge", rows: [{ order: ORDER, date: info.fbDate, rating: info.fbRating, comment: info.feedback, user: info.buyer }] });   // this order's feedback joins the history
+    const s = await window.ccBuyer.stats(info.buyer, at, ORDER), chip = window.ccBuyer.chip(s, at);
     const host = $("OrderDetails_CustomerDetails_BuyerDetails");
     if (host && !host.querySelector(".ccbuy") && !host.querySelector(".ccsaid") && (chip || (s && s.fb && s.fb.length))) {
       const p = [...host.querySelectorAll("p,span,div")].find((el) => txt(el) === info.buyer) || host; if (chip) p.appendChild(chip);
-      const d = window.ccBuyer.detail(s), q = window.ccBuyer.said(s);   // first / last / avg, and what they said about you, in plain view
+      const d = window.ccBuyer.detail(s), q = window.ccBuyer.said(s, ORDER);   // first / last / avg, and what they said about you (this order and before), in plain view
       let after = p; for (const el of [d, q]) if (el) { (after.parentElement || host).insertBefore(el, after.nextSibling); after = el; }
     }
   });

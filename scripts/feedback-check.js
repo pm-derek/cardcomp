@@ -84,6 +84,7 @@ async function bgTests() {
   let fm = await ctx.fbFeedbackMerge([{ order: "FB-1", date: "10/03/2026", rating: 5, comment: "Fast shipping, great card", user: "Chris Thomas" }, { order: "FB-2", date: "10/20/2026", rating: 4, comment: "", user: "CHRIS THOMAS" }, { order: "FB-3", date: "11/01/2026", rating: 2, comment: "Card was bent", user: "Someone Else" }]);
   assert.deepStrictEqual([fm.added, fm.total], [3, 3]); fm = await ctx.fbFeedbackMerge([{ order: "FB-1", date: "10/03/2026", rating: 5, comment: "Fast shipping, great card", user: "Chris Thomas" }]); assert.deepStrictEqual([fm.added, fm.total], [0, 3]); ok("feedback history: merged by order, idempotent");
   const ff = ctx.fbFeedbackFor(store.fbFeedback, "chris thomas"); assert.strictEqual(ff.length, 2); assert.strictEqual(ff[0].order, "FB-2"); assert.strictEqual(ff[1].c, "Fast shipping, great card"); assert.strictEqual(new Date(ff[1].at).getMonth(), 9); ok("per buyer (case-folded), newest first, dates parsed");
+  assert.deepStrictEqual(ctx.fbFeedbackFor(store.fbFeedback, "Robert Smith", ["FB-3", "FB-9"]).map((x) => x.order), ["FB-3"]); assert.strictEqual(ctx.fbFeedbackFor(store.fbFeedback, "Chris Thomas", ["FB-3"]).length, 3); ok("joined by order id too: a buyer's real name finds the feedback left under their username (single-order buyers included)");
   { const realFetch = ctx.fetch; const page = (rows) => '<table class="display dTable"><tr><th></th></tr>' + rows.map((r) => `<tr><td>East Bay Trader</td><td><a>${r[0]}</a></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3] || "<i>No Comment Left</i>"}</td><td>${r[4]}</td></tr>`).join("") + "</table>";
     const pages = { 1: page([["FB-9", "11/09/2026", 5, "Thanks!", "New Buyer"], ["FB-3", "11/01/2026", 2, "Card was bent", "Someone Else"]]), 2: page([["FB-2", "10/20/2026", 4, "", "CHRIS THOMAS"], ["FB-1", "10/03/2026", 5, "Fast shipping, great card", "Chris Thomas"]]), 3: page([]) };
     const hits = []; ctx.fetch = async (u) => { const n = +/page=(\d+)/.exec(u)[1]; hits.push(n); return { ok: true, text: async () => pages[n] || page([]) }; };
@@ -245,12 +246,12 @@ async function pageTests() {
     await c2.exposeFunction("__msg", (m) => { posted.push(m); });
     await p2.addInitScript(() => {
       window.__handlers = [];
-      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); cb && cb({ ok: true }); }, onMessage: { addListener: (f) => window.__handlers.push(f) } } };
+      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); if (m.type === "cardcomp-fb-buyer") return cb && cb({ ok: true, stats: { n: 1, name: m.name, spent: 17.18, fb: [{ order: m.order, at: Date.parse("2026-11-05"), r: 5, c: "Excellent seller, great communication" }, { order: "OLD-1", at: Date.parse("2026-08-02"), r: 4, c: "Good" }] } }); cb && cb({ ok: true }); }, onMessage: { addListener: (f) => window.__handlers.push(f) } } };
       window.__send = (m) => new Promise((res) => { window.__handlers.forEach((f) => f(m, {}, res)); });
     });
     await c2.route("https://sellerportal.tcgplayer.com/orders/**", (route) => route.fulfill({ contentType: "text/html", body: orderHTML }));
     await p2.goto("https://sellerportal.tcgplayer.com/orders/92588719-TEST01-00001");
-    await p2.addScriptTag({ path: path.join(EXT, "feedback", "order.js") });
+    await p2.addScriptTag({ path: path.join(EXT, "feedback", "badge.js") }); await p2.addScriptTag({ path: path.join(EXT, "feedback", "order.js") });
     await p2.waitForFunction(() => window.__mockReady);
     await p2.waitForTimeout(600);
     const info = posted.find((m) => m.type === "cardcomp-fb-order-info");
@@ -261,6 +262,11 @@ async function pageTests() {
     assert.strictEqual(info.items.length, 2); ok("order info: per-line price / qty / product id (the drawer's second copy of the table folded), estimated delivery, shipped, no tracking, order date, status");
     assert.strictEqual(info.feedback, "Excellent seller, great communication"); assert.strictEqual(info.fbDate, "11/5/2026, 4:17:12 PM (PST)"); assert.strictEqual(info.buyer, "Stevie Rogers"); assert.deepStrictEqual(info.pids, ["478078", "90210"]);
     ok("order info on load: order, cards, product id, feedback text + date, buyer (after the app rendered)");
+    assert.strictEqual(info.fbRating, 5);
+    await p2.waitForSelector(".ccsaid", { timeout: 5000 });
+    const fbm = posted.find((m) => m.type === "cardcomp-fb-feedback-merge"); assert.deepStrictEqual(fbm.rows[0], { order: "92588719-TEST01-00001", date: "11/5/2026, 4:17:12 PM (PST)", rating: 5, comment: "Excellent seller, great communication", user: "Stevie Rogers" }); ok("the order's own feedback (rating from the hearts) joins the feedback history");
+    const said = await p2.$eval(".ccsaid", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Feedback for you: 2 ratings · avg 4\.5★/.test(said) && /“Excellent seller, great communication” Nov 5, 2026 · this order/.test(said) && /“Good” Aug 2, 2026/.test(said), said);
+    assert.ok(!(await p2.$(".ccbuy"))); ok("a single-order buyer with feedback: the visible 'Feedback for you' panel under their name (this order marked), no repeat chip");
     let r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "x", expect: { comment: "Fast shipping", user: "stevie r3006" } }));
     assert.strictEqual(r.ok, false); assert.ok(/feedback differs/.test(r.why)); assert.ok(!r.clicked); assert.strictEqual(await p2.evaluate(() => window.__mock.drawerOpen), false); ok("row's feedback not on the order page: refused before the drawer opens");
     r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "x", expect: { comment: "Excellent seller, great communication", user: "robert s78A1F72" } }));
@@ -421,6 +427,13 @@ async function pageTests() {
     assert.strictEqual(await p7.$$eval("#chart svg g[data-i]", (g) => g.length), 12); const rt = await p7.$eval("#rt", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Nov 26 ?2 ?1 ?1/.test(rt) && /Jul 26 ?0 ?0 ?0/.test(rt), rt); ok("chart: one column per month Dec 25 to Nov 26 (empty months kept), table view (Nov: 2 orders, 1 new, 1 returning; July empty)");
     await p7.hover("#chart svg g[data-i] rect.hit"); assert.ok(/orders/.test(await p7.$eval("#tip", (e) => e.textContent))); ok("chart hover tooltip");
     assert.ok(/Card was bent/.test(await p7.$eval("#fbsum", (e) => e.textContent))); ok("feedback: ratings bars and the latest low ratings with words");
+    assert.strictEqual(tiles.length, 8); assert.ok(/needs 10\+ buyers/.test(tiles[6]), tiles[6]); assert.ok(/of orders get feedback/.test(tiles[7]) && /^15%/.test(tiles[7]) && /median 3 days/.test(tiles[7]), tiles[7]); ok("tiles: top-10% concentration (needs 10 buyers), feedback rate 2 of 13 orders, median 3 days to feedback");
+    const coh = await p7.$$eval("#cohort tbody tr", (trs) => trs.map((tr) => [...tr.children].map((td) => td.textContent.trim()).join("|")));
+    assert.ok(coh.length >= 2 && coh.some((r) => /^Dec 25\|1\|0%\|100%\|100%\|100%/.test(r)) && coh.some((r) => /^Nov 26\|1\|–\|–\|–\|–/.test(r)), coh.join("\n")); ok("cohorts: Dec 25 cohort (Old Regular) back within 60 days, Nov 26 too young for any window");
+    const lbq = await p7.$$eval("#lb tbody tr.x", (trs) => trs.map((tr) => tr.children[1].textContent.split(/\d/)[0].trim() + ":" + (tr.children[7].classList.contains("quiet") ? "quiet" : "") + ":" + (tr.querySelector("td.money i") ? tr.querySelector("td.money i").style.width : "")));
+    assert.ok(lbq.includes("Old Regular:quiet:83%") && lbq.includes("Brandon Ayers:quiet:100%") && lbq.includes("Chris Thomas::31%"), lbq.join(" ")); ok("conditional formatting: lifetime bar scaled to the top buyer, quiet regulars tinted in 'since last'");
+    assert.strictEqual(await p7.evaluate(() => document.documentElement.dataset.theme || ""), ""); await p7.click("#theme"); assert.strictEqual(await p7.evaluate(() => document.documentElement.dataset.theme), "dark"); assert.strictEqual(await p7.evaluate(() => localStorage.getItem("ccCustomersTheme")), "dark");
+    assert.strictEqual(await p7.$eval("#chart .leg i", (e) => e.style.background), "rgb(57, 135, 229)"); await p7.click("#theme"); assert.strictEqual(await p7.evaluate(() => document.documentElement.dataset.theme), "light"); ok("theme toggle: dark (chart repainted in the dark pair, choice remembered), back to light");
     await p7.fill("#q", "chris"); assert.strictEqual(await p7.$$eval("#lb tbody tr", (t) => t.length), 1); ok("search filters the leaderboard");
     await p7.click("#loadnew"); await p7.waitForFunction(() => /2 pages read, 1 new, 4 feedback stored/.test(document.getElementById("fbst").textContent)); ok("load feedback: progress line from the background's reply");
     await p7.screenshot({ path: path.join(require("os").tmpdir(), "cc-customers.png") });

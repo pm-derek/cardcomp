@@ -155,7 +155,7 @@
       if (info) {
         r.products = info.products; r.fbDate = info.fbDate; r.pageFeedback = info.feedback; r.buyer = info.buyer; card.textContent = cardsLine(info.products);
         if (window.ccBuyer && info.buyer) {   // the buyer history (Options import + pages seen) beats the 14-day guess
-          const bs = await window.ccBuyer.stats(info.buyer, 0); r.history = window.ccBuyer.line(bs, r.order);
+          const bs = await window.ccBuyer.stats(info.buyer, 0, r.order); r.history = window.ccBuyer.line(bs, r.order);
           const old = el.querySelector(".hd .tag.blue"); const chip = window.ccBuyer.chip(bs, 0);
           if (bs && bs.n) { if (old) old.remove(); if (chip) el.querySelector(".hd").insertBefore(chip, tags); }
           const past = bs && bs.fb ? bs.fb.filter((x) => x.order !== r.order && x.c) : [];   // what they said before this one

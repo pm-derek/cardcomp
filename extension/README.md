@@ -192,15 +192,21 @@ Drafts know the history too ("a regular, 7 orders since March"). Everything stay
 
 ## Customers page
 
-Options page > "Customers page", or "customers" in the thank-you inbox footer. Top buyers by lifetime spend (orders,
-average order, first and last order, days since, the feedback they left you; click a row for their orders), tiles
-(repeat buyers, revenue from repeat orders, average order, median days between orders, how many came back within 90
-days, feedback average), orders per month as new vs returning buyers (hover for the numbers, "table" for the rows),
-regulars gone quiet (3+ orders, nothing for twice their usual gap and 60+ days), and your feedback by rating with the
-latest low ratings that have words. "load feedback history" reads every page of your Feedback tab once (your login,
+Options page > "Customers page", or "customers" in the thank-you inbox footer. Light or dark (follows your system; the
+☾ / ☀ button at the top right pins one). Top buyers by lifetime spend (orders, average order, first and last order,
+days since, the feedback they left you; click a row for their orders; the lifetime cell carries a bar scaled to the top
+buyer, a regular gone quiet gets an amber "since last", a 3★-or-under average turns the feedback red), tiles (repeat
+buyers, revenue from repeat orders, average order, median days between orders, how many came back within 90 days,
+feedback average, share of revenue from the top 10% of buyers, share of orders that get feedback and how many days
+after), orders per month as new vs returning buyers (hover for the numbers, "table" for the rows), "Do first-time
+buyers come back?" (buyers by the month of their first order, share with a second order within 30 / 60 / 90 / 180
+days, shaded; blank until the month is that old), regulars gone quiet (3+ orders, nothing for twice their usual gap
+and 60+ days), and your feedback by rating with the latest low ratings that have words. "load feedback history" reads every page of your Feedback tab once (your login,
 nothing leaves the browser); after that the inbox and the hourly badge check keep it current, and "new feedback only"
 tops it up. With the history loaded, the order page, the thread panel and the buyer chip's card also show what that
-buyer said about you before ("Feedback for you: 2 ratings · avg 4.5★" and the worded ones), and the drafts know it.
+buyer said about you ("Feedback for you: 2 ratings · avg 4.5★" and the worded ones, this order marked) in a panel
+under the buyer's name, single-order buyers included (feedback is matched to the buyer by order id, since the Feedback
+tab shows usernames and orders show names); red edge when a rating is 3 or under. The drafts know it too.
 
 ## Scan & Identify check
 
