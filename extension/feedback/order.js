@@ -34,8 +34,19 @@
       hasFeedback: !!fb, buyer: txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim() };
   }
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r); }); } catch (_) { res(null); } });
-  // Report once the product list is on the page (the app renders after its API calls).
-  until(readOrder, 25000, 250).then((info) => { if (info) post(info); });
+  // Report once the product list is on the page (the app renders after its API calls). The order also joins the buyer
+  // history and the buyer's name gets the repeat-buyer badge (badge.js).
+  until(readOrder, 25000, 250).then(async (info) => {
+    if (!info) return;
+    post(info);
+    if (!window.ccBuyer || !info.buyer) return;
+    const at = Date.parse(String(info.orderDate || "").replace(/\s*\([A-Z]{2,4}\)\s*$/, "")) || 0;
+    const total = (() => { const t = txt($("OrderDetails_TransactionDetails")); const m = /Order Amount\s*\$\s?([\d,]+\.?\d*)/.exec(t); return m ? parseFloat(m[1].replace(/,/g, "")) : (info.items || []).reduce((s, it) => s + (it.ext || 0), 0); })();
+    await window.ccBuyer.merge([{ order: ORDER, buyer: info.buyer, at, total }]);
+    const s = await window.ccBuyer.stats(info.buyer, at), chip = window.ccBuyer.chip(s, at);
+    const host = $("OrderDetails_CustomerDetails_BuyerDetails");
+    if (chip && host && !host.querySelector(".ccbuy")) { const p = [...host.querySelectorAll("p,span,div")].find((el) => txt(el) === info.buyer) || host; p.appendChild(chip); }
+  });
 
   // Set a Vue-bound textarea: native setter + input event, so v-model sees it.
   function setText(ta, text) {

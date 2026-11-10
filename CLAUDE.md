@@ -423,12 +423,26 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   Refund / ship or refund the missing card). Return address: Options page `fbAddress` (never in the repo). Checks:
   section 5 on `scripts/feedback-mock-thread.html`. Rendered at 1280 (scratch). Not yet verified live: the reply
   box's markup.
+- Repeat buyers (Derek, 2026-11-09: "keep track of repeat customers, how often they've purchased; just a count, most
+  buyers are new"): `fbBuyers` in chrome.storage.local (key = name lowercased, spaces collapsed -> {name, orders:
+  {orderId: {at, total}}}), fed by the Options page CSV import (TCGplayer's Order List export: Order #, Buyer Name,
+  Order Date "Monday, 09 November 2026", Total Amt; `fbParseCSV` handles quoted commas; Derek's 2026-11-09 export:
+  2,932 orders, 2,644 buyers, 121 repeat, back to 2025-10-30) and by every Orders list row (`orders.js`, the
+  `OrderIndex_Table` rows: order link, buyer, date, total; MutationObserver re-badges on re-render) and order page
+  (order.js, buyer + Order Amount) seen; idempotent on order id (`fbBuyersMerge`). `badge.js` (listed before each
+  portal script) draws one chip for repeat buyers only: "3 orders" blue, gold from 5, nothing on a first order; on a
+  list row the count is as of that order's date (`before`), the hover has since / last / total spent. Shown on the
+  Orders list, the order page's Buyer block, the thread panel header (with the buyer's name) and the thank-you inbox
+  (replaces the 14-day "N orders" tag when the history knows the buyer). Both drafts get `history` ("3 orders since
+  Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,
+  `-import` (CSV text), `-buyer` {name, at} -> stats, `-summary` (Options page line). Checks: section 1 (parser,
+  merge, ordinal) and section 6 (mock Orders list, re-render). Extension 0.9.12.
 - Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`); return address `fbAddress`.
   RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread (82 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list (92 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's

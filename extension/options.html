@@ -24,6 +24,11 @@ code{color:#f5b301}.dim{color:#8b97a5;font-size:13px}#st{margin-top:10px;min-hei
 <label>Return address, one line<br><input id="fbaddr" type="text" placeholder="123 Street, City, ST 00000"></label>
 <button id="fbaddrsave">Save</button>
 <div id="fbaddrst" style="margin-top:10px;min-height:1.5em"></div>
+<h2 style="margin-top:28px">Order history (repeat buyers)</h2>
+<p class="dim">Seller Portal &gt; Orders &gt; Export Orders gives a CSV of every order. Import it once and the Orders list, order pages, message threads and the thank-you inbox show "3 orders" beside buyers who have ordered before (hover: since when, total spent). Orders you open afterwards are added as you browse, so a re-import is only a tidy-up. Stays in this browser.</p>
+<input id="fbcsv" type="file" accept=".csv,text/csv">
+<button id="fbcsvgo">Import</button>
+<div id="fbcsvst" style="margin-top:10px;min-height:1.5em"></div>
 <!-- RECOG-BEGIN: auto-recognition experiment, removed by scripts/strip-recog.js -->
 <h2 style="margin-top:28px">Auto-recognition (experiment)</h2>
 <p class="dim">Reads the card on stream at each lot with Claude (the key above) and fills CardComp's search. Switch it on and pick the model in the CardComp panel ("auto off" under the lot strip).</p>

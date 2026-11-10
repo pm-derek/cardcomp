@@ -24,5 +24,19 @@
     if (!rows.length) return;
     await sleep(400); rows = readRows();   // let the first page finish rendering
     try { chrome.runtime.sendMessage({ type: "cardcomp-fb-threads", rows }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+    badges();
   })();
+  // Repeat-buyer badge after the buyer's name in the Members cell ("Me, Andy Aguiar"); re-run when the list re-renders.
+  async function badges() {
+    if (!window.ccBuyer) return;
+    for (const a of document.querySelectorAll('a[data-testid="linkMessages_Home_Thread"]')) {
+      const tr = a.closest("tr"); if (!tr) continue;
+      const cell = tr.querySelectorAll("td")[1]; if (!cell || cell.querySelector(".ccbuy")) continue;
+      const names = txt(cell).split(",").map((s) => s.trim()).filter((s) => s && !/^me$/i.test(s) && !/tcgplayer/i.test(s));
+      if (!names.length) continue;
+      const s = await window.ccBuyer.stats(names[0], 0), chip = window.ccBuyer.chip(s, 0);
+      if (chip && !cell.querySelector(".ccbuy")) cell.appendChild(chip);
+    }
+  }
+  let bt = null; new MutationObserver(() => { clearTimeout(bt); bt = setTimeout(badges, 400); }).observe(document.body, { childList: true, subtree: true });
 })();

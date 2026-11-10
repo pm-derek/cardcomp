@@ -20,7 +20,7 @@ async function bgTests() {
     fetch: async (url, opt) => { calls.push({ url, opt }); return { ok: status === 200, status, json: async () => reply, text: async () => JSON.stringify({ error: { message: "nope" } }) }; },
     chrome: { storage: { local: { get: (k, cb) => cb(store), set: (o, cb) => { Object.assign(store, o); cb && cb(); } }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft;", ctx);
+  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft; this.fbParseCSV = fbParseCSV; this.fbBuyersMerge = fbBuyersMerge; this.fbBuyerStats = fbBuyerStats;", ctx);
   const row = { order: "1-A", user: "david b0501", rating: 5, comment: "Card in excellent condition. Good packaging.", date: "10/27/2026", products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"], fbDate: "11/2/2026" };
   let r = await ctx.fbDraft(row);
   assert.strictEqual(r.ok, true); assert.strictEqual(r.text, "Thanks so much, glad the Samurott V got there fast!"); ok("draft text (quotes stripped, thinking block ignored)");
@@ -61,6 +61,16 @@ async function bgTests() {
   r = await ctx.fbIssueDraft({ kind: "missing", thread: { subject: "Where Is My Order", msgs: [] }, order: { order: "O-2" }, picks: {}, facts: { edd: "November 6, 2026", shippedAt: "10/26/2026", tracking: "", method: "Standard", waitUntil: "November 10", late: false, reportedLate: true }, address: "" });
   const iu2 = JSON.parse(calls[calls.length - 1].opt.body).messages[0].content;
   assert.ok(/wait-until date \(estimated delivery \+ 2 business days\) November 10/.test(iu2) && /no tracking/.test(iu2) && /reported it more than 2 business days after/.test(iu2) && /not on file, do not invent one/.test(iu2)); ok("missing package facts (wait-until, reported late) and the no-address rule reach the prompt");
+  // buyer history: TCGplayer's Order List export, case-folded names, ordinal as of a date
+  const csv = 'Order #,Buyer Name,Order Date,Status,Shipping Type,Product Amt,Shipping Amt,Total Amt,Buyer Paid,Carrier Information\r\n"92588719-A","Chris Thomas","Monday, 09 November 2026","Ready to Ship","Standard","21.9","0.0","21.9","True"\r\n"92588719-B","CHRIS THOMAS","Thursday, 29 October 2026","Shipped","Standard","5.39","0.0","5.39","True"\r\n"92588719-C","danny lu","Monday, 09 November 2026","Ready to Ship","Standard","1.84","1.49","3.33","True"\r\n"92588719-D","Smith, Jr., Bob","Friday, 30 October 2025","Delivered","Standard","2","0","2","True"\r\n';
+  const parsed = ctx.fbParseCSV(csv);
+  assert.strictEqual(parsed.length, 4); assert.strictEqual(parsed[3].buyer, "Smith, Jr., Bob"); assert.strictEqual(parsed[0].total, 21.9); assert.strictEqual(new Date(parsed[1].at).getDate(), 29); ok("CSV: quoted commas, CRLF, dates like 'Thursday, 29 October 2026', totals");
+  store.fbBuyers = {};
+  let mr = await ctx.fbBuyersMerge(parsed); assert.deepStrictEqual([mr.added, mr.buyers, mr.orders], [4, 3, 4]); ok("merge: 4 orders, 3 buyers (Chris Thomas and CHRIS THOMAS are one)");
+  mr = await ctx.fbBuyersMerge([{ order: "92588719-A", buyer: "chris thomas", at: parsed[0].at, total: 21.9 }, { order: "92588719-E", buyer: "Chris Thomas", at: Date.now(), total: 10 }]); assert.deepStrictEqual([mr.added, mr.orders], [1, 5]); ok("merge is idempotent on order id; a list-page row adds one");
+  const bs = ctx.fbBuyerStats(store.fbBuyers, "CHRIS  thomas", 0); assert.strictEqual(bs.n, 3); assert.ok(Math.abs(bs.spent - 37.29) < 1e-9); assert.strictEqual(bs.name, "Chris Thomas"); ok("stats: 3 orders, $37.29, mixed-case spelling kept");
+  assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[1].at).before, 1); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", parsed[0].at).before, 2); ok("as of the Oct 29 order they had 1, as of Nov 9 they had 2");
+  assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "nobody", 0), null); ok("unknown buyer: null");
   // threads: stored from the Messages list read, the newest General Inquiry since the send wins
   const t0 = Date.now();
   let m = await ctx.fbThreadsPut([{ id: "1", url: "u1", order: "O-1", subject: "Condition Issue", members: "Daniel, Me" }, { id: "2", url: "u2", order: "O-1", subject: "General Inquiry", members: "Me, Daniel" }, { id: "3", url: "u3", order: "O-2", subject: "General Inquiry" }]);
@@ -339,6 +349,33 @@ async function pageTests() {
     assert.strictEqual(await p5.$("#ccir"), null); ok("back to the list without a reload: the panel is dropped");
     await p5.evaluate(() => { history.pushState({}, "", "/messages/61545705"); }); await p5.waitForSelector("#ccir table", { timeout: 8000 }); ok("a thread opened in-app: the panel mounts again");
     await c5.close();
+    console.log("6. orders.js + badge.js on a mock Orders list");
+    const c6 = await browser.newContext(), p6 = await c6.newPage(); const posted6 = [];
+    await c6.exposeFunction("__msg", (m) => { posted6.push(m); });
+    await p6.addInitScript(() => {
+      const STATS = { "chris thomas": { n: 3, first: Date.parse("2026-10-29"), last: Date.parse("2026-11-09"), spent: 37.29 }, "brandon ayers": { n: 23, first: Date.parse("2025-11-02"), last: Date.parse("2026-11-01"), spent: 400 } };
+      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); setTimeout(() => {
+        if (m.type === "cardcomp-fb-buyers-merge") return cb({ ok: true, added: m.orders.length });
+        if (m.type === "cardcomp-fb-buyer") { const s = STATS[String(m.name).toLowerCase()]; return cb({ ok: true, stats: s ? Object.assign({}, s, { before: m.at && m.at < Date.parse("2026-11-01") ? 1 : s.n }) : null }); }
+        cb(null); }, 5); } } };
+    });
+    const orow = (o, buyer, date, total) => `<tr><td class="tcg-table-body__select-cell"><input type="checkbox"></td><td><span><a href="https://sellerportal.tcgplayer.com/orders/${o}" data-testid="OrderIndex_Table_OrderLink">${o}</a></span></td><td>${buyer}</td><td><span>${date}</span></td><td>Ready to Ship</td><td>Standard</td><td>$${total}</td><td>$0.00</td><td>$${total}</td><td><button>…</button></td></tr>`;
+    const ordersHTML = `<html><body><div id="app"></div><script>setTimeout(() => { document.getElementById("app").innerHTML = '<table data-testid="OrderIndex_Table"><tbody>${orow("92588719-1", "danny lu", "11/9/2026, 7:39:01 PM", "21.90")}${orow("92588719-2", "Chris Thomas", "11/9/2026, 1:00:00 PM", "9.38")}${orow("92588719-3", "CHRIS THOMAS", "10/29/2026, 1:00:00 PM", "5.39")}${orow("92588719-4", "Brandon Ayers", "11/1/2026, 1:00:00 PM", "12.00")}</tbody></table>'; }, 300);</script></body></html>`;
+    await c6.route("https://sellerportal.tcgplayer.com/orders**", (r) => r.fulfill({ contentType: "text/html", body: ordersHTML }));
+    await p6.goto("https://sellerportal.tcgplayer.com/orders");
+    await p6.addScriptTag({ path: path.join(EXT, "feedback", "badge.js") }); await p6.addScriptTag({ path: path.join(EXT, "feedback", "orders.js") });
+    await p6.waitForFunction(() => document.querySelectorAll(".ccbuy").length >= 2, null, { timeout: 8000 });
+    await p6.waitForTimeout(400);
+    const merged = posted6.find((m) => m.type === "cardcomp-fb-buyers-merge");
+    assert.strictEqual(merged.orders.length, 4); assert.deepStrictEqual(merged.orders[0], { order: "92588719-1", buyer: "danny lu", at: Date.parse("11/9/2026, 7:39:01 PM"), total: 21.9 }); ok("Orders list: every row joins the buyer history (order, buyer, date, total)");
+    const chips = await p6.$$eval("tr", (trs) => trs.map((tr) => { const c = tr.querySelector(".ccbuy"); return c ? c.textContent + "|" + c.className : ""; }));
+    assert.deepStrictEqual(chips.filter(Boolean), ["3 orders|ccbuy rep", "regular · 23 orders|ccbuy reg".replace("regular · ", "")]); ok("badges: Chris Thomas '3 orders' blue, Brandon Ayers '23 orders' gold; danny lu (first order) and the Oct 29 Chris row (their first then) get nothing");
+    assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2);
+    await p6.evaluate(() => { const tb = document.querySelector("tbody"); tb.innerHTML = tb.innerHTML; });   // Vue re-render
+    await p6.waitForTimeout(800);
+    assert.strictEqual(await p6.$$eval(".ccbuy", (e) => e.length), 2); ok("re-render: badged again, never twice");
+    assert.ok(/3 orders since Oct 2026/.test(await p6.$eval(".ccbuy", (e) => e.title)) && /\$37\.29 total/.test(await p6.$eval(".ccbuy", (e) => e.title))); ok("hover: since, last, total spent");
+    await c6.close();
   } finally { await browser.close(); }
 }
 (async () => {

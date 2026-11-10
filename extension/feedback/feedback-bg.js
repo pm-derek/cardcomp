@@ -24,7 +24,7 @@ async function fbDraft(row, style) {
   const key = await fbKey();
   if (!key) return { ok: false, why: "no key", nokey: true };
   const neg = (row.rating || 5) <= 3;
-  const sys = FB_SYSTEM + (neg ? "\n" + FB_NEG : "") + (style === "shorter" ? "\nKeep it to one short sentence." : "") + ((row.orders || 1) > 1 ? "\nThis buyer has ordered " + row.orders + " times in the last two weeks: a repeat buyer, say so briefly." : "");
+  const sys = FB_SYSTEM + (neg ? "\n" + FB_NEG : "") + (style === "shorter" ? "\nKeep it to one short sentence." : "") + (row.history ? "\nBuyer history: " + row.history + ". A repeat buyer: say so briefly and warmly, no discounts or favors." : (row.orders || 1) > 1 ? "\nThis buyer has ordered " + row.orders + " times in the last two weeks: a repeat buyer, say so briefly." : "");
   const lines = ["Buyer: " + (row.user || "unknown"), "Rating: " + (row.rating || "?") + " of 5", "Order date: " + (row.date || "?"),
     row.fbDate ? "Feedback left: " + row.fbDate : "", "Feedback: " + String(row.comment || "").trim(),
     "Cards in the order:" + ((row.products || []).length ? "\n" + row.products.map((p) => "- " + p).join("\n") : " (not read)")].filter(Boolean);
@@ -99,6 +99,15 @@ function fbHandle(msg, sender, reply) {
     reply({ ok: true }); return true;
   }
   if (msg.type === "cardcomp-fb-pending") { fbBadge(msg.n); reply({ ok: true }); return true; }   // the panel's own count
+  if (msg.type === "cardcomp-fb-buyers-merge") { fbBuyersMerge(msg.orders || []).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
+  if (msg.type === "cardcomp-fb-buyers-import") { fbBuyersMerge(fbParseCSV(msg.csv || "")).then((r) => reply(Object.assign({ ok: true }, r)), (e) => reply({ ok: false, why: e.message })); return true; }
+  if (msg.type === "cardcomp-fb-buyer") { fbBuyersGet().then((m) => reply({ ok: true, stats: fbBuyerStats(m, msg.name, msg.at || 0) })); return true; }
+  if (msg.type === "cardcomp-fb-buyers-summary") {
+    fbBuyersGet().then((m) => { const bs = Object.values(m), n = bs.reduce((s, b) => s + Object.keys(b.orders).length, 0), rep = bs.filter((b) => Object.keys(b.orders).length > 1).length;
+      const ats = bs.flatMap((b) => Object.values(b.orders).map((o) => o.at || 0)).filter(Boolean);
+      reply({ ok: true, buyers: bs.length, orders: n, repeat: rep, first: ats.length ? Math.min(...ats) : 0, last: ats.length ? Math.max(...ats) : 0 }); });
+    return true;
+  }
   if (msg.type === "cardcomp-fb-threads") {   // messages.js read the Messages list
     fbThreadsPut(msg.rows || []).then((m) => { FB_TWAIT.splice(0).forEach((w) => w.res(m)); reply({ ok: true }); });
     return true;
@@ -208,6 +217,7 @@ async function fbIssueDraft(q) {
   const lines = ["Issue type: " + (q.kind || "other"), "Subject: " + ((q.thread || {}).subject || "")];
   const o = q.order || {};
   if (o.items && o.items.length) lines.push("Order " + (o.order || "") + (o.orderDate ? " placed " + o.orderDate : "") + ", cards: " + o.items.map((it) => `${it.name} (${it.printing}, sold as ${it.soldAs}, charged $${it.charged != null ? it.charged.toFixed(2) : "?"}${it.qty > 1 ? " x" + it.qty : ""})`).join("; "));
+  if (o.history) lines.push("Buyer history: " + o.history + " (a repeat buyer: a little extra warmth is right, no discounts)");
   const p = q.picks || {};
   if (p.cards && p.cards.length) lines.push("Refund numbers (use these exactly): " + p.cards.map((c) => `${c.name}: charged $${(c.charged || 0).toFixed(2)}, at ${c.arrived} it goes for $${c.value != null ? c.value.toFixed(2) : "?"} (${c.valueSrc || ""}), refund $${c.refund != null ? c.refund : "?"}`).join("; ") + (p.extra ? `; extra for the trouble $${p.extra}` : "") + `; total refund $${p.total}`);
   else if (q.kind === "condition") lines.push("No refund numbers yet (no card picked in the panel).");
@@ -230,6 +240,53 @@ async function fbIssueDraft(q) {
   if (!text) return { ok: false, why: "empty reply" };
   const u = j.usage || {};
   return { ok: true, text, cost: ((u.input_tokens || 0) * 4 + (u.output_tokens || 0) * 20) / 1e6 };
+}
+
+// Buyer history (Derek, 2026-11-09: repeat customers). fbBuyers: key (name lowercased, spaces collapsed) -> {name,
+// orders: {orderId: {at, total}}}. Fed by the Options page CSV import (TCGplayer's Order List export: Order #, Buyer
+// Name, Order Date "Monday, 09 November 2026", Total Amt) and by every Orders list page / order page seen. Idempotent
+// on order id. Stats: n, first, last, spent, before (orders on or before a date).
+const fbBuyerKey = (name) => String(name || "").toLowerCase().replace(/\s+/g, " ").trim();
+const fbBuyersGet = () => new Promise((res) => chrome.storage.local.get("fbBuyers", (r) => res((r && r.fbBuyers) || {})));
+async function fbBuyersMerge(orders) {
+  const m = await fbBuyersGet(); let added = 0;
+  (orders || []).forEach((o) => {
+    const k = fbBuyerKey(o.buyer), id = String(o.order || "").trim(); if (!k || !id) return;
+    const b = (m[k] = m[k] || { name: String(o.buyer).trim(), orders: {} });
+    if (!b.orders[id]) added++;
+    const prev = b.orders[id] || {};
+    b.orders[id] = { at: o.at || prev.at || 0, total: o.total != null ? o.total : (prev.total != null ? prev.total : null) };
+    if (/[a-z]/.test(String(o.buyer)) && /[A-Z]/.test(String(o.buyer))) b.name = String(o.buyer).trim();   // prefer a mixed-case spelling
+  });
+  await new Promise((res) => chrome.storage.local.set({ fbBuyers: m }, res));
+  return { added, buyers: Object.keys(m).length, orders: Object.values(m).reduce((s, b) => s + Object.keys(b.orders).length, 0) };
+}
+function fbBuyerStats(m, name, at) {
+  const b = m[fbBuyerKey(name)]; if (!b) return null;
+  const os = Object.values(b.orders); if (!os.length) return null;
+  const ats = os.map((o) => o.at || 0).filter(Boolean);
+  const endOfDay = (t) => { const d = new Date(t); d.setHours(23, 59, 59, 999); return d.getTime(); };
+  return { n: os.length, first: ats.length ? Math.min(...ats) : 0, last: ats.length ? Math.max(...ats) : 0, spent: os.reduce((s, o) => s + (o.total || 0), 0),
+    before: at ? os.filter((o) => !o.at || o.at <= endOfDay(at)).length : os.length, name: b.name };
+}
+// TCGplayer's Order List CSV (Options page import). Quoted fields, commas inside quotes, CRLF.
+function fbParseCSV(text) {
+  const rows = [], s = String(text || "").replace(/^﻿/, ""); let i = 0, row = [], cell = "", q = false;
+  while (i < s.length) {
+    const c = s[i];
+    if (q) { if (c === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && s[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+    i++;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  if (!rows.length) return [];
+  const head = rows[0].map((h) => h.trim().toLowerCase()), col = (rx) => head.findIndex((h) => rx.test(h));
+  const iO = col(/^order\s*#|order number/), iB = col(/buyer name/), iD = col(/order date/), iT = col(/total am/);
+  if (iO < 0 || iB < 0) return [];
+  return rows.slice(1).filter((r) => r[iO] && r[iB]).map((r) => ({ order: r[iO].trim(), buyer: r[iB].trim(), at: iD >= 0 ? (Date.parse(r[iD]) || 0) : 0, total: iT >= 0 ? (parseFloat(r[iT]) || 0) : null }));
 }
 
 // Icon badge: how many worded, named feedbacks of the last 14 days are not yet replied to or skipped. The panel reports
