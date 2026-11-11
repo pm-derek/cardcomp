@@ -217,17 +217,6 @@ buyer said about you ("Feedback for you: 2 ratings · avg 4.5★" and the worded
 under the buyer's name, single-order buyers included (feedback is matched to the buyer by order id, since the Feedback
 tab shows usernames and orders show names); red edge when a rating is 3 or under. The drafts know it too.
 
-## Scan & Identify check
-
-On Seller Portal > Scan & Identify in the expanded view (scan and catalog pictures side by side) every identified scan
-gets a likeness score next to its name: green "match 0.91" looks right, amber "check" worth a look, red "⚠ 0.42" the
-scan does not look like the catalog picture. A dark bar at the bottom left counts them; "review" opens the flagged ones
-one at a time in a big side-by-side view (arrow keys or j / k step, F presses that scan's Find New Match, Esc closes;
-click any score for the same view). Scans matched to the same card carry "×N same match"; after you re-match one of
-them the bar offers "open the next one's Find New Match with <new card> typed", one click per copy instead of
-retyping. The scores are a first guess: tell Claude what wrong matches score and the thresholds get tuned. Not checked
-yet: 1st Edition vs Unlimited and cosmos holo calls (needs a few scan photos of each to build from).
-
 ## Footer status
 
 With the extension present, a line under the catalog count reads `Whatnot ✓ · store ✓`. `no Whatnot tab`

@@ -438,7 +438,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   (replaces the 14-day "N orders" tag when the history knows the buyer). Both drafts get `history` ("3 orders since
   Oct 2026, $37.29 total, last Nov 9, 2026": warmth, no discounts). Messages: `cardcomp-fb-buyers-merge`,
   `-import` (CSV text), `-buyer` {name, at} -> stats, `-summary` (Options page line). Checks: section 1 (parser,
-  merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13; 0.9.14 adds the feedback history, Customers page and Scan & Identify check below.
+  merge, ordinal, LTV) and section 6 (mock Orders list, re-render, hover card). Extension 0.9.13; 0.9.14 adds the feedback history and Customers page below.
 - Orders list is a grid now (TCGplayer, 2026-11-10; Derek: "looks like an update to the orders page"): the table labels
   are gone (`OrderIndex_Table` / `OrderIndex_Table_OrderLink`), the grid uses `OrderIndex_Grid` /
   `OrderIndex_Grid_OrderLink`, `tr.tcg-grid-row`, and every `td` carries `data-grid-header-value` (orderNumber, buyerName,
@@ -492,28 +492,22 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   button, choice in localStorage `ccCustomersTheme`; the chart reads `--c-ret` / `--c-new` so each mode uses a
   validated pair (light #1849a9 / #d97706, dark #3987e5 / #bf8418 on #14181d, dataviz validator all pass).
   Checks: feedback-check section 1 (store, loader with mocked fetch) and 7 (page on mock data, theme toggle).
-- Scan & Identify check (Derek, 2026-11-10, pain points: "manually reviewing each scan image with the catalog image",
-  "clicking find new match for 5 of the same card"; also 1st Ed / Unlimited, cosmos holo and stamp misreads, not built:
-  no sample scans yet): `extension/scan/scan.js` (content script `sellerportal.tcgplayer.com/scan-identify*`) reads each
-  `.manage-scans-identified-items-grid__expanded-container` (expanded view only: imgs labeled "Scan Image" / "Catalog
-  Image", name `p.font-weight-700` (own text nodes only, since our badges live inside it), Card # / Set lines, variant
-  text, scan sequence, `[data-testid=identified-item-find-new-match]`) and asks `cardcomp-scan-sim {scan, cat}`;
-  `scan/scan-bg.js` (imported by bg.js, SCAN tag) fetches both pictures (host permissions: the two
-  `tcgplayer-ims-image-upload-bucket-prd-us-east-1` S3 hosts for scans, tcgplayer-cdn for catalog photos) and returns
-  `IM.sim` of their `IM.cardCells` templates (recog/imgmatch.js, so strip-recog now keeps that one file and the
-  tcgplayer-cdn host). Badge after the name: ok >= 0.70 / check >= 0.50 / bad (first guesses, untested on real scan
-  photos: the saved page had no image files), row left-edge tint, `#ccscanbar` counts + "review", `#ccscanview` big
-  side-by-side (arrows / j k, F = Find New Match, Esc). Groups: same name + variant -> "×N same match" chip (click
-  highlights). Re-match: when a row's name changes after scoring (`onRematch`) the bar offers `fixNext`: scroll, click
-  that row's Find New Match, wait for the drawer (`.find-catalog-match-drawer`), type "<new name> <number>" into its
-  search input (native setter + input + Enter). The drawer's result markup is unknown, so picking the result and Save
-  Match stay with Derek. Checks: feedback-check section 8 (mock page from the saved markup, 4 rows, mocked sims).
+- Scan & Identify check: removed 2026-11-11 (Derek: "clicking review does nothing, did not detect obvious issues, this ui
+  also blocks buttons on that left drawer. fix or remove"). Shipped in 0.9.14 as a likeness score per identified scan
+  (scan photo vs catalog photo through the picture matcher, imgmatch.js), a fixed bar bottom-left and a "fix the next copy" helper.
+  Live it never scored a row (40 scans: 0 scored, 8 "no score", the rest stuck "scoring..."), so "review" stayed
+  disabled, and the bar sat over the page's Filters drawer. Never confirmed why the scores failed (the S3 scan photos or
+  the matcher in the service worker; the cloud sandbox cannot load them). Removed in 0.9.18: extension/scan/, its
+  manifest entry and the two S3 host permissions, the bg.js lines, feedback-check section 8; the strip script again removes
+  imgmatch.js and the tcgplayer-cdn host with the rest of the experiment. If it comes back: start from a few real scan +
+  catalog photo pairs (right and wrong matches) to prove the scores separate, and keep any UI out of the bottom-left
+  corner and off the drawers.
 - Options page: the Anthropic key field is wired in options.js (test via `cardcomp-fb-key-test`); return address `fbAddress`.
   RECOG: the field was moved out of the experiment's block on 2026-11-06, since the feedback replies use it too; strip-recog keeps it and the api.anthropic.com host.
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list, customers.html and scan.js on mock pages (141 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list and customers.html on mock data (133 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
