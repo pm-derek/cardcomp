@@ -468,35 +468,6 @@ async function pageTests() {
     await p7.screenshot({ path: path.join(require("os").tmpdir(), "cc-customers.png") });
     await c7.close();
 
-    console.log("8. scan.js on a mock Scan & Identify page");
-    const c8 = await browser.newContext({ viewport: { width: 1280, height: 900 } }), p8 = await c8.newPage(); const posted8 = [];
-    await c8.exposeFunction("__msg8", (m) => { posted8.push(m); });
-    await p8.addInitScript(() => {
-      const SIM = { s1: 0.91, s2: 0.42, s3: 0.93, s4: 0.63 };
-      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg8(m); setTimeout(() => { if (m.type === "cardcomp-scan-sim") { const k = /#(s\d)/.exec(m.scan)[1]; return cb({ ok: true, s: SIM[k] }); } cb(null); }, 10); } } };
-    });
-    const px = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-    const row8 = (id, seq, name, num, set, variant) => `<div class="manage-scans-identified-items-grid__expanded-container"><div class="manage-scans-identified-items-grid__expanded-images-container"><div><div class="image-cell"><img class="image-cell__image image-cell__image--expanded" lazy="loaded" src="${px}#${id}"></div><p class="typography-detail">Scan Image</p></div><div><div class="image-cell"><img class="image-cell__image image-cell__image--expanded" lazy="loaded" src="${px}#cat"></div><p class="typography-detail">Catalog Image</p></div></div><div class="manage-scans-identified-items-grid__expanded-body"><div class="manage-scans-identified-items-grid__expanded-details-container"><p class="typography-body font-weight-700 margin-0">${name}</p><p class="typography-detail font-weight-600 margin-0">Card #: <span>${num}</span></p><p class="typography-detail font-weight-600 margin-0">Set: <span>${set}</span></p><div class="manage-scans-identified-items-grid__variant-row"><span class="manage-scans-identified-items-grid__variant-view-text">${variant}</span></div><p class="typography-detail font-weight-600 margin-0">Scan sequence #: <span>${seq}</span></p></div><div class="manage-scans-identified-items-grid__expanded-actions-wrapper"><button data-testid="identified-item-find-new-match" onclick="document.querySelector('.find-catalog-match-drawer .tcg-drawer').style.display='block'">Find New Match</button></div></div></div>`;
-    const scanHTML = `<html><body><h1>Scan &amp; Identify</h1><div id="grid">${row8("s1", 160, "Archaludon - 107/142", "107/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s2", 161, "Okidogi", "111/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s3", 162, "Okidogi", "111/142", "SV07: Stellar Crown", "Holofoil, Rare, Near Mint, English")}${row8("s4", 163, "Noivern", "150/182", "SV04: Paradox Rift", "Holofoil, Common, Near Mint, English")}</div><div class="find-catalog-match-drawer"><div class="tcg-drawer--right is-modal tcg-drawer" style="display: none;"><div class="find-catalog-match-details"><div class="find-catalog-match-details__filter-search-bar"><input type="text" placeholder="Search"></div></div></div></div></body></html>`;
-    await c8.route("https://sellerportal.tcgplayer.com/scan-identify**", (r) => r.fulfill({ contentType: "text/html", body: scanHTML }));
-    await p8.goto("https://sellerportal.tcgplayer.com/scan-identify");
-    await p8.addScriptTag({ path: path.join(EXT, "scan", "scan.js") });
-    await p8.waitForFunction(() => document.querySelectorAll(".ccsc.ok,.ccsc.chk,.ccsc.bad").length === 4, null, { timeout: 8000 });
-    const badges = await p8.$$eval(".manage-scans-identified-items-grid__expanded-container", (cs) => cs.map((c) => c.querySelector(".ccsc").className.replace("ccsc ", "") + ":" + c.querySelector(".ccsc").textContent + (c.querySelector(".ccgrp") ? "|" + c.querySelector(".ccgrp").textContent : "")));
-    assert.deepStrictEqual(badges, ["ok:match 0.91", "bad:⚠ 0.42|×2 same match", "ok:match 0.93|×2 same match", "chk:check 0.63"]); ok("scores: green / red / amber badges, both Okidogi rows carry '×2 same match'");
-    assert.ok(posted8.filter((m) => m.type === "cardcomp-scan-sim").every((m) => /#cat$/.test(m.cat))); ok("each row sent its scan and catalog picture to the background");
-    const bar = await p8.$eval("#ccscanbar", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/4 scans 2 look right 1 check 1 likely wrong/.test(bar), bar); ok("bar counts");
-    await p8.click("#ccscanbar [data-review]"); await p8.waitForSelector("#ccscanview"); let v = await p8.$eval("#ccscanview", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Okidogi/.test(v) && /0\.42/.test(v) && /1 of 2 flagged/.test(v), v); ok("review opens the big view on the worst flagged scan");
-    await p8.keyboard.press("ArrowRight"); v = await p8.$eval("#ccscanview", (e) => e.textContent.replace(/\s+/g, " ")); assert.ok(/Noivern/.test(v) && /2 of 2/.test(v), v); await p8.keyboard.press("ArrowRight"); v = await p8.$eval("#ccscanview", (e) => e.textContent); assert.ok(/Okidogi/.test(v)); ok("arrow keys step through the flagged scans and wrap");
-    await p8.keyboard.press("f"); await p8.waitForFunction(() => !document.getElementById("ccscanview")); assert.strictEqual(await p8.$eval(".find-catalog-match-drawer .tcg-drawer", (e) => e.style.display), "block"); ok("F closes the view and presses that scan's Find New Match");
-    await p8.evaluate(() => { document.querySelector(".find-catalog-match-drawer .tcg-drawer").style.display = "none"; });
-    // Derek re-matched the 2nd row (name changes): the bar offers the other Okidogi
-    await p8.evaluate(() => { const c = document.querySelectorAll(".manage-scans-identified-items-grid__expanded-container")[1]; c.querySelector("p.font-weight-700").firstChild.textContent = "Okidogi ex - 111/142"; c.querySelector("img").src = c.querySelector("img").src.replace("#s2", "#s1"); });
-    await p8.waitForFunction(() => /1 more scan had/.test(document.getElementById("ccscanbar").textContent), null, { timeout: 5000 });
-    assert.ok(/Okidogi ex/.test(await p8.$eval("#ccscanbar [data-fixnext]", (e) => e.textContent))); ok("after a re-match the bar offers the remaining scan with the new card's name");
-    await p8.click("#ccscanbar [data-fixnext]"); await p8.waitForFunction(() => document.querySelector(".find-catalog-match-drawer input").value !== "", null, { timeout: 6000 });
-    assert.strictEqual(await p8.$eval(".find-catalog-match-drawer input", (e) => e.value), "Okidogi ex 111"); assert.ok(!/more scan/.test(await p8.$eval("#ccscanbar", (e) => e.textContent))); ok("fix next: opens the other scan's Find New Match with the name and number typed, offer cleared");
-    await c8.close();
   } finally { await browser.close(); }
 }
 (async () => {
