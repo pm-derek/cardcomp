@@ -20,7 +20,7 @@ async function bgTests() {
     fetch: async (url, opt) => { calls.push({ url, opt }); return { ok: status === 200, status, json: async () => reply, text: async () => JSON.stringify({ error: { message: "nope" } }) }; },
     chrome: { storage: { local: { get: (k, cb) => cb(store), set: (o, cb) => { Object.assign(store, o); cb && cb(); } }, session: { get: (k, cb) => cb({}), set: () => {} } }, tabs: {}, action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} }, alarms: { get: (n, cb) => cb(null), create: () => {}, onAlarm: { addListener: () => {} } } } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft; this.fbParseCSV = fbParseCSV; this.fbBuyersMerge = fbBuyersMerge; this.fbBuyerStats = fbBuyerStats; this.fbFeedbackMerge = fbFeedbackMerge; this.fbFeedbackFor = fbFeedbackFor; this.fbFeedbackLoad = fbFeedbackLoad;", ctx);
+  vm.runInContext(fs.readFileSync(path.join(EXT, "feedback", "feedback-bg.js"), "utf8") + "\nthis.fbDraft = fbDraft; this.fbHandle = fbHandle; this.fbParseHTML = fbParseHTML; this.fbPendingOf = fbPendingOf; this.fbThreadsPut = fbThreadsPut; this.fbThreadsGet = fbThreadsGet; this.fbPickThread = fbPickThread; this.fbThread = fbThread; this.fbIssueDraft = fbIssueDraft; this.fbParseCSV = fbParseCSV; this.fbBuyersMerge = fbBuyersMerge; this.fbBuyerStats = fbBuyerStats; this.fbFeedbackMerge = fbFeedbackMerge; this.fbFeedbackFor = fbFeedbackFor; this.fbFeedbackLoad = fbFeedbackLoad; this.fbTab = fbTab;", ctx);
   const row = { order: "1-A", user: "david b0501", rating: 5, comment: "Card in excellent condition. Good packaging.", date: "10/27/2026", products: ["Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil"], fbDate: "11/2/2026" };
   let r = await ctx.fbDraft(row);
   assert.strictEqual(r.ok, true); assert.strictEqual(r.text, "Thanks so much, glad the Samurott V got there fast!"); ok("draft text (quotes stripped, thinking block ignored)");
@@ -87,6 +87,19 @@ async function bgTests() {
   await ctx.fbBuyersMerge([{ order: "92588719-A", buyer: "Chris Thomas", at: d9 + 13 * 36e5, total: 21.9 }, { order: "92588719-F", buyer: "Chris Thomas", at: d9 + 19 * 36e5 + 39 * 6e4, total: 3 }]);
   assert.strictEqual(store.fbBuyers["chris thomas"].orders["92588719-A"].at, d9 + 13 * 36e5); ok("a list row's exact time replaces the import's midnight for the same order");
   assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 13 * 36e5).before, 2); assert.strictEqual(ctx.fbBuyerStats(store.fbBuyers, "Chris Thomas", d9 + 19 * 36e5 + 39 * 6e4).before, 3); ok("same day, two orders: the 1 PM row counts 2, the 7:39 PM row counts 3");
+  // the reused background tab: never the tab Derek is on, never the asking tab, never a tab he navigated away
+  { const tabs = {}, created = [], updated = []; let sess = {}, nextId = 100;
+    const realChrome = ctx.chrome;
+    ctx.chrome = Object.assign({}, realChrome, { storage: Object.assign({}, realChrome.storage, { session: { get: (k, cb) => cb(Object.assign({}, sess)), set: (o) => Object.assign(sess, o) } }),
+      tabs: { get: async (id) => { if (!tabs[id]) throw new Error("no tab"); return tabs[id]; }, update: async (id, o) => { updated.push(id); Object.assign(tabs[id], { url: o.url }); return tabs[id]; }, create: async (o) => { const t = { id: nextId++, url: o.url, active: !!o.active }; tabs[t.id] = t; created.push(t.id); return t; } } });
+    let id = await ctx.fbTab("A-1", 1, 7); assert.deepStrictEqual([created.length, sess.fbTab, sess.fbTabUrl], [1, id, "https://sellerportal.tcgplayer.com/orders/A-1"]);
+    assert.strictEqual(await ctx.fbTab("A-2", 1, 7), id); assert.deepStrictEqual([created.length, updated.length], [1, 1]); ok("background order tab: created once, then reused while it still shows what the extension put there");
+    tabs[id].url = "https://store.tcgplayer.com/admin/Seller/Feedback";
+    let id2 = await ctx.fbTab("A-3", 1, 7); assert.notStrictEqual(id2, id); assert.strictEqual(tabs[id].url, "https://store.tcgplayer.com/admin/Seller/Feedback"); ok("the tab was navigated to Feedback: left alone, a new background tab is opened (the redirect bug)");
+    tabs[id2].active = true; let id3 = await ctx.fbTab("A-4", 1, 7); assert.notStrictEqual(id3, id2); assert.strictEqual(tabs[id2].url, "https://sellerportal.tcgplayer.com/orders/A-3"); ok("the tab is the one in front: left alone");
+    let id4 = await ctx.fbTab("A-5", 1, id3); assert.notStrictEqual(id4, id3); ok("the tab is the one that asked: left alone");
+    tabs[id4].url = "https://sellerportal.tcgplayer.com/orders/A-5?tab=1"; assert.strictEqual(await ctx.fbTab("A-6", 1, 7), id4); ok("same page with a query added still counts as the extension's");
+    ctx.chrome = realChrome; }
   // feedback history: every Feedback tab row seen, by order; per buyer newest first; the loader with a mocked fetch
   store.fbFeedback = {};
   let fm = await ctx.fbFeedbackMerge([{ order: "FB-1", date: "10/03/2026", rating: 5, comment: "Fast shipping, great card", user: "Chris Thomas" }, { order: "FB-2", date: "10/20/2026", rating: 4, comment: "", user: "CHRIS THOMAS" }, { order: "FB-3", date: "11/01/2026", rating: 2, comment: "Card was bent", user: "Someone Else" }]);

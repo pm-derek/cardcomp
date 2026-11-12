@@ -46,33 +46,48 @@ async function fbDraft(row, style) {
 
 // One background tab for order pages, reused. Opening an order and sending a message both go through it; order.js in
 // that tab reports the order (cards, feedback, buyer) when it has loaded and does the Contact Buyer fill on request.
+// Reuse only a tab that is still where the extension left it, is not the tab Derek is on, and is not the tab that asked
+// (Derek, 2026-11-12: "the feedback page is redirecting me to an order automatically"). The tab once used for orders was
+// brought forward after a send, Derek kept browsing in it, opened Feedback there, and the inbox's order reads drove that
+// same tab to an order page. Anything else: a new background tab.
 const FB_ORDER_URL = (o) => "https://sellerportal.tcgplayer.com/orders/" + o;
 const FB_WAIT = {};   // order id -> [resolve]
-async function fbTab(order, win) {
-  const k = "fbTab";
-  const cur = await new Promise((res) => chrome.storage.session.get(k, (r) => res(r && r[k])));
-  if (cur != null) {
-    try { const t = await chrome.tabs.get(cur); if (t) { await chrome.tabs.update(cur, { url: FB_ORDER_URL(order), active: false }); return cur; } } catch (_) {}
+const fbBare = (u) => String(u || "").split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+function fbOurs(t, left, avoid) {
+  if (!t || t.active || (avoid != null && t.id === avoid)) return false;
+  const now = fbBare(t.pendingUrl || t.url);
+  return !!now && !!left && now === fbBare(left);
+}
+async function fbWorkTab(url, win, avoid) {
+  const s = await new Promise((res) => chrome.storage.session.get(["fbTab", "fbTabUrl"], (r) => res(r || {})));
+  if (s.fbTab != null) {
+    try {
+      const t = await chrome.tabs.get(s.fbTab);
+      if (fbOurs(t, s.fbTabUrl, avoid)) { await chrome.tabs.update(t.id, { url, active: false }); chrome.storage.session.set({ fbTabUrl: url }); return t.id; }
+    } catch (_) {}
   }
-  const t = await chrome.tabs.create(Object.assign({ url: FB_ORDER_URL(order), active: false }, win != null ? { windowId: win } : {}));
-  chrome.storage.session.set({ [k]: t.id });
+  let t;
+  try { t = await chrome.tabs.create(Object.assign({ url, active: false }, win != null ? { windowId: win } : {})); }
+  catch (_) { t = await chrome.tabs.create({ url, active: false }); }
+  chrome.storage.session.set({ fbTab: t.id, fbTabUrl: url });
   return t.id;
 }
+const fbTab = (order, win, avoid) => fbWorkTab(FB_ORDER_URL(order), win, avoid);
 function fbAwaitOrder(order, ms) {
   return new Promise((res) => {
     (FB_WAIT[order] = FB_WAIT[order] || []).push(res);
     setTimeout(() => { const i = (FB_WAIT[order] || []).indexOf(res); if (i >= 0) { FB_WAIT[order].splice(i, 1); res(null); } }, ms);
   });
 }
-async function fbOpenOrder(order, win) {
-  const tabId = await fbTab(order, win);
+async function fbOpenOrder(order, win, avoid) {
+  const tabId = await fbTab(order, win, avoid);
   const info = await fbAwaitOrder(order, 30000);
   return { tabId, info };
 }
 // true when handled (reply is async). Hooked from bg.js.
 function fbHandle(msg, sender, reply) {
   if (!msg || typeof msg.type !== "string" || !msg.type.startsWith("cardcomp-fb-")) return false;
-  const win = sender && sender.tab ? sender.tab.windowId : null;
+  const win = sender && sender.tab ? sender.tab.windowId : null, from = sender && sender.tab ? sender.tab.id : null;
   if (msg.type === "cardcomp-fb-key") { fbKey().then((k) => reply({ ok: !!k })); return true; }
   if (msg.type === "cardcomp-fb-key-test") {   // Options page: one tiny call proves the key
     fbKey().then(async (key) => {
@@ -126,16 +141,16 @@ function fbHandle(msg, sender, reply) {
     return true;
   }
   if (msg.type === "cardcomp-fb-thread") {   // panel: the thread url for an order (opens the Messages list when unknown)
-    fbThread(msg.order, msg.since || 0, win).then((url) => reply(url ? { ok: true, url } : { ok: false }), (e) => reply({ ok: false, why: e.message }));
+    fbThread(msg.order, msg.since || 0, win, from).then((url) => reply(url ? { ok: true, url } : { ok: false }), (e) => reply({ ok: false, why: e.message }));
     return true;
   }
   if (msg.type === "cardcomp-fb-order") {   // feedback.js: open the order in the background tab, return what it shows
-    fbOpenOrder(msg.order, win).then(({ info }) => reply(info ? { ok: true, info } : { ok: false, why: "the order page did not load in 30 s" }), (e) => reply({ ok: false, why: e.message }));
+    fbOpenOrder(msg.order, win, from).then(({ info }) => reply(info ? { ok: true, info } : { ok: false, why: "the order page did not load in 30 s" }), (e) => reply({ ok: false, why: e.message }));
     return true;
   }
   if (msg.type === "cardcomp-fb-send") {   // feedback.js: Derek tapped Send on a draft
     (async () => {
-      const { tabId, info } = await fbOpenOrder(msg.order, win);
+      const { tabId, info } = await fbOpenOrder(msg.order, win, from);
       if (!info) return reply({ ok: false, why: "the order page did not load" });
       let r;
       try { r = await chrome.tabs.sendMessage(tabId, { type: "cardcomp-fb-fill", order: msg.order, text: msg.text, expect: msg.expect || null }); } catch (e) { r = { ok: false, why: "no reply from the order tab" }; }
@@ -165,15 +180,12 @@ function fbPickThread(list, since) {   // newest General Inquiry seen since the 
   const fresh = gi.filter((x) => !since || (x.seen || 0) >= since);
   return (fresh[0] || gi[0] || list[0]).url;
 }
-async function fbThread(order, since, win) {
+async function fbThread(order, since, win, avoid) {
   let m = await fbThreadsGet();
   const have = fbPickThread(m[order], since);
   if (have && (!since || (m[order] || []).some((x) => (x.seen || 0) >= since))) return have;
   const got = new Promise((res) => { const w = { res }; FB_TWAIT.push(w); setTimeout(() => { const i = FB_TWAIT.indexOf(w); if (i >= 0) { FB_TWAIT.splice(i, 1); res(null); } }, 30000); });
-  const k = "fbTab", cur = await new Promise((res) => chrome.storage.session.get(k, (r) => res(r && r[k])));
-  const url = "https://sellerportal.tcgplayer.com/messages";
-  try { if (cur != null) await chrome.tabs.update(cur, { url, active: false }); else { const t = await chrome.tabs.create(Object.assign({ url, active: false }, win != null ? { windowId: win } : {})); chrome.storage.session.set({ [k]: t.id }); } }
-  catch (_) { const t = await chrome.tabs.create({ url, active: false }); chrome.storage.session.set({ [k]: t.id }); }
+  await fbWorkTab("https://sellerportal.tcgplayer.com/messages", win, avoid);
   m = (await got) || m;
   return fbPickThread(m[order], since) || null;
 }

@@ -456,6 +456,13 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   question counts every order of that day (by `dayStart`), an exact one counts earlier times plus that day's date-only
   orders. orders.js passes the row's order id (`ccBuyer.stats(name, at, order)`, the same field the feedback join
   uses). Extension 0.9.17; checks in feedback-check section 1.
+- Background tab hijack (Derek, 2026-11-12: "the feedback page is redirecting me to an order automatically"): `fbTab` reused
+  the tab id saved in session storage whatever had happened to it. That tab is brought forward after a send that needs a
+  look; Derek kept using it, opened Feedback in it, and the inbox's order reads navigated it to an order page under him.
+  `fbWorkTab(url, win, avoid)` now reuses the saved tab only when it still shows the address the extension last put
+  there (`fbTabUrl`, compared without query / hash), is not the active tab and is not the tab that asked (`sender.tab.id`,
+  passed as `avoid` by the order read, the send and the thread lookup); otherwise it opens a new background tab and saves
+  that one. The Messages-list lookup (`fbThread`) goes through the same helper. Extension 0.9.19; feedback-check section 1.
 - Open-order totals (Derek, 2026-11-10: "a sum of the orders whose status is Ready to Ship: product, shipping, total; as
   I generate a new pull sheet this is the sales I've made"): orders.js `openBar(rows)` draws `#ccopen` after
   `OrderIndex_QuickFilters_Container` (else before the grid / table): count, product, shipping and total of the rows on
@@ -507,7 +514,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list and customers.html on mock data (133 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list and customers.html on mock data (138 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
