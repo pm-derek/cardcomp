@@ -2012,15 +2012,31 @@ function zhSummary(hits, lead, recent){
 }
 // Candidates: the lead card(s), then the other language's twin (same name in the matching set: EN_TO_JP_NAMES /
 // EN_TO_JP, same rarity tier first), then extras (a reading's other printings), then same name and tier anywhere. Max 8.
-const zhBase=n=>String(n||"").toLowerCase().replace(/\s+\d+\s+\d+\s*$/,"").replace(/\s+-\s+.*$/,"").replace(/\s+/g," ").trim();
+// punctuation folded too (30th Classic Collection twins: "Genesect-EX" / "Genesect EX", "Palkia LV.X" / "Palkia LVX",
+// "Darkrai & Cresselia LEGEND" / "Darkrai and Cresselia Legend Top", "Erika's" / "Erikas")
+const zhBase=n=>String(n||"").toLowerCase().replace(/\s+\d+\s+\d+\s*$/,"").replace(/\s+-\s+.*$/,"").replace(/&/g," and ").replace(/['’.]/g,"").replace(/-/g," ").replace(/\s+/g," ").trim();
 const zhTier=r=>{ r=String(r||"").toLowerCase();
   return /special (illustration|art)|\bsar\b|\bsir\b/.test(r)?"sar" : /illustration rare|art rare|\bar\b|\bir\b|character/.test(r)?"ar" :
     /hyper|ultra|secret|\bur\b|\bhr\b|\bsr\b|gold/.test(r)?"ur" : /double|\brr\b/.test(r)?"rr" : "x"; };
+// Twin sets for the Chinese lookup only (search keeps its own maps): sets the search maps leave out. Gengar Prime 30th
+// (Derek, 2026-11-13: "no recent sales for Chinese Gengar Prime 30th, but I sold some myself"): the English 30th Classic
+// Collection had no Japanese set, so the M6a product, where Chinese copies follow the Japanese numbering, was never asked.
+const ZH_TWIN_SETS={"30th celebration: classic collection":["M6a: MEGA Expansion 30th Celebration"],
+  "celebrations":["S8a: 25th Anniversary Collection","s8a-G: 25th Anniversary Golden Box","s8a-P: Promo Card Pack 25th Anniversary Edition"],
+  "celebrations: classic collection":["S8a: 25th Anniversary Collection","s8a-G: 25th Anniversary Golden Box","s8a-P: Promo Card Pack 25th Anniversary Edition"]};
 function zhTwinSet(a, b){
   const en=(a.lang||"en")==="en"?a:b, jp=en===a?b:a; if((en.lang||"en")!=="en" || jp.lang!=="jp") return false;
-  const k=String(en.s||"").toLowerCase(), jn=EN_TO_JP_NAMES[k], jc=EN_TO_JP[k];
-  return !!((jn && jn.includes(jp.s)) || (jc && jc.includes(String(jp.c||"").toLowerCase())));
+  const k=String(en.s||"").toLowerCase(), jn=EN_TO_JP_NAMES[k], jc=EN_TO_JP[k], zt=ZH_TWIN_SETS[k];
+  return !!((jn && jn.includes(jp.s)) || (jc && jc.includes(String(jp.c||"").toLowerCase())) || (zt && zt.includes(jp.s)));
 }
+// One name is the other plus a label word ("Gengar" in English, "Gengar Prime" in Japanese; "N" / "N Supporter";
+// "... Legend" / "... Legend Top"): only those words, so "Pikachu & Zekrom-GX" never pairs with a plain Pikachu.
+const ZH_TAG=/^(prime|supporter|top|bottom|legend|star)( (prime|supporter|top|bottom|legend|star))*$/;
+const zhNameRel=(a, b)=>{ if(a===b) return true; const [s, l]=a.length<b.length?[a, b]:[b, a]; return l.startsWith(s+" ") && ZH_TAG.test(l.slice(s.length+1)); };
+// Classic Collection reprints pair only with each other (the Japanese ones carry the rarity "Classic Collection", any
+// English tier); everything else needs the same rarity tier
+const zhCC=c=>/classic collection/i.test(c.lang==="jp" ? (c.r||"") : (c.s||""));
+const zhTierOK=(a, b)=>((a.lang||"en")===(b.lang||"en") || zhCC(a)===zhCC(b)) && (zhTier(a.r)===zhTier(b.r) || (zhCC(a) && zhCC(b)));
 function zhCands(lead, extra){
   const leads=[].concat(lead||[]).filter(Boolean), out=[], seen=new Set();
   const add=c=>{ if(c && c.pid && !c.sealed && (c.game||"pkmn")==="pkmn" && !seen.has(c.id)){ seen.add(c.id); out.push(c); } };
@@ -2029,7 +2045,8 @@ function zhCands(lead, extra){
   const b=zhBase(top.n), tier=zhTier(top.r);
   const same=CARDS.filter(x=>(x.game||"pkmn")==="pkmn" && !x.sealed && x.pid && zhBase(x.n)===b);
   const twins=same.filter(x=>(x.lang||"en")!==(top.lang||"en") && zhTwinSet(top, x));
-  twins.filter(x=>zhTier(x.r)===tier).forEach(add);
+  CARDS.forEach(x=>{ if((x.lang||"en")!==(top.lang||"en") && !x.sealed && x.pid && (x.game||"pkmn")==="pkmn" && zhBase(x.n)!==b && zhNameRel(zhBase(x.n), b) && zhTierOK(x, top) && zhTwinSet(top, x)) twins.push(x); });
+  twins.filter(x=>zhTierOK(x, top)).forEach(add);
   (extra||[]).forEach(add);
   twins.forEach(add);
   same.filter(x=>zhTier(x.r)===tier).forEach(add);
@@ -2095,7 +2112,7 @@ function zhWire(el, res){
 // One card's Chinese price (Derek, 2026-10-29: "not every card's Chinese price, once I pick the card"): the card and its
 // other-language twin of the same tier (Chinese copies get listed on either), not the same name in other sets.
 function zhCandsOne(card){
-  return zhCands(card).filter(c=>c.id===card.id || ((c.lang||"en")!==(card.lang||"en") && zhTwinSet(card, c) && zhTier(c.r)===zhTier(card.r))).slice(0,3);
+  return zhCands(card).filter(c=>c.id===card.id || ((c.lang||"en")!==(card.lang||"en") && zhTwinSet(card, c) && zhTierOK(c, card))).slice(0,3);
 }
 async function zhForCard(card, el){
   const hit=ZH_CACHE.get(card.id);
