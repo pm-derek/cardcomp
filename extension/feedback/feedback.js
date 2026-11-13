@@ -200,7 +200,7 @@
           done = await markDone(r.order, "unsure", { user: r.user, text, why: res.why });
           el.querySelector("[data-body]").innerHTML = `<div class="done"><b class="un">unsure</b> Send was pressed but the page did not confirm (${esc(res.why || "")}). <a href="${MSGS}" target="_blank">open Messages</a> and check the order's thread before sending by hand. Not offered again.</div>`;
           paintFoot(); post({ type: "cardcomp-fb-pending", n: list.querySelectorAll("[data-send]").length });
-        } else { await unmark(r.order); done = await getDone(); fail("not sent: " + (res && res.why || "no reply from the extension")); }
+        } else { await unmark(r.order); done = await getDone(); fail("not sent: " + (res && res.why || "no reply from the extension") + (res && res.typed ? " (the order tab is in front with your text in the box)" : "")); }
       };
       function fail(why) { send.disabled = false; send.classList.remove("cancel"); send.textContent = "Send"; lock(false); note.textContent = why; note.className = "note bad"; }
       function finish(label, odd) { el.querySelector("[data-body]").innerHTML = `<div class="done"><b${odd ? ' class="un"' : ""}>${esc(label)}</b> to ${esc(r.user)}: ${esc(ta.value.trim())} <span data-msglink>${odd ? msgLink(done[r.order]) : '<span class="dim">finding the message…</span>'}</span></div>`;

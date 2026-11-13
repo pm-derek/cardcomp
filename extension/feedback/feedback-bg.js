@@ -154,7 +154,10 @@ function fbHandle(msg, sender, reply) {
       if (!info) return reply({ ok: false, why: "the order page did not load" });
       let r;
       try { r = await chrome.tabs.sendMessage(tabId, { type: "cardcomp-fb-fill", order: msg.order, text: msg.text, expect: msg.expect || null }); } catch (e) { r = { ok: false, why: "no reply from the order tab" }; }
-      if (!r || !r.ok) { try { await chrome.tabs.update(tabId, { active: true }); } catch (_) {} }   // show Derek what happened
+      // Bring the order tab forward only when there is something to look at there: the message typed but not sent, or
+      // Send pressed without a confirmation. A refusal before anything was typed (a check, the drawer, the subject) stays
+      // in the background; the reason shows beside Send in the inbox (Derek, 2026-11-13: "it redirects me to the order").
+      if (r && !r.ok && (r.typed || r.clicked)) { try { await chrome.tabs.update(tabId, { active: true }); } catch (_) {} }
       reply(r || { ok: false, why: "no reply" });
     })().catch((e) => reply({ ok: false, why: e.message }));
     return true;

@@ -483,6 +483,12 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   there (`fbTabUrl`, compared without query / hash), is not the active tab and is not the tab that asked (`sender.tab.id`,
   passed as `avoid` by the order read, the send and the thread lookup); otherwise it opens a new background tab and saves
   that one. The Messages-list lookup (`fbThread`) goes through the same helper. Extension 0.9.19; feedback-check section 1.
+- Failed sends stay in the background unless there is something to see (Derek, 2026-11-13: the "redirect" was a failed
+  thank-you send bringing its order tab forward). bg.js now brings the order tab forward only when order.js reports
+  `typed:true` (the message is in the box: no Send button / Send disabled) or `clicked:true` (pressed, unconfirmed). A
+  refusal before typing (match check, Contact Buyer button, drawer, subject, message box) stays in the background and
+  the reason shows beside Send ("not sent: ..."). The cause of Derek's failures is not known yet: waiting for that text.
+  Extension 0.9.20.
 - Open-order totals (Derek, 2026-11-10: "a sum of the orders whose status is Ready to Ship: product, shipping, total; as
   I generate a new pull sheet this is the sales I've made"): orders.js `openBar(rows)` draws `#ccopen` after
   `OrderIndex_QuickFilters_Container` (else before the grid / table): count, product, shipping and total of the rows on
