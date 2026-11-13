@@ -100,8 +100,8 @@
     if (!setText(ta, text)) return { ok: false, why: "could not type the message" };
     await sleep(250);
     const send = $("OrderDetails_ContactBuyer_ButtonSendMessage");
-    if (!send) return { ok: false, why: "no Send button" };
-    if (send.disabled || send.getAttribute("aria-disabled") === "true") return { ok: false, why: "Send is disabled on the page" };
+    if (!send) return { ok: false, typed: true, why: "no Send button" };
+    if (send.disabled || send.getAttribute("aria-disabled") === "true") return { ok: false, typed: true, why: "Send is disabled on the page" };
     send.click();
     // Sent = the drawer closed or the box emptied. Otherwise leave everything as is for Derek to look at; clicked:true
     // tells the panel the outcome is unknown (maybe sent), so it is never retried automatically.
