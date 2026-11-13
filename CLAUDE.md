@@ -192,6 +192,14 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
   ("3 left out: another card of the same Chinese set (025/063)"); the sales scan keeps going until 3 kept sales. No
   reading, nothing is filtered. `zhSummary(hits, lead)`: two prices more than 1.5x apart keep the opened card's own
   product's (its $59.99 over a $9.99 on the Japanese twin); three keep the median rule.
+  Falling prices (Derek, 2026-11-13: "Chinese prices are not reacting fast enough to recent sales; 30th is going down
+  fast, I need to bid lower"): the sales price was a plain average of the 3 newest Chinese sales, however old (up to 90
+  days), and listings never pulled it down. `zhPick` now keeps only sales within 14 days of the newest (`ZH_RECENT_DAYS`;
+  "N older sales left out"), `zhSummary(hits, lead, true)` weights them 3 / 2 / 1 newest first, and when the listings
+  estimate is under the sales one the sales price is capped at it (`sold.capped`, `sold.raw`; desktop "(sales $40.17,
+  capped at the listings: asks are lower, price falling)", phone "capped at listed $X"). Sales $30 (1 d) / $34 (4 d) / $45
+  (21 d) now price $31.33, was $36.33. Every reader of `pk.sold.est` (desktop, phone pills, the Chinese seller reprice)
+  gets the new price. recog-check "Chinese falling prices".
   English / Japanese market beside it (Derek, 2026-11-02: "show mkt for JP and EN when showing CN, so I can catch CN priced
   higher than JP, a signal the CN price is wrong"): `zhRefHTML(res, est)` on desktop and in the phone's picked-card view
   ("EN $12.90 · JP $6.71"), the looked-up card and its twin (`res.ids`) at their top printing's market (`bestMarket`);

@@ -1997,15 +1997,18 @@ async function zhLookup(cands){
   return out;
 }
 // 3 prices averaged (listings: the 3 cheapest; sales: the 3 newest); any more than 1.5x from their middle one is left
-// out (2 prices: the cheaper is the middle)
-function zhSummary(hits, lead){
+// out (2 prices: the cheaper is the middle). Sales (recent): the newest counts most, weights 3 / 2 / 1 (Derek, 2026-11-13:
+// "Chinese prices are not reacting fast enough to recent sales; 30th is going down fast").
+function zhSummary(hits, lead, recent){
   const top=(hits||[]).slice(0,3), ps=top.map(h=>h.p); if(!ps.length) return null;
   const srt=ps.slice().sort((a,b)=>a-b);
   // 2 prices far apart: the opened card's own product wins over its twin (Mimikyu VMAX: $59.99 on its own product, $9.99
   // "mimikyu vmax chinese" on the Japanese twin); else the cheaper
   const own=lead!=null && top.length===2 && top.filter(h=>h.id===lead).length===1 ? top.find(h=>h.id===lead).p : null;
   const mid=srt.length===3?srt[1]:(own!=null?own:srt[0]), used=ps.filter(p=>p<=mid*ZH_FAR && p>=mid/ZH_FAR);
-  return {est:used.reduce((a,b)=>a+b,0)/used.length, used, all:ps, out:ps.filter(p=>!used.includes(p))};
+  let est=used.reduce((a,b)=>a+b,0)/used.length;
+  if(recent){ let sw=0, sp=0; top.forEach((h,i)=>{ if(!used.includes(h.p)) return; const w=top.length-i; sw+=w; sp+=w*h.p; }); if(sw) est=sp/sw; }
+  return {est, used, all:ps, out:ps.filter(p=>!used.includes(p))};
 }
 // Candidates: the lead card(s), then the other language's twin (same name in the matching set: EN_TO_JP_NAMES /
 // EN_TO_JP, same rarity tier first), then extras (a reading's other printings), then same name and tier anywhere. Max 8.
@@ -2034,12 +2037,18 @@ function zhCands(lead, extra){
 }
 const zhMoney=v=>"$"+(+v).toFixed(2);
 // One block for the open card and the auto line. Sales first (what Chinese copies actually went for): the 3 newest
-// Chinese sales averaged; the bid uses them when the newest is under 90 days old, else the listings estimate.
-const ZH_SOLD_DAYS=90;
+// Chinese sales, newest weighted most; the bid uses them when the newest is under 90 days old, else the listings estimate.
+// Falling prices (Derek, 2026-11-13, 30th Celebration Chinese dropping fast: "I need to bid lower"): only sales within
+// 14 days of the newest count (a sale from 3 weeks back is another market), and when the Chinese listings ask less than
+// the sales, the price is the listings (you resell against those asks), marked "capped".
+const ZH_SOLD_DAYS=90, ZH_RECENT_DAYS=14;
 function zhPick(res){
-  const soldL=res.sold, hitL=res.hits;
-  const sold=zhSummary(soldL, res.lead), list=zhSummary(hitL, res.lead), fresh=soldL.length && Date.now()-soldL[0].at < ZH_SOLD_DAYS*864e5;
-  return {sold, list, soldL, hitL, use: sold && fresh ? "sold" : list ? "listed" : sold ? "sold" : null};
+  const all=res.sold||[], hitL=res.hits, top=all[0] && all[0].at;
+  const soldL=top ? all.filter(x=>x.at>=top-ZH_RECENT_DAYS*864e5) : all, older=all.length-soldL.length;
+  const sold=zhSummary(soldL, res.lead, true), list=zhSummary(hitL, res.lead), fresh=soldL.length && Date.now()-soldL[0].at < ZH_SOLD_DAYS*864e5;
+  const use=sold && fresh ? "sold" : list ? "listed" : sold ? "sold" : null;
+  if(use==="sold" && list && list.est<sold.est){ sold.raw=sold.est; sold.est=list.est; sold.capped=true; }
+  return {sold, list, soldL, hitL, older, use};
 }
 function zhHTML(res, opt){
   opt=opt||{};
@@ -2048,19 +2057,21 @@ function zhHTML(res, opt){
   if(!res.hits.length && !res.sold.length) return `<span style="color:var(--faint)">no TCGplayer listing or recent sale says Chinese (${res.checked} product${res.checked===1?"":"s"} checked, English + Japanese)</span>`+dbg;
   const pk=zhPick(res), mf=getNum("tgtmargin",10)/100, est=(pk.use==="sold"?pk.sold:pk.list).est, np=netProceeds(listSale(est)), b=wholeBid(bidForMargin(est, mf), np);
   const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
-  const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `avg of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
+  const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `${s===pk.sold?"weighted avg (newest counts most)":"avg"} of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
+  const cap=s=>s===pk.sold && s.capped ? ` <span style="color:var(--gold)" title="the sales say ${zhMoney(s.raw)}, but Chinese copies are listed for less: you would resell against those asks">(sales ${zhMoney(s.raw)}, capped at the listings: asks are lower, price falling)</span>` : "";
   const left=s=>s.out.length?` <span style="color:var(--faint)">(${s.out.map(zhMoney).join(", ")} left out, too far off)</span>`:"";
   const zid=opt.id||res.forId||(res.ids||[])[0]||"";
   const bidB=b>=1?` <button class="zhbid" data-zh="${escH(zid)}" data-mkt="${est.toFixed(2)}" data-zhsrc="${pk.use}" data-bid="${b}" title="max bid at ${zhMoney(est)} (${Math.round(mf*100)}% margin), from the ${pk.use==="sold"?"sales":"listings"}; logged as the Chinese copy at ${zhMoney(est)}" style="background:rgba(245,179,1,.12);border:1px solid var(--gold);border-radius:7px;color:var(--ink);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;margin-left:4px">bid $${b}</button> <span class="zhbe" style="color:var(--dim);font-size:12px;white-space:nowrap" title="break-even: the most you can pay before losing money at ${zhMoney(est)}">b/e $${(bidForProfit(est,0)||0).toFixed(2)}</span>`:"";
   const line=(k, s, lab, list)=>{ const on=pk.use===k;
-    return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${on?bidB:""}</div>`; };
+    return `<div><b style="color:${on?"var(--gold)":"var(--dim)"}">Chinese ${k} ≈ ${zhMoney(s.est)}</b> <span style="color:var(--dim)">${how(s, lab)}: ${list}</span>${left(s)}${cap(s)}${on?bidB:""}</div>`; };
   if(opt.compact){   // the auto line sits in the sticky header: one line
     const s=pk.use==="sold"?pk.sold:pk.list, list=pk.use==="sold"?pk.soldL.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "):s.all.map(zhMoney).join(" · ");
     return line(pk.use, s, pk.use==="sold"?"latest sales":"lowest", list).replace(/<\/div>$/, ` <span style="color:var(--faint)">· ${res.sold.length} sold · ${res.hits.length} listed</span></div>`); }
   let h="";
   if(pk.sold){ const s=pk.sold;
     h+=line("sold", s, s.all.length===1?"sale":"latest sales", pk.soldL.slice(0,3).map(x=>`${zhMoney(x.p)} ${day(x.at)}`).join(" · "));
-    if(pk.use!=="sold") h+=`<div style="color:var(--faint)">newest sale ${day(pk.soldL[0].at)}, over ${ZH_SOLD_DAYS} days ago: bid from the listings</div>`; }
+    if(pk.use!=="sold") h+=`<div style="color:var(--faint)">newest sale ${day(pk.soldL[0].at)}, over ${ZH_SOLD_DAYS} days ago: bid from the listings</div>`;
+    if(pk.older) h+=`<div style="color:var(--faint)">${pk.older} older sale${pk.older===1?"":"s"} left out (over ${ZH_RECENT_DAYS} days before the newest)</div>`; }
   else h+=`<div style="color:var(--faint)">no Chinese sale in the recent sales of these products</div>`;
   if(pk.list) h+=line("listed", pk.list, pk.list.all.length===1?"listing":"lowest", pk.list.all.map(zhMoney).join(" · "));
   else h+=`<div style="color:var(--faint)">no listing says Chinese right now</div>`;

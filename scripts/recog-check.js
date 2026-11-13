@@ -763,8 +763,15 @@ async function appPage(browser, base, blockRecog) {
   if (await ap.evaluate(() => { const b = document.querySelector('#results .card[data-id="sv8-238"] .zhbtn'); return !!b && b.style.display !== "none"; })) await ap.click('#results .card[data-id="sv8-238"] .zhbtn');
   await ap.waitForTimeout(600);
   st = await ap.evaluate(() => ({ t: (document.querySelector('#results .card[data-id="sv8-238"] .zhout') || {}).textContent || "", prods: [...new Set(window.__tcgPosts.map((d) => d.url.match(/product\/(\d+)/)[1]))] }));
-  ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.50/.test(st.t) && /avg of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
+  ok(st.prods.length === 2 && /Chinese sold ≈ \$12\.40/.test(st.t) && /weighted avg \(newest counts most\) of 2 of the 3 latest sales/.test(st.t) && /\$40\.00 left out, too far off/.test(st.t) && /Chinese listed ≈ \$14\.50 avg of 2 of the 3 lowest: \$4\.00 · \$14\.00 · \$15\.00/.test(st.t) && /\$4\.00 left out/.test(st.t) && !/\$9\.00/.test(st.t) && /3 sold · 3 listed · on 2 of 2/.test(st.t),
     "open card after a Chinese read: looked up at once, the English card and its Japanese twin only (" + st.prods.length + " products; " + st.t.replace(/\s+/g, " ").slice(0, 220) + ")");
+  // falling Chinese prices (Derek, 2026-11-13, 30th Celebration): sales older than 14 days before the newest drop out, the
+  // newest counts most, and listings asking less than the sales cap the price
+  const zf = await ap.evaluate(() => { const D = 864e5, now = Date.now(), s = (p, d) => ({ p, at: now - d * D, id: "a" }), l = (p) => ({ p, id: "a" });
+    const a = zhPick({ sold: [s(30, 1), s(34, 4), s(45, 21)], hits: [l(31), l(33), l(36)], lead: "a" }), b = zhPick({ sold: [s(40, 1), s(41, 3), s(39, 6)], hits: [l(32), l(34), l(35)], lead: "a" });
+    return { a: +a.sold.est.toFixed(2), older: a.older, capA: !!a.sold.capped, b: +b.sold.est.toFixed(2), capB: !!b.sold.capped, rawB: +b.sold.raw.toFixed(2), use: b.use }; });
+  ok(zf.a === 31.33 && zf.older === 1 && !zf.capA && zf.b === 33.67 && zf.capB && zf.rawB === 40.17 && zf.use === "sold",
+    "Chinese falling prices: a 3-week-old $45 sale drops out, newest weighted ($30 / $34 -> $31.33, was $36.33); sales $40 with asks at $34 cap at the listings $33.67 " + JSON.stringify(zf));
   // Chinese comps of another card number (Mimikyu VMAX 078/063, 2026-11-02: "cs4.5C 025/063" regular holos priced the full art)
   const zn = await ap.evaluate(() => ({ a: zhNum("#CHINESE# Mimikyu VMAX cs4.5C 025/063 Holo Chinese Edition"), b: zhNum("Mimikyu VMAX Chinese"), tg: zhNum("Mimikyu VMAX TG17/TG30 chinese"),
     s: zhSummary([{ p: 9.99, id: "twin" }, { p: 59.99, id: "own" }], "own").est, s3: zhSummary([{ p: 4, id: "own" }, { p: 14, id: "t" }, { p: 15, id: "t" }], "own").est,
@@ -782,7 +789,7 @@ async function appPage(browser, base, blockRecog) {
   // the bid labels the lot as the Chinese copy of this card at the Chinese price, not the English market
   await ap.click('#results .card[data-id="sv8-238"] .zhout .zhbid'); await ap.waitForTimeout(150);
   const zt = await ap.evaluate(() => LAST_TAP && { id: LAST_TAP.id, n: LAST_TAP.n, m: LAST_TAP.condMarket, mk: LAST_TAP.market, zh: LAST_TAP.zh, bid: LAST_TAP.bid });
-  ok(zt && zt.id === "sv8-238" && /^中 /.test(zt.n) && zt.m === 12.5 && zt.mk === 12.5 && zt.zh === "sold", "Chinese bid: lot labeled as the Chinese copy at the Chinese price: " + JSON.stringify(zt));
+  ok(zt && zt.id === "sv8-238" && /^中 /.test(zt.n) && zt.m === 12.4 && zt.mk === 12.4 && zt.zh === "sold", "Chinese bid: lot labeled as the Chinese copy at the Chinese price: " + JSON.stringify(zt));
   await ap.screenshot({ path: path.join(OUT, "recog-app-zh-card.png") });
   await ap.setViewportSize({ width: 380, height: 800 }); await ap.waitForTimeout(200);
   await ap.evaluate(() => document.querySelector('#results .card[data-id="sv8-238"] .zhout').scrollIntoView({ block: "end" })); await ap.waitForTimeout(100);
@@ -952,7 +959,7 @@ async function appPage(browser, base, blockRecog) {
     window.removeEventListener("message", fake); window.zhLookup = window.__zhOrig2; setZhSeller("sellerA", false); dashOpen(false);
     return { wait: before.zhWait === 1 && before.m === 0, waitTxt: /waiting for a Chinese price/.test(waitTxt) || /repricing/.test(waitTxt), m: after.m, n: after.n, zh: after.zh, ed: window.__edits.find((x) => x.patch && x.patch.zh), note: ZH_NOTE, toggle: /中 Chinese seller ✓/.test(txt) };
   });
-  ok(zs.wait && zs.waitTxt && zs.m === 6 && /^中 Sylveon/.test(zs.n) && zs.zh === 1 && zs.ed && zs.ed.patch.condMarket === 6 && zs.ed.patch.zh === "sold" && zs.toggle && /2 of 2 lots repriced/.test(zs.note),
+  ok(zs.wait && zs.waitTxt && zs.m === 5.67 && /^中 Sylveon/.test(zs.n) && zs.zh === 1 && zs.ed && zs.ed.patch.condMarket === 5.67 && zs.ed.patch.zh === "sold" && zs.toggle && /2 of 2 lots repriced/.test(zs.note),
     "Chinese seller: wins wait as unpriced, then repriced at the Chinese price ($" + zs.m + ") and saved to the log: " + zs.note);
   // buyers: 3 known-card wins at ~80% of market -> sharp; in the room and leading -> the strip says so
   const by = await ap.evaluate(() => {
