@@ -772,6 +772,13 @@ async function appPage(browser, base, blockRecog) {
     return { a: +a.sold.est.toFixed(2), older: a.older, capA: !!a.sold.capped, b: +b.sold.est.toFixed(2), capB: !!b.sold.capped, rawB: +b.sold.raw.toFixed(2), use: b.use }; });
   ok(zf.a === 31.33 && zf.older === 1 && !zf.capA && zf.b === 33.67 && zf.capB && zf.rawB === 40.17 && zf.use === "sold",
     "Chinese falling prices: a 3-week-old $45 sale drops out, newest weighted ($30 / $34 -> $31.33, was $36.33); sales $40 with asks at $34 cap at the listings $33.67 " + JSON.stringify(zf));
+  // Chinese twins across naming (Derek, 2026-11-13: "no recent sales for Chinese Gengar Prime 30th, but I sold some"): the
+  // English 30th Classic Collection "Gengar" is the Japanese M6a "Gengar Prime"; reprints pair only with reprints
+  const ztw = await ap.evaluate(() => { const ids = (id) => { const c = BY_ID.get(id); return c ? zhCandsOne(c).map((x) => x.n + "|" + (x.c || "")) : null; };
+    const pz = CARDS.find((c) => c.s === "30th Celebration: Classic Collection" && /Pikachu & Zekrom/.test(c.n)), cz = CARDS.find((c) => c.s === "Celebrations: Classic Collection" && c.n === "Dark Gyarados");
+    return { g: ids("me55c-94"), gj: ids("jp:716995"), pz: pz ? ids(pz.id) : null, cz: cz ? ids(cz.id) : null }; });
+  ok(ztw.g && ztw.g.includes("Gengar Prime|m6a") && ztw.gj && ztw.gj.some((x) => /^Gengar\|/.test(x)) && ztw.pz && !ztw.pz.some((x) => /^Pikachu( \d+ \d+)?\|/.test(x)) && ztw.pz.some((x) => /Pikachu and Zekrom GX/.test(x)) && ztw.cz && ztw.cz.includes("Dark Gyarados|s8a-P"),
+    "Chinese twins: 30th Classic Collection Gengar <-> M6a Gengar Prime both ways; Pikachu & Zekrom-GX never a plain Pikachu; Celebrations Classic Collection -> the 25th promo pack (s8a-P) " + JSON.stringify(ztw));
   // Chinese comps of another card number (Mimikyu VMAX 078/063, 2026-11-02: "cs4.5C 025/063" regular holos priced the full art)
   const zn = await ap.evaluate(() => ({ a: zhNum("#CHINESE# Mimikyu VMAX cs4.5C 025/063 Holo Chinese Edition"), b: zhNum("Mimikyu VMAX Chinese"), tg: zhNum("Mimikyu VMAX TG17/TG30 chinese"),
     s: zhSummary([{ p: 9.99, id: "twin" }, { p: 59.99, id: "own" }], "own").est, s3: zhSummary([{ p: 4, id: "own" }, { p: 14, id: "t" }, { p: 15, id: "t" }], "own").est,

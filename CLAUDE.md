@@ -199,7 +199,19 @@ Desktop path: a Chrome extension (MV3, `extension/`, load unpacked, see its READ
   estimate is under the sales one the sales price is capped at it (`sold.capped`, `sold.raw`; desktop "(sales $40.17,
   capped at the listings: asks are lower, price falling)", phone "capped at listed $X"). Sales $30 (1 d) / $34 (4 d) / $45
   (21 d) now price $31.33, was $36.33. Every reader of `pk.sold.est` (desktop, phone pills, the Chinese seller reprice)
-  gets the new price. recog-check "Chinese falling prices".
+  gets the new price. Check script: "Chinese falling prices".
+  Twins across naming (Derek, 2026-11-13: "no recent sales for Chinese Gengar Prime 30th, but I sold some myself"): the
+  English 30th Classic Collection card is "Gengar", its Japanese twin "Gengar Prime" (M6a #150, rarity "Classic
+  Collection"), and the 30th Classic Collection / Celebrations sets had no Japanese set in the maps, so the lookup asked
+  only one product. Now: `ZH_TWIN_SETS` (Chinese lookup only, search maps untouched): 30th Classic Collection -> M6a,
+  Celebrations -> S8a / s8a-G, Celebrations Classic Collection -> s8a-P (the 25th promo pack); `zhBase` folds
+  punctuation (& -> and, δ -> delta species, ★ -> star, ' . - dropped: "Genesect-EX" = "Genesect EX", "Palkia LV.X" =
+  "Palkia LVX"); `zhNameRel` lets one name be the other plus label words only (prime / supporter / top / bottom / legend /
+  star: "N" / "N Supporter", "Darkrai & Cresselia LEGEND" / "... Legend Top"), so "Pikachu & Zekrom-GX" never pairs with
+  a plain Pikachu; `zhTierOK`: Classic Collection reprints (`zhCC`: Japanese rarity "Classic Collection" or s8a-P, English
+  set "... Classic Collection") pair only with each other, at any tier. 30th Classic Collection: 25 of 30 now have their
+  Japanese twin (5 have no Japanese Classic Collection copy in the catalog), Celebrations Classic Collection 20 of 20;
+  only 4 English cards anywhere pair by label words, all right. Check script: "Chinese twins".
   English / Japanese market beside it (Derek, 2026-11-02: "show mkt for JP and EN when showing CN, so I can catch CN priced
   higher than JP, a signal the CN price is wrong"): `zhRefHTML(res, est)` on desktop and in the phone's picked-card view
   ("EN $12.90 · JP $6.71"), the looked-up card and its twin (`res.ids`) at their top printing's market (`bestMarket`);
