@@ -307,6 +307,27 @@ async function pageTests() {
     await p2.evaluate(() => { window.__mockFail = "nosubject"; window.__mock.subject = ""; document.querySelector("#subject span").textContent = "Select"; document.querySelectorAll("#subject-dropdown li").forEach((l) => l.setAttribute("aria-selected", "false")); document.querySelector('[data-testid="OrderDetails_ContactBuyerDrawer"]').style.display = "none"; });
     r = await p2.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "again" }));
     assert.strictEqual(r.ok, false); assert.ok(/subject/.test(r.why)); ok("subject that will not select: reported");
+    // the 2026-11-13 layout: Contact Buyer in the header, buyer and feedback inside General Info (Derek's sends had all
+    // failed at "no Contact Buyer button" since the move)
+    const c2b = await browser.newContext(), p2b = await c2b.newPage(); const posted2b = [];
+    await c2b.exposeFunction("__msg", (m) => { posted2b.push(m); });
+    await p2b.addInitScript(() => {
+      window.__mockLayout = "header"; window.__handlers = [];
+      window.chrome = { runtime: { lastError: null, sendMessage: (m, cb) => { window.__msg(m); if (m.type === "cardcomp-fb-buyer") return cb && cb({ ok: true, stats: { n: 3, name: m.name, spent: 40, before: 3, spentBefore: 40, first: Date.parse("2026-08-01"), last: Date.parse("2026-10-24"), firstTotal: 5, lastTotal: 17.18, fb: [] } }); cb && cb({ ok: true }); }, onMessage: { addListener: (f) => window.__handlers.push(f) } } };
+      window.__send = (m) => new Promise((res) => { window.__handlers.forEach((f) => f(m, {}, res)); });
+    });
+    await c2b.route("https://sellerportal.tcgplayer.com/orders/**", (route) => route.fulfill({ contentType: "text/html", body: orderHTML }));
+    await p2b.goto("https://sellerportal.tcgplayer.com/orders/92588719-TEST01-00001");
+    await p2b.addScriptTag({ path: path.join(EXT, "feedback", "badge.js") }); await p2b.addScriptTag({ path: path.join(EXT, "feedback", "order.js") });
+    await p2b.waitForFunction(() => window.__mockReady); await p2b.waitForTimeout(600);
+    const info2 = posted2b.find((m) => m.type === "cardcomp-fb-order-info");
+    assert.deepStrictEqual([info2.buyer, info2.feedback, info2.hasFeedback, info2.fbRating, info2.orderDate], ["Stevie Rogers", "Excellent seller, great communication", true, 5, "10/24/2026"]); ok("new layout: buyer read from General Info's Buyer Info, feedback and rating still read");
+    await p2b.waitForSelector('[data-testid="OrderDetails_GeneralInfo_Buyer"] .ccbuy', { timeout: 5000 }); ok("new layout: the repeat-buyer chip lands beside the name in General Info");
+    let r2 = await p2b.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "Thanks so much!", expect: { comment: "Excellent seller, great communication", user: "stevie r3006" } }));
+    assert.deepStrictEqual(r2, { ok: true, clicked: true }); assert.deepStrictEqual(await p2b.evaluate(() => [window.__mock.sent, window.__mock.subject, window.__mock.sentText]), [1, "General Inquiry", "Thanks so much!"]); ok("new layout: Contact Buyer pressed in the header, General Inquiry picked, message typed and sent");
+    r2 = await p2b.evaluate(() => window.__send({ type: "cardcomp-fb-fill", order: "92588719-TEST01-00001", text: "x", expect: { comment: "Excellent seller, great communication", user: "robert s78A1F72" } }));
+    assert.strictEqual(r2.ok, false); assert.ok(/does not look like robert/.test(r2.why)); assert.strictEqual(await p2b.evaluate(() => window.__mock.sent), 1); ok("new layout: the buyer-name safety check still refuses a mismatch");
+    await c2b.close();
     await c2.close();
     console.log("4. messages.js on a mock Messages list");
     const c4 = await browser.newContext(), p4 = await c4.newPage(); const posted4 = [];
