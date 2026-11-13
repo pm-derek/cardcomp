@@ -2014,7 +2014,7 @@ function zhSummary(hits, lead, recent){
 // EN_TO_JP, same rarity tier first), then extras (a reading's other printings), then same name and tier anywhere. Max 8.
 // punctuation folded too (30th Classic Collection twins: "Genesect-EX" / "Genesect EX", "Palkia LV.X" / "Palkia LVX",
 // "Darkrai & Cresselia LEGEND" / "Darkrai and Cresselia Legend Top", "Erika's" / "Erikas")
-const zhBase=n=>String(n||"").toLowerCase().replace(/\s+\d+\s+\d+\s*$/,"").replace(/\s+-\s+.*$/,"").replace(/&/g," and ").replace(/['’.]/g,"").replace(/-/g," ").replace(/\s+/g," ").trim();
+const zhBase=n=>String(n||"").toLowerCase().replace(/\s+\d+\s+\d+\s*$/,"").replace(/\s+-\s+.*$/,"").replace(/&/g," and ").replace(/δ/g," delta species ").replace(/★/g," star ").replace(/['’.]/g,"").replace(/-/g," ").replace(/\s+/g," ").trim();
 const zhTier=r=>{ r=String(r||"").toLowerCase();
   return /special (illustration|art)|\bsar\b|\bsir\b/.test(r)?"sar" : /illustration rare|art rare|\bar\b|\bir\b|character/.test(r)?"ar" :
     /hyper|ultra|secret|\bur\b|\bhr\b|\bsr\b|gold/.test(r)?"ur" : /double|\brr\b/.test(r)?"rr" : "x"; };
@@ -2022,8 +2022,8 @@ const zhTier=r=>{ r=String(r||"").toLowerCase();
 // (Derek, 2026-11-13: "no recent sales for Chinese Gengar Prime 30th, but I sold some myself"): the English 30th Classic
 // Collection had no Japanese set, so the M6a product, where Chinese copies follow the Japanese numbering, was never asked.
 const ZH_TWIN_SETS={"30th celebration: classic collection":["M6a: MEGA Expansion 30th Celebration"],
-  "celebrations":["S8a: 25th Anniversary Collection","s8a-G: 25th Anniversary Golden Box","s8a-P: Promo Card Pack 25th Anniversary Edition"],
-  "celebrations: classic collection":["S8a: 25th Anniversary Collection","s8a-G: 25th Anniversary Golden Box","s8a-P: Promo Card Pack 25th Anniversary Edition"]};
+  "celebrations":["S8a: 25th Anniversary Collection","s8a-G: 25th Anniversary Golden Box"],
+  "celebrations: classic collection":["s8a-P: Promo Card Pack 25th Anniversary Edition"]};
 function zhTwinSet(a, b){
   const en=(a.lang||"en")==="en"?a:b, jp=en===a?b:a; if((en.lang||"en")!=="en" || jp.lang!=="jp") return false;
   const k=String(en.s||"").toLowerCase(), jn=EN_TO_JP_NAMES[k], jc=EN_TO_JP[k], zt=ZH_TWIN_SETS[k];
@@ -2035,7 +2035,8 @@ const ZH_TAG=/^(prime|supporter|top|bottom|legend|star)( (prime|supporter|top|bo
 const zhNameRel=(a, b)=>{ if(a===b) return true; const [s, l]=a.length<b.length?[a, b]:[b, a]; return l.startsWith(s+" ") && ZH_TAG.test(l.slice(s.length+1)); };
 // Classic Collection reprints pair only with each other (the Japanese ones carry the rarity "Classic Collection", any
 // English tier); everything else needs the same rarity tier
-const zhCC=c=>/classic collection/i.test(c.lang==="jp" ? (c.r||"") : (c.s||""));
+// (Japanese 25th: the s8a-P promo pack is the Classic Collection: Venusaur, Dark Gyarados, Shining Magikarp...)
+const zhCC=c=>c.lang==="jp" ? /classic collection/i.test(c.r||"") || /^s8a-P:/.test(c.s||"") : /classic collection/i.test(c.s||"");
 const zhTierOK=(a, b)=>((a.lang||"en")===(b.lang||"en") || zhCC(a)===zhCC(b)) && (zhTier(a.r)===zhTier(b.r) || (zhCC(a) && zhCC(b)));
 function zhCands(lead, extra){
   const leads=[].concat(lead||[]).filter(Boolean), out=[], seen=new Set();
