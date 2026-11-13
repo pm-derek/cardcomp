@@ -10,11 +10,20 @@
   const visible = (el) => !!el && el.style.display !== "none" && el.getClientRects().length > 0;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   async function until(fn, ms, step) { const t0 = Date.now(); for (;;) { const v = fn(); if (v) return v; if (Date.now() - t0 > ms) return null; await sleep(step || 150); } }
+  // The buyer's name: new layout "Buyer Info" + <p>name</p> in General Info; old layout the Customer Details block
+  // ("Buyer" + name + View Messages / Contact Buyer buttons).
+  function buyerName() {
+    const nb = $("OrderDetails_GeneralInfo_Buyer");
+    if (nb) { const p = nb.querySelector("p"); return (p ? txt(p) : txt(nb).replace(/^Buyer( Info)?\s*/i, "")).trim(); }
+    return txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim();
+  }
   function readOrder() {
     const links = [...document.querySelectorAll('[data-testid="OrderDetails_ProductList_ProductLink"]')], products = links.map(txt).filter(Boolean);
     if (!products.length) return null;
     const pids = [...new Set(links.map((a) => (/productSearch\/(\d+)/.exec(a.getAttribute("href") || "") || [])[1]).filter(Boolean))];   // TCGplayer product ids, for the thumbnail
-    const fb = $("OrderDetails_OrderFeedback");
+    // Two layouts (TCGplayer moved things 2026-11-13: Contact Buyer into the header, the buyer and feedback into General
+    // Info). Each read tries the new label first, then the old one.
+    const fb = $("OrderDetails_GeneralInfo_Feedback") || $("OrderDetails_OrderFeedback");
     // per line: name, product id, what was charged (TCG MP Price column), quantity (the issue helper's refund math)
     // The product table is on the page twice (the Products section and the Contact Buyer drawer, 2026-11-06: every card
     // showed twice in the thread panel), so one line per product id (else name).
@@ -28,11 +37,14 @@
     const edd = (/Estimated Delivery Date:?\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(ship + " " + gen) || [])[1] || "";
     const shippedAt = (/SHIPPED\s*(\d{1,2}\/\d{1,2}\/\d{4}[^()]*\([A-Z]+\))/.exec(ship) || [])[1] || "";
     const tracking = /No Tracking Number/i.test(ship) ? "" : (txt($("OrderDetails_ShippingInformation_TrackingDetail")) || "");
-    const orderDate = (/Order Date\s*(\d{1,2}\/\d{1,2}\/\d{4}[^(]*\([A-Z]+\))/.exec(gen) || [])[1] || "";
+    // Old layout "10/24/2026, 3:17:47 PM (PDT)"; new layout (2026-11-13) a date only, "Oct-31-2026", kept as "10/31/2026".
+    const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+    const od2 = /Order Date\s*([A-Za-z]{3})[a-z]*-(\d{1,2})-(\d{4})/.exec(gen);
+    const orderDate = (/Order Date\s*(\d{1,2}\/\d{1,2}\/\d{4}[^(]*\([A-Z]+\))/.exec(gen) || [])[1] || (od2 && MON[od2[1].toLowerCase()] ? MON[od2[1].toLowerCase()] + "/" + (+od2[2]) + "/" + od2[3] : "");
     return { type: "cardcomp-fb-order-info", order: ORDER, products: [...new Set(products)], pids, items, edd, shippedAt, tracking, orderDate, status: txt($("OrderDetails_OrderStatusBadges_OrderStatus")), method: (/Shipping Method\s*([^$]*?)\s*Estimated/.exec(gen) || [])[1] || "",
       feedback: txt($("OrderDetails_OrderFeedback_Text")), fbDate: txt($("OrderDetails_OrderFeedback_Date")),
       fbRating: document.querySelectorAll('[data-testid="OrderDetails_Feedback_FullHeart"]').length || parseInt(txt($("OrderDetails_OrderFeedback_Rating")), 10) || 0,
-      hasFeedback: !!fb, buyer: txt($("OrderDetails_CustomerDetails_BuyerDetails")).replace(/^Buyer\s*/i, "").split(/View Messages|Contact Buyer/)[0].trim() };
+      hasFeedback: !!fb, buyer: buyerName() };
   }
   const post = (m) => new Promise((res) => { try { chrome.runtime.sendMessage(m, (r) => { void chrome.runtime.lastError; res(r); }); } catch (_) { res(null); } });
   // Report once the product list is on the page (the app renders after its API calls). The order also joins the buyer
@@ -46,7 +58,7 @@
     await window.ccBuyer.merge([{ order: ORDER, buyer: info.buyer, at, total }]);
     if (info.feedback || info.fbRating) await post({ type: "cardcomp-fb-feedback-merge", rows: [{ order: ORDER, date: info.fbDate, rating: info.fbRating, comment: info.feedback, user: info.buyer }] });   // this order's feedback joins the history
     const s = await window.ccBuyer.stats(info.buyer, at, ORDER), chip = window.ccBuyer.chip(s, at);
-    const host = $("OrderDetails_CustomerDetails_BuyerDetails");
+    const host = $("OrderDetails_GeneralInfo_Buyer") || $("OrderDetails_CustomerDetails_BuyerDetails");
     if (host && !host.querySelector(".ccbuy") && !host.querySelector(".ccsaid") && (chip || (s && s.fb && s.fb.length))) {
       const p = [...host.querySelectorAll("p,span,div")].find((el) => txt(el) === info.buyer) || host; if (chip) p.appendChild(chip);
       const d = window.ccBuyer.detail(s), q = window.ccBuyer.said(s, ORDER);   // first / last / avg, and what they said about you (this order and before), in plain view
@@ -89,7 +101,7 @@
     const info = await until(readOrder, 15000, 250);
     if (!info) return { ok: false, why: "order page not loaded" };
     const mm = matches(info, expect); if (mm) return { ok: false, why: mm };
-    const btn = $("OrderDetails_CustomerDetails_btnContactBuyer");
+    const btn = $("OrderDetails_Header_btnContactBuyer") || $("OrderDetails_CustomerDetails_btnContactBuyer");
     if (!btn) return { ok: false, why: "no Contact Buyer button (buyer blocked, or the page changed)" };
     const drawer = $("OrderDetails_ContactBuyerDrawer");
     if (!visible(drawer)) { btn.click(); if (!(await until(() => visible(drawer) ? drawer : null, 4000))) return { ok: false, why: "Contact Buyer drawer did not open" }; }

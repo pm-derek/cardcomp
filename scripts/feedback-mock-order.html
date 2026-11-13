@@ -1,6 +1,6 @@
 <!doctype html><html><head><meta charset="utf-8"><title>mock order page</title></head><body>
 <!-- Mock of sellerportal.tcgplayer.com/orders/<id> for scripts/feedback-check.js: the data-testid labels and the Contact
-     Buyer drawer's behaviour (subject combobox, v-model textarea, Send) as saved 2026-11-06. Vue-like: the drawer is
+     Buyer drawer's behaviour (subject combobox, v-model textarea, Send) as saved 2026-11-06; window.__mockLayout = "header" gives the 2026-11-13 layout (Contact Buyer in the header, buyer and feedback in General Info). Vue-like: the drawer is
      display:none until Contact Buyer is pressed; the subject list opens on the trigger click; the textarea's value is read
      only through "input" events; Send is a no-op until both are set; a successful Send closes the drawer. -->
 <div id="app"></div>
@@ -9,9 +9,11 @@ window.__mock = { subject: "", message: "", sent: 0, drawerOpen: false };
 setTimeout(() => {   // the real app renders after its API calls
   document.getElementById("app").innerHTML = `
   <h1 data-testid="txtOrderHeader">Order: 92588719-TEST01-00001</h1>
-  <div data-testid="OrderDetails_CustomerDetails"><div data-testid="OrderDetails_CustomerDetails_BuyerDetails"><h2>Buyer</h2><p>Stevie Rogers</p>
+  ${window.__mockLayout === "header" ? `<div class="order-details-header"><button data-testid="OrderDetails_Header_btnViewMessages">View Messages</button>
+    <button data-testid="OrderDetails_Header_btnContactBuyer"><span> Contact Buyer </span></button><button data-testid="OrderDetails_Header_btnBlockBuyer"><span> Block Buyer </span></button></div>
+  <div data-testid="OrderDetails_CustomerDetails"><div data-testid="OrderDetails_OrderStatusBadges"></div></div>` : `<div data-testid="OrderDetails_CustomerDetails"><div data-testid="OrderDetails_CustomerDetails_BuyerDetails"><h2>Buyer</h2><p>Stevie Rogers</p>
     <button data-testid="OrderDetails_CustomerDetails_btnViewMessages">View Messages</button>
-    <button data-testid="OrderDetails_CustomerDetails_btnContactBuyer">Contact Buyer</button></div></div>
+    <button data-testid="OrderDetails_CustomerDetails_btnContactBuyer">Contact Buyer</button></div></div>`}
   <div class="tcg-drawer" data-testid="OrderDetails_ContactBuyerDrawer" style="display: none;"><div class="tcg-drawer__sheet">
     <h2 class="tcg-drawer__title">Contact Buyer</h2>
     <span data-testid="OrderDetails_ContactBuyer_SelectSubject"><div class="tcg-input-select">
@@ -26,14 +28,14 @@ setTimeout(() => {   // the real app renders after its API calls
     <a href="https://store.tcgplayer.com/productCatalog/product/productSearch/478078" data-testid="OrderDetails_ProductList_ProductLink">Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil</a></td><td><div class="d-flex"><span>$17.18</span></div></td><td>1</td><td>$17.18</td></tr>
     <tr><td><a href="https://store.tcgplayer.com/productCatalog/product/productSearch/90210" data-testid="OrderDetails_ProductList_ProductLink">Pokemon - Gym Heroes: Misty's Wish - #22/132 - Near Mint</a></td><td><div class="d-flex"><span>$13.00</span></div></td><td>1</td><td>$13.00</td></tr></tbody></table></div>
   <div data-testid="OrderDetails_ContactBuyer_ProductListContent"><table><tbody><tr><td><a href="https://store.tcgplayer.com/productCatalog/product/productSearch/478078" data-testid="OrderDetails_ProductList_ProductLink">Pokemon - SWSH: Crown Zenith: Galarian Gallery: Hisuian Samurott V - #GG51/GG70 - Near Mint Holofoil</a></td><td>$17.18</td><td>1</td><td>$17.18</td></tr></tbody></table></div>
-  <div data-testid="OrderDetails_GeneralInfo"><h2>General Info</h2><p>Order Channel TCGplayer</p><p>Order Number 92588719-TEST01-00001</p><p>Status Completed - Paid</p><p>Order Date 10/24/2026, 3:17:47 PM (PDT)</p><p>Shipping Method Standard (7-10 days)</p><p>Estimated Delivery Date: November 6, 2026</p></div>
+  <div data-testid="OrderDetails_GeneralInfo"><h2>General Info</h2>${window.__mockLayout === "header" ? '<div data-testid="OrderDetails_GeneralInfo_Buyer"><strong>Buyer Info</strong><p>Stevie Rogers</p></div>' : ""}<p>Order Channel TCGplayer</p><p>Order Number 92588719-TEST01-00001</p><p>Status Completed - Paid</p><p>Order Date ${window.__mockLayout === "header" ? "Oct-24-2026" : "10/24/2026, 3:17:47 PM (PDT)"}</p><p>Shipping Method Standard (7-10 days)</p><p>Estimated Delivery Date: November 6, 2026</p></div>
   <div data-testid="OrderDetails_ShippingInformation"><h2>Shipping Information</h2><p>Method: Standard (7-10 days)</p><p>Estimated Delivery Date: November 6, 2026</p><p>Basic</p><p>No Tracking Number</p><p>SHIPPED 10/26/2026, 12:10:46 AM (PDT)</p></div>
   <div data-testid="OrderDetails_OrderStatusBadges_OrderStatus">Completed - Paid</div>
-  <div data-testid="OrderDetails_OrderFeedback"><h2>Feedback</h2><div data-testid="OrderDetails_OrderFeedback_Rating">5</div>
+  <div data-testid="${window.__mockLayout === "header" ? "OrderDetails_GeneralInfo_Feedback" : "OrderDetails_OrderFeedback"}"><h2>Feedback</h2><div data-testid="OrderDetails_OrderFeedback_Rating">5</div>
     <p data-testid="OrderDetails_OrderFeedback_Text">Excellent seller, great communication</p><p data-testid="OrderDetails_OrderFeedback_Date">11/5/2026, 4:17:12 PM (PST)</p></div>`;
   const $ = (id) => document.querySelector('[data-testid="' + id + '"]');
   const drawer = $("OrderDetails_ContactBuyerDrawer"), trig = document.getElementById("subject"), ul = document.getElementById("subject-dropdown"), ta = $("OrderDetails_ContactBuyer_TextareaMessage");
-  $("OrderDetails_CustomerDetails_btnContactBuyer").onclick = () => { drawer.style.display = ""; window.__mock.drawerOpen = true; };
+  ($("OrderDetails_Header_btnContactBuyer") || $("OrderDetails_CustomerDetails_btnContactBuyer")).onclick = () => { drawer.style.display = ""; window.__mock.drawerOpen = true; };
   trig.onclick = () => { if (window.__mockFail === "nosubject") return; ul.style.display = ""; trig.setAttribute("aria-expanded", "true"); };
   ul.querySelectorAll("li").forEach((li) => { li.onclick = () => { if (window.__mockFail === "nosubject") return; window.__mock.subject = li.getAttribute("aria-label"); trig.querySelector("span").textContent = window.__mock.subject; li.setAttribute("aria-selected", "true"); ul.style.display = "none"; }; });
   ta.addEventListener("input", () => { window.__mock.message = ta.value; });

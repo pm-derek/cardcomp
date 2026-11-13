@@ -487,8 +487,18 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   thank-you send bringing its order tab forward). bg.js now brings the order tab forward only when order.js reports
   `typed:true` (the message is in the box: no Send button / Send disabled) or `clicked:true` (pressed, unconfirmed). A
   refusal before typing (match check, Contact Buyer button, drawer, subject, message box) stays in the background and
-  the reason shows beside Send ("not sent: ..."). The cause of Derek's failures is not known yet: waiting for that text.
-  Extension 0.9.20.
+  the reason shows beside Send ("not sent: ..."). Extension 0.9.20.
+- Order page moved things (TCGplayer, found 2026-11-13 from Derek's save after a hand send, order 13C4A8): every
+  thank-you send since Nov 6 had failed at "no Contact Buyer button". Contact Buyer moved into the page header
+  (`OrderDetails_Header_btnContactBuyer`; was `OrderDetails_CustomerDetails_btnContactBuyer`), the buyer into General Info
+  (`OrderDetails_GeneralInfo_Buyer`: "Buyer Info" + `<p>name</p>`; was `OrderDetails_CustomerDetails_BuyerDetails`), the
+  feedback block too (`OrderDetails_GeneralInfo_Feedback`; Text / Date / Rating / FullHeart labels unchanged), and Order
+  Date reads "Oct-31-2026" with no time (kept as "10/31/2026"). The drawer, subject list, textarea and Send are
+  unchanged; after Send the button spins, the drawer closes and a "Message sent" toast shows, which the existing
+  "drawer closed" check sees. order.js reads both layouts (new label first; `buyerName()`); the chip host follows the
+  buyer. Checked on the real save (buyer Patrick Eubanks, feedback, rating, date, Contact Buyer found) and on the mock
+  with `window.__mockLayout = "header"` (feedback-check section 3: read, chip, a full send, the name check). The live
+  send itself is still to be confirmed by Derek. Extension 0.9.21.
 - Open-order totals (Derek, 2026-11-10: "a sum of the orders whose status is Ready to Ship: product, shipping, total; as
   I generate a new pull sheet this is the sales I've made"): orders.js `openBar(rows)` draws `#ccopen` after
   `OrderIndex_QuickFilters_Container` (else before the grid / table): count, product, shipping and total of the rows on
@@ -540,7 +550,7 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
 - `node scripts/feedback-check.js`: fbDraft against a mocked API (prompt branches, parser, badge count), feedback.js on
   a mock Feedback tab (ordering, tags, flags, lock / unsure / refused paths, countdown + cancel, day cap, signed out,
   caught up, no key) and order.js on `scripts/feedback-mock-order.html` (match refusals, fill, unknown outcome) in
-  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list and customers.html on mock data (138 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
+  headless Chromium plus messages.js on a mock Messages list and thread.js on a mock thread, orders.js on a mock Orders list and customers.html on mock data (142 checks). Rendered at 1280 (scratch). Live 2026-11-06: the first real Send went through
   ("✓ sent", Machamp VMAX), so the Vue drawer takes the programmatic subject pick and textarea input. Order ids link
   to the order page; "view message" links to the thread itself (`sellerportal .../messages/<id>`; Derek: the order
   page was the wrong place): `messages.js` (content script on the Messages list only, `/messages`) reads each row's
