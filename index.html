@@ -1832,7 +1832,7 @@ function sendToWhatnot(s, el, show, labelOnly){
       const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
         return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin).toFixed(2)}); });
       name=`${cards.length} cards`;
-      LAST_TAP=Object.assign({ id:"", n:name, multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });
+      LAST_TAP=Object.assign({ id:"", n:cartName(cards), multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });   // named by its cards (Derek, 2026-11-16)
     } else {
       const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id), pk=c&&c.querySelector(".pchip.on");
       // the "your bid" send has no condition of its own: keep the condition last tapped on this card
@@ -2396,6 +2396,11 @@ async function zhReprice(seller){
 }
 // after a failed lookup, not again on every repaint for 10 min
 function zhRepriceAll(){ if(ZH_RUN || Date.now()-ZH_FAIL_AT<10*60e3) return; for(const s of zhSellers()) if(loadLots().some(r=>r.s===s && zhWaits(r))){ zhReprice(s); return; } }
+// a cart lot's name: its cards, the same card twice once with its count ("Muk x2")
+function cartName(cards){
+  const seen=new Map(); for(const x of cards||[]){ const n=String(x.n||"?").trim(); seen.set(n, (seen.get(n)||0)+1); }
+  return [...seen].map(([n,k])=>k>1?`${n} x${k}`:n).join(" + ");
+}
 function lotRow(rec){
     const c=rec.card||null, multi=c&&c.multi&&c.cards;
     const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
@@ -2406,7 +2411,10 @@ function lotRow(rec){
       id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
       t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"", cp:rec.coupon>0?+rec.coupon:0,
       nu:c&&!multi?(c.num||""):"", se:c&&!multi?(c.s||""):"", pid:c&&!multi?(c.pid||""):"", la:c&&!multi?(c.lang||""):"", mu:multi?c.cards.length:0,
+      cs:multi?c.cards.map(x=>({ n:x.n||"", c:x.cond||"", m:x.condMarket>0?+(+x.condMarket).toFixed(2):0, nm:x.market>0?+(+x.market).toFixed(2):null, id:x.id||"", pr:x.printing||"",
+        nu:x.num||"", se:x.s||"", pid:x.pid||"", la:x.lang||"" })):undefined,   // cart lot: every card (Derek, 2026-11-16: "multi card wins should include the cards in the cart")
       st:rec.startedAt>0?rec.startedAt:null, ac:lotAct(rec) };   // purchases export   // cp: coupon on your win   // t / src: the same lot from the phone and this browser is one lot   // st / ac: sourcing time (lot start, your last action on it)
+    if(row.cs) row.n=cartName(row.cs);   // "Frigibax + Baxcalibur + Arctibax", not "3 cards" (older log rows too)
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2746,6 +2754,7 @@ function dashOpen(on){
   else if(location.hash==="#dash") history.replaceState(null, "", location.pathname+location.search);
 }
 function dashNow(r){   // today's price for a won card at its printing and condition, or null
+  if(r.cs && r.cs.length && !r.zh && !r.zhWait){ let t=0; for(const x of r.cs){ const v=dashNow(Object.assign({}, x, {cs:null})); if(v==null) return null; t+=v; } return t; }   // cart lot: every card, or nothing
   if(!r.id || r.zh || r.zhWait || typeof CARDS==="undefined") return null;   // a Chinese copy: the catalog price is the English / Japanese card's
   if(!DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
   const c=DASH_IDX.get(r.id); if(!c || !c.px) return null;
@@ -2980,7 +2989,16 @@ async function exportPurchases(btn){
   const wins=loadLots().filter(r=>r && r.me && r.f>0).slice().sort((a,b)=>a.at-b.at);
   const pidOf=r=>{ if(r.pid) return r.pid; const c=r.id && DASH_IDX && DASH_IDX.get(r.id); if(!c) return "";
     const pr=c.px && (c.px[r.pr] || (!r.pr && c.px[topPrint(c)])); return String((pr&&pr.p)||c.pid||""); };
-  const cache=skuCache(), need=[...new Set(wins.map(pidOf).filter(p=>p && !cache[p]))];
+  // a cart lot is one row per card (Derek, 2026-11-16): price, coupon and shipping split by each card's share of the lot's
+  // market (equal when no market is known), flagged so a split cost is never mistaken for one paid per card
+  const lines=[];
+  for(const r of wins){
+    if(!(r.cs && r.cs.length)){ lines.push({r, x:r, part:1, key:r.k, flag:""}); continue; }
+    const tot=r.cs.reduce((a,x)=>a+(x.m>0?x.m:0),0), n=r.cs.length;
+    r.cs.forEach((x,i)=>lines.push({ r, x:Object.assign({}, x, {k:r.k, lab:r.lab}), part:tot>0?(x.m>0?x.m:0)/tot:1/n, key:`${r.k}#${i+1}`,
+      flag:n>1?`cart lot ${i+1} of ${n}: cost split by market`:"" }));
+  }
+  const cache=skuCache(), need=[...new Set(lines.map(l=>pidOf(l.x)).filter(p=>p && !cache[p]))];
   if(need.length && WN_EXT){
     for(let i=0;i<need.length;i+=40){
       say(`SKUs ${Math.min(i+40,need.length)}/${need.length}…`);
@@ -2993,18 +3011,18 @@ async function exportPurchases(btn){
   const head=["Key","Won","Won At","Seller","Card","Number","Set","Language","Printing","Condition","Label","Price","Coupon","Cost","Ship Share",
               "Product ID","SKU","SKUs (printing)","Flag","Card ID"];
   let withSku=0;
-  const out=wins.map(r=>{
-    const c=r.id && DASH_IDX && DASH_IDX.get(r.id), pid=pidOf(r), list=skusFor(cache[pid], r.pr || (c && !r.pr ? topPrint(c) : ""));
-    const own=list.find(x=>x.c===r.c), flag=r.mu ? `cart lot (${r.mu} cards)` : !r.n ? "no card" : likelyOther(r) ? "likely another printing" : r.lab==="view" ? "opened only" : "";
+  const out=lines.map(({r, x, part, key, flag:cartFlag})=>{
+    const c=x.id && DASH_IDX && DASH_IDX.get(x.id), pid=pidOf(x), list=skusFor(cache[pid], x.pr || (c && !x.pr ? topPrint(c) : ""));
+    const own=list.find(s=>s.c===x.c), flag=cartFlag || (r.mu ? `cart lot (${r.mu} cards)` : !r.n ? "no card" : likelyOther(r) ? "likely another printing" : r.lab==="view" ? "opened only" : "");
     if(list.length) withSku++;
-    return [r.k, ymd(r.at), new Date(r.at).toISOString(), r.s, r.n||"", r.nu||(c&&c.num)||"", r.se||(c&&c.s)||"", r.la||(c&&(c.lang||"en"))||"",
-      r.pr||"", r.c||"", r.lab||"", (+r.f).toFixed(2), (+r.cp||0).toFixed(2), costOf(r).toFixed(2), shipOf(r).toFixed(2),
-      pid, own?own.s:"", list.map(x=>x.c+":"+x.s).join(" "), flag, r.id||""];
+    return [key, ymd(r.at), new Date(r.at).toISOString(), r.s, x.n||"", x.nu||(c&&c.num)||"", x.se||(c&&c.s)||"", x.la||(c&&(c.lang||"en"))||"",
+      x.pr||"", x.c||"", r.lab||"", (r.f*part).toFixed(2), ((+r.cp||0)*part).toFixed(2), (costOf(r)*part).toFixed(2), (shipOf(r)*part).toFixed(2),
+      pid, own?own.s:"", list.map(s=>s.c+":"+s.s).join(" "), flag, x.id||""];
   });
   const csv=[head].concat(out).map(row=>row.map(v=>{ v=String(v==null?"":v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(",")).join("\n");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
   a.download=`CardComp purchases ${ymd(Date.now())}.csv`; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
-  say(`exported ${out.length} wins · ${withSku} with SKUs${WN_EXT?"":" (no extension: SKUs need desktop)"}`);
+  say(`exported ${wins.length} wins${out.length>wins.length?` (${out.length} rows: cart lots one per card)`:""} · ${withSku} with SKUs${WN_EXT?"":" (no extension: SKUs need desktop)"}`);
   setTimeout(()=>say("export purchases"), 8000);
 }
 window.exportPurchases=exportPurchases; window.skusFor=skusFor;
@@ -3104,7 +3122,7 @@ function lotTable(S){   // the table view: last labeled lots plus every win (lab
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-costOf(r):null, pick=LOT_PICK!=null && LOT_PICK===r.at;
     const sh=shipOf(r), net2=n!=null?n-sh:null, off=likelyOther(r);   // off: likely another printing, shown dim with "?" and left out of net
-    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${r.me&&r.cp>0?`<div class="lsmuted" style="font-size:10px" title="coupon used on this win">−${(+r.cp).toFixed(2)} coupon</div>`:""}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null||off?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${off?' title="under 40% of market: likely another printing, left out of net"':sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)+(off?"?":"")}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button>${r.me?`<button class="lsaddb lscpb" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button>`:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td${r.cs?` title="${escH(r.cs.map(x=>`${x.n} ${x.c} $${(+x.m||0).toFixed(2)}`).join("\n"))}"`:""}>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${r.me&&r.cp>0?`<div class="lsmuted" style="font-size:10px" title="coupon used on this win">−${(+r.cp).toFixed(2)} coupon</div>`:""}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null||off?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${off?' title="under 40% of market: likely another printing, left out of net"':sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)+(off?"?":"")}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button>${r.me?`<button class="lsaddb lscpb" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button>`:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
 }
 function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
   el.querySelectorAll(".lstab:not(.lslead) tbody tr").forEach(tr=>tr.onclick=(e)=>{
