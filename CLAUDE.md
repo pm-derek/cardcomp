@@ -507,6 +507,15 @@ unsend a message", so no batch send and the safeguards below; a wrong send is th
   the open-order count: larger than the rows summed -> amber "N of your M open orders are on this page" (25 rows a
   page), none on the page -> says so, no badge and no rows -> no line. Repainted only when its HTML changes (the body
   observer would loop). Saved page 2026-11-10: 14 orders, $413.29 / $4.47 / $417.76, matched by hand. Extension 0.9.16.
+  TCGplayer Direct (Derek, 2026-11-17: "I just got into the direct program; break down normal versus direct"): a Direct
+  order carries the lightning icon beside the order number (`[class*="direct-order-icon"]`, tooltip "Direct Order") and
+  the status "TCGDirect - Processing" while open. The bar has one line per kind: Ready to Ship (not Direct), Direct (icon
+  or TCGDirect status, not shipped / delivered / cancelled / refunded), and Both. The Orders badge counts only the normal
+  Ready to Ship orders (saved page: badge 6 = the 6 Ready to Ship; 14 Direct beside them), so the "N of your M" note
+  compares Ready to Ship only; Direct has no count to compare with, so when the page's last row is an open Direct order
+  the bar says more may be on the next page. Grid layout (5 aligned columns); its style has an id and wins over an older
+  copy of the bar's style. Saved page: Ready to Ship 6 / $62.13 / $4.47 / $66.60, Direct 14 / $157.15 / $0 / $157.15,
+  both $223.75, matched by hand. Extension 0.9.22; feedback-check section 6.
 - Feedback history + Customers page (Derek, 2026-11-10: "a dashboard with a leaderboard of my top customers and relevant
   stats; on the order sheet what the customer has said about me"): `fbFeedback` in chrome.storage.local (order -> {u, r,
   c, at}), fed by every row the inbox reads (`cardcomp-fb-feedback-merge`), the hourly badge check (page 1) and

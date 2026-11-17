@@ -468,6 +468,21 @@ async function pageTests() {
     await p6g.waitForFunction(() => /3 orders/.test(document.getElementById("ccopen").textContent), null, { timeout: 5000 });
     assert.strictEqual(await barTxt(), "Ready to Ship 3 orders product $36.67 shipping $4.47 total $36.67 3 of your 9 open orders are on this page: raise Rows Per Page or use the Ready to Ship filter to total them all"); ok("a shipped row leaves the sum; when the Orders badge says 9 open and 3 are on the page, the line says so");
     let reps = 0; await p6g.exposeFunction("__rep6", () => { reps++; }); await p6g.evaluate(() => new MutationObserver(() => window.__rep6()).observe(document.getElementById("ccopen"), { childList: true, subtree: true, characterData: true })); await p6g.waitForTimeout(900); assert.strictEqual(reps, 0); ok("the line is not repainted while nothing changes");
+    // TCGplayer Direct (2026-11-17, from Derek's saved page): lightning icon beside the order number, status "TCGDirect - Processing"
+    await p6g.evaluate(() => {
+      const tb = document.querySelector("tbody"), proto = tb.querySelector("tr"), tr = proto.cloneNode(true);
+      tr.querySelectorAll(".ccbuy").forEach((x) => x.remove());
+      const a = tr.querySelector('a[data-testid="OrderIndex_Grid_OrderLink"]'); a.textContent = "92588719-D1"; a.href = "https://sellerportal.tcgplayer.com/orders/92588719-D1";
+      a.parentElement.insertAdjacentHTML("afterend", '<span class="order-index-grid__order-number-icons"><div class="is-positioned-bottom tcg-tooltip direct-order-icon__tooltip"><svg width="12" height="12"></svg></div></span>');
+      const set = (k, v) => { tr.querySelector('td[data-grid-header-value="' + k + '"] div').innerHTML = "<span>" + v + "</span>"; };
+      set("buyerName", "Kyle Skey"); set("orderStatus", "TCGDirect - Processing"); set("productAmount", "$15.65"); set("shippingAmount", "$0.00"); set("totalAmount", "$15.65");
+      tb.appendChild(tr);
+    });
+    await p6g.waitForFunction(() => /Direct/.test(document.getElementById("ccopen").textContent), null, { timeout: 5000 });
+    const barLines = await p6g.$eval("#ccopen", (e) => [...e.children].map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+    assert.deepStrictEqual(barLines, ["Ready to Ship 3 orders product $36.67 shipping $4.47 total $36.67", "Direct 1 order product $15.65 shipping $0.00 total $15.65", "Both 4 orders product $52.32 shipping $4.47 total $52.32",
+      "3 of your 9 open orders are on this page: raise Rows Per Page or use the Ready to Ship filter to total them all", "The last order on this page is an open Direct order: more may be on the next page (raise Rows Per Page to include them)."]);
+    ok("Direct orders: their own line (icon / TCGDirect status), then both; the badge note still compares only Ready to Ship; an open Direct order last on the page says more may follow");
     await c6.close();
     console.log("7. customers.html: leaderboard, tiles, chart, quiet regulars, feedback");
     const c7 = await browser.newContext({ viewport: { width: 1280, height: 900 } }), p7 = await c7.newPage();
