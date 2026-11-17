@@ -30,6 +30,7 @@
         const buyerTd = col("buyerName") || tds[oi + 1], dateTd = col("orderDate") || tds[oi + 2], totalTd = col("totalAmount") || tds[oi + 7] || tds[tds.length - 2];
         if (!buyerTd) return null;
         return { buyerTd, host: buyerTd.querySelector(".tcg-grid-row-cell-content") || buyerTd, order: txt(a), buyer: nameOf(buyerTd), at: when(txt(dateTd)), total: money(txt(totalTd)),
+          direct: !!tr.querySelector('[class*="direct-order-icon"]'),   // the lightning "Direct Order" icon beside the order number
           status: txt(col("orderStatus") || tds[oi + 3]), product: money(txt(col("productAmount") || tds[oi + 5])), shipping: money(txt(col("shippingAmount") || tds[oi + 6])) };
       }).filter((r) => r && r.order && r.buyer);
       openBar(rows);
@@ -53,24 +54,36 @@
   // menu badge is the open-order count: when it is larger than the rows summed, the line says how many are on this page
   // (the list shows 25 a page), so a partial total is never read as the whole. Repainted only when its text changes
   // (the page observer would loop otherwise).
+  // TCGplayer Direct (Derek, 2026-11-17: "I just got into the direct program; break down normal versus direct"): a
+  // Direct order carries the lightning icon and the status "TCGDirect - Processing" while open; the Orders badge counts
+  // only the normal Ready to Ship ones (saved page: badge 6, 6 Ready to Ship + 14 Direct). Direct orders get their own
+  // line, then a line for both. Direct has no badge to compare with, so when the page's last row is still an open order
+  // the line says more may be on the next page.
   const usd = (v) => "$" + (Math.round((v || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const isDirect = (r) => r.direct || /tcg\s*direct/i.test(r.status);
+  const DONE = /shipped|delivered|complete|cancel|refund/i;
   let barSig = "";
   function openBar(rows) {
-    const seen = new Set(), open = rows.filter((r) => /ready to ship/i.test(r.status) && !seen.has(r.order) && seen.add(r.order));
+    const seen = new Set(), once = (r) => !seen.has(r.order) && seen.add(r.order);
+    const open = rows.filter((r) => !isDirect(r) && /ready to ship/i.test(r.status) && once(r));
+    const direct = rows.filter((r) => isDirect(r) && !DONE.test(r.status) && once(r));
     const badge = parseInt(txt(document.querySelector('[data-testid="linkOrders"] .tcg-badge')), 10) || 0;
     const anchor = document.querySelector('[data-testid="OrderIndex_QuickFilters_Container"]') || document.querySelector('[data-testid="OrderIndex_Grid"], [data-testid="OrderIndex_Table"]');
     let bar = document.getElementById("ccopen");
-    if (!anchor || (!open.length && !badge)) { if (bar) { bar.remove(); barSig = ""; } return; }
-    const sum = (k) => open.reduce((t, r) => t + (r[k] || 0), 0);
+    if (!anchor || (!open.length && !direct.length && !badge)) { if (bar) { bar.remove(); barSig = ""; } return; }
+    const sum = (list, k) => list.reduce((t, r) => t + (r[k] || 0), 0);
+    const group = (label, list) => `<div class="g"><b>${label}</b> <span>${list.length} order${list.length === 1 ? "" : "s"}</span> <span>product <b>${usd(sum(list, "product"))}</b></span> <span>shipping <b>${usd(sum(list, "shipping"))}</b></span> <span>total <b>${usd(sum(list, "total"))}</b></span></div>`;
     const part = badge > open.length ? ` <span class="w">${open.length} of your ${badge} open orders are on this page: raise Rows Per Page or use the Ready to Ship filter to total them all</span>` : "";
-    const html = open.length ? `<b>Ready to Ship</b> <span>${open.length} order${open.length === 1 ? "" : "s"}</span> <span>product <b>${usd(sum("product"))}</b></span> <span>shipping <b>${usd(sum("shipping"))}</b></span> <span>total <b>${usd(sum("total"))}</b></span>${part}`
-      : `<b>Ready to Ship</b> <span class="w">none of your ${badge} open orders are on this page: use the Ready to Ship filter to total them</span>`;
+    const last = rows[rows.length - 1];
+    const more = direct.length && last && isDirect(last) && !DONE.test(last.status) ? ` <span class="w">The last order on this page is an open Direct order: more may be on the next page (raise Rows Per Page to include them).</span>` : "";
+    const html = (open.length ? group("Ready to Ship", open) : `<div class="g"><b>Ready to Ship</b> <span class="w">${badge ? `none of your ${badge} open orders are on this page: use the Ready to Ship filter to total them` : "none on this page"}</span></div>`)
+      + (direct.length ? group("Direct", direct) + group("Both", open.concat(direct)) : "") + (open.length ? part : "") + more;
     if (bar && bar.isConnected && html === barSig) return;
-    if (!bar) {
-      bar = document.createElement("div"); bar.id = "ccopen";
-      const st = document.createElement("style"); st.textContent = `#ccopen{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;margin:10px 0 14px;padding:9px 14px;background:#f3f7ff;border:1px solid #c7d7f5;border-left:4px solid #1849a9;border-radius:8px;font:14px/1.5 -apple-system,"Segoe UI",Roboto,Inter,Arial,sans-serif;color:#1f2a37;font-variant-numeric:tabular-nums}#ccopen b{font-weight:700}#ccopen .w{color:#8a5a00;flex-basis:100%;font-size:12.5px}`;
+    if (!document.getElementById("ccopen-css")) {   // by id, so a page that still carries an older copy of the bar gets this look
+      const st = document.createElement("style"); st.id = "ccopen-css"; st.textContent = `#ccopen{display:grid;grid-template-columns:repeat(5,max-content);gap:1px 22px;align-items:baseline;margin:10px 0 14px;padding:9px 14px;background:#f3f7ff;border:1px solid #c7d7f5;border-left:4px solid #1849a9;border-radius:8px;font:14px/1.5 -apple-system,"Segoe UI",Roboto,Inter,Arial,sans-serif;color:#1f2a37;font-variant-numeric:tabular-nums}#ccopen .g{display:contents}#ccopen b{font-weight:700}#ccopen .w{color:#8a5a00;font-size:12.5px;grid-column:1/-1}#ccopen .g .w{grid-column:2/-1}`;
       document.head.appendChild(st);
     }
+    if (!bar) { bar = document.createElement("div"); bar.id = "ccopen"; }
     bar.innerHTML = html; barSig = html;
     if (bar.previousElementSibling !== anchor) anchor.insertAdjacentElement(anchor.matches('[data-testid="OrderIndex_QuickFilters_Container"]') ? "afterend" : "beforebegin", bar);
   }
