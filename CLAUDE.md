@@ -359,6 +359,13 @@ Japanese card with the number read first, since Traditional Chinese follows the 
 one, their twins, the other printings) and the line says "open the right card for its Chinese price". The phone shows
 their pictures to pick from; the card picked (phone) or opened (desktop, `zhB.click()` on open) is looked up alone with
 its other-language twin of the same tier (`zhCandsOne`), then its sales, listings and bid. The name read decides who can be a candidate, the number only orders them (Derek, 2026-11-04, Flareon VMAX 003/009 Simplified Chinese Eevee Heroes: the Japanese numbers-first lookup offered #3 of other 9-card sets, Klink / Magmar / Pikachu, and the small card showed 5 non-Flareon while the search said Flareon VMAX): `askZh` keeps only cards whose `zhBase` name is or contains the name read, unless none does (misread name).
+Levels on the card (Derek, 2026-11-18: "Crobat G LV.64 30th Classic Collection searches the name and numbers and never
+returns a result"): the model reads the printed level as part of the name ("Crobat G LV.44", "Exeggutor LV.46", "Arceus
+LV.100", "Mewtwo LV.51", "Shinx LV.7") and no catalog name carries it, so all 9 such scans since 2026-11-01 matched nothing.
+`autoMatch` drops a level number from the read name first (`dropLevel`, also `window.recogDropLevel` for the search box
+text in `queryText`); LV.X stays. Replay: Arceus LV.100 AR7 exact strong, Giratina LV.70 28/127 exact, Crobat G LV.44 the
+30th Classic Collection copy, Exeggutor / Mewtwo / Shinx their printings listed. Typed searches already dropped it.
+The recog-check Fomantis fixture (me5-85) fell under the $1.50 floor on 2026-11-18 and was swapped for Pikachu ex 238/191.
 Rules: a strong suggestion is never the wrong card; no closest-by-name fallback; never open a card or bid.
 Any new hook line in an existing file gets the `RECOG` tag.
 

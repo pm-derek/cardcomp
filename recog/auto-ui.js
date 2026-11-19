@@ -62,7 +62,7 @@
     const sh = $("#autoshow"); if (sh && SHOW) sh.onclick = () => { fill(SHOW.m, SHOW.r); const a = Object.values(AUTO).find((x) => x.best && x.best.m === SHOW.m); if (a) zhBadges(a.zh); };
   }
 
-  const queryText = (r) => [r.name, r.number ? r.number + (r.total ? "/" + r.total : "") : ""].filter(Boolean).join(" ");
+  const queryText = (r) => [window.recogDropLevel ? window.recogDropLevel(r.name) : r.name, r.number ? r.number + (r.total ? "/" + r.total : "") : ""].filter(Boolean).join(" ");
   function describe(m, r, d) {
     const read = esc(queryText(r)) + (r.rarity ? ` <span style="color:var(--faint)">${esc(r.rarity)}${r.stamp ? " · " + esc(r.stamp) : ""}</span>` : "");
     const sug = m.suggestion && m.cards.find((c) => c.id === m.suggestion);

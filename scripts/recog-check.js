@@ -184,6 +184,12 @@ async function appPage(browser, base, blockRecog) {
     "LV.X in any spelling: only Garchomp LV.X cards (" + lvx.x.map((r) => r.q + " " + r.n.length).join(", ") + ")");
   ok(lvx.lvl.length && /dialga/i.test(lvx.lvl[0]) && lvx.lvl2.length && /palkia/i.test(lvx.lvl2[0]) && lvx.ball.slice(0, 3).some((n) => /level ball/i.test(n)),
     "a level number is ignored (ball: " + lvx.ball.slice(0,3).join("|") + " dialga lv 43 -> " + lvx.lvl[0] + ", palkia lvl.48 -> " + lvx.lvl2[0] + "); 'level ball' still finds Level Ball");
+  // scanned names with the level printed on the card (Derek, 2026-11-18: "Crobat G LV.64 30th Classic Collection never
+  // returns a result"): the reading's level is dropped before matching, LV.X kept
+  const lvr = await app.evaluate(() => { const one = (r) => { const m = autoMatch(Object.assign({ language: "en" }, r)), c = BY_ID.get(m.suggestion) || {}; const t = m.cards[0] || {}; return { kind: m.kind, n: m.cards.length, sug: c.n ? c.n + "|" + c.s + "|" + c.num : "", top: t.n || "", topAt: t.n ? t.n + "|" + t.s + "|" + t.num : "" }; };
+    return { crobat: one({ name: "Crobat G LV.44", stamp: "30th" }), arceus: one({ name: "Arceus LV.100", number: "AR7" }), giratina: one({ name: "Giratina LV.70", number: "28", total: "127" }), zacian: one({ name: "Zacian LV.X" }) }; });
+  ok(lvr.crobat.n > 0 && /^Crobat G$/.test(lvr.crobat.top) && /^Arceus\|Arceus\|AR7$/.test(lvr.arceus.sug) && /^Giratina[^|]*\|[^|]*\|28$/.test(lvr.giratina.topAt) && /Zacian LV\.X/.test(lvr.zacian.sug),
+    "a scanned level is dropped (Crobat G LV.44 -> " + lvr.crobat.top + " (" + lvr.crobat.n + "), Arceus LV.100 AR7 -> " + lvr.arceus.sug + ", Giratina LV.70 28/127 -> " + lvr.giratina.topAt + "); LV.X kept (" + lvr.zacian.sug + ")");
   await without.close(); await app.close();
 
   // ---------- 3. strip ----------
@@ -580,10 +586,10 @@ async function appPage(browser, base, blockRecog) {
   await send({ type: "cardcomp-auto-state", on: true, model: "haiku", hasKey: true }); await ap.waitForTimeout(100);
   ok((await ap.evaluate(() => (document.querySelector("#automodes span.on") || {}).dataset.m)) === "auto" && await ap.$("#automodel"), "state on (older extension, no mode): 'auto' selected, model picker");
   let key = Date.now();
-  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
+  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Pikachu ex", number: "238", total: "191", language: "en", rarity: "Special Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
   await ap.waitForTimeout(300);
   let st = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent, line: document.querySelector("#autoline").textContent }));
-  ok(st.q === "Fomantis 085/084" && st.first && st.first.id === "me5-85" && /auto/.test(st.badge || "") && /✓ Fomantis/.test(st.line) && !/no match/.test(st.line), `exact read: search filled, Fomantis #85 first with the gold mark ("${st.badge}")`);
+  ok(st.q === "Pikachu ex 238/191" && st.first && st.first.id === "sv8-238" && /auto/.test(st.badge || "") && /✓ Pikachu ex/.test(st.line) && !/no match/.test(st.line), `exact read: search filled, Pikachu ex #238 first with the gold mark ("${st.badge}")`);
   // early (streamed) reading for the next lot: fills now, nothing logged; the full reply then marks the best guess
   await lotEnd(); const pk = Date.now();
   const nMatch = (await posted()).filter((m) => m.type === "cardcomp-auto-match").length;
@@ -596,7 +602,7 @@ async function appPage(browser, base, blockRecog) {
   st = await ap.evaluate(() => ({ first: (document.querySelector("#results .card") || {}).dataset, badge: (document.querySelector("#results .card .autobadge") || {}).textContent }));
   ok(st.first && st.first.id === "me2pt5-223" && /auto/.test(st.badge || ""), "full reply after it: Numel IR marked as the best guess");
   await lotEnd(); key = Date.now();
-  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
+  await send({ type: "cardcomp-auto", key, n: 1, read: { card_visible: true, name: "Pikachu ex", number: "238", total: "191", language: "en", rarity: "Special Illustration Rare", confidence: 0.9 }, model: "claude-haiku-5-5", ms: 1300 });
   await ap.waitForTimeout(300);
   let mp1 = (await posted()).filter((m) => m.type === "cardcomp-auto-match").pop();
   ok(mp1 && mp1.kind === "exact" && mp1.strength === "strong" && mp1.filled === true, "match reported to the extension (exact, strong, shown)");
@@ -617,27 +623,27 @@ async function appPage(browser, base, blockRecog) {
   ok(!st.badge && /no #157/.test(st.line), "Kyurem ex 157 (not in catalog): note shown, nothing marked");
   await send({ type: "cardcomp-auto", key: key + 1, n: 1, error: "API key rejected (Options page)" }); await ap.waitForTimeout(150);
   ok(/key rejected/.test(await ap.textContent("#autoline")), "API error shown on the line");
-  const lrec = await ap.evaluate((k) => { const rec = { startedAt: k, card: { id: "me5-85", n: "Fomantis", r: "Illustration Rare", label: "tap", cond: "NM" }, final: 3, me: true, title: "#8" }; window.recogLotDone(rec); return rec; }, key);
+  const lrec = await ap.evaluate((k) => { const rec = { startedAt: k, card: { id: "sv8-238", n: "Pikachu ex", r: "Special Illustration Rare", label: "tap", cond: "NM" }, final: 3, me: true, title: "#8" }; window.recogLotDone(rec); return rec; }, key);
   await ap.waitForTimeout(150);
   const oc = (await posted()).filter((m) => m.type === "cardcomp-auto-outcome").pop();
-  ok(oc && oc.key === key && oc.outcome.card.id === "me5-85" && oc.outcome.me === true && oc.outcome.card.r === "Illustration Rare", "lot end: tapped card reported as the outcome, with its rarity");
+  ok(oc && oc.key === key && oc.outcome.card.id === "sv8-238" && oc.outcome.me === true && oc.outcome.card.r === "Special Illustration Rare", "lot end: tapped card reported as the outcome, with its rarity");
   ok(lrec.recog && lrec.recog.read.name === "Kyurem ex" && lrec.recog.read.number === "157" && lrec.recog.kind === "number-miss" && lrec.recog.sug === null && lrec.recog.ids.length > 0 && /opus/.test(lrec.recog.model), "the auction log row carries the lot's auto reading (Kyurem ex 157, no pick, listed ids)");
   // CardSight side by side, app: the shown answer fills (labelled CardSight), the shadow never touches the screen, the log
   // row carries both (rec.recog.src / rec.recog.alt)
   {
     await lotEnd(); await ap.waitForTimeout(1600); const ck = Date.now() + 20;
-    await send({ type: "cardcomp-auto", key: ck, capAt: ck, n: 1, manual: true, src: "cardsight", model: "cardsight", ms: 420, short: 0, cs: { req: "r9", top: [{ conf: "High", name: "Fomantis" }] },
-      read: { card_visible: true, name: "Fomantis", number: "085", total: "084", language: "en", rarity: "Illustration Rare", confidence: 0.95, box: [] } });
+    await send({ type: "cardcomp-auto", key: ck, capAt: ck, n: 1, manual: true, src: "cardsight", model: "cardsight", ms: 420, short: 0, cs: { req: "r9", top: [{ conf: "High", name: "Pikachu ex" }] },
+      read: { card_visible: true, name: "Pikachu ex", number: "238", total: "191", language: "en", rarity: "Special Illustration Rare", confidence: 0.95, box: [] } });
     await ap.waitForTimeout(250);
     await send({ type: "cardcomp-auto", key: ck, capAt: ck, n: 1, manual: true, shadow: true, src: "claude", model: "claude-sonnet-5-5", ms: 2100, short: 1080,
       read: { card_visible: true, name: "Honchkrow V", number: "161", total: "172", language: "en", rarity: "full art", confidence: 0.8 } });
     await ap.waitForTimeout(250);
     const cst = await ap.evaluate(() => ({ q: document.querySelector("#q").value, first: (document.querySelector("#results .card") || {}).dataset.id, line: document.querySelector("#autoline").textContent }));
-    const crec = await ap.evaluate((k) => { const rec = { startedAt: k, at: k + 20000, card: { id: "me5-85", n: "Fomantis", label: "tap" }, final: 3, me: false }; window.recogLotDone(rec); return rec.recog; }, ck);
+    const crec = await ap.evaluate((k) => { const rec = { startedAt: k, at: k + 20000, card: { id: "sv8-238", n: "Pikachu ex", label: "tap" }, final: 3, me: false }; window.recogLotDone(rec); return rec.recog; }, ck);
     const shm = (await posted()).filter((m) => m.type === "cardcomp-auto-match" && m.shadow).pop();
-    ok(cst.q === "Fomantis 085/084" && cst.first === "me5-85" && /CardSight 0\.4s/.test(cst.line) && !/Honchkrow/.test(cst.line), "side by side: CardSight's answer fills and is labelled, Claude's shadow (Honchkrow) never shows (" + cst.line.replace(/\s+/g, " ").slice(0, 80) + ")");
-    ok(crec && crec.src === "cardsight" && crec.sug && crec.sug.id === "me5-85" && crec.cs && crec.cs.req === "r9" && crec.alt && crec.alt.src === "claude" && crec.alt.read.name === "Honchkrow V" && crec.alt.sug && crec.alt.sug.id === "swsh9-162" && shm && shm.src === "claude",
-      "side by side: the log row carries both answers (shown CardSight Fomantis, other Claude Honchkrow #162), the shadow match reported to the extension");
+    ok(cst.q === "Pikachu ex 238/191" && cst.first === "sv8-238" && /CardSight 0\.4s/.test(cst.line) && !/Honchkrow/.test(cst.line), "side by side: CardSight's answer fills and is labelled, Claude's shadow (Honchkrow) never shows (" + cst.line.replace(/\s+/g, " ").slice(0, 80) + ")");
+    ok(crec && crec.src === "cardsight" && crec.sug && crec.sug.id === "sv8-238" && crec.cs && crec.cs.req === "r9" && crec.alt && crec.alt.src === "claude" && crec.alt.read.name === "Honchkrow V" && crec.alt.sug && crec.alt.sug.id === "swsh9-162" && shm && shm.src === "claude",
+      "side by side: the log row carries both answers (shown CardSight Pikachu ex, other Claude Honchkrow #162), the shadow match reported to the extension");
   }
   // read before the timer: shown as "before start"; the lot (created earlier, older key) reuses it; outcome maps to the lot
   await lotEnd(); await ap.waitForTimeout(50); const lotKey = Date.now(); await ap.waitForTimeout(30); const preKey = Date.now();

@@ -28,6 +28,11 @@
   const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\blv x\b/g, "lvx");   // LV.X / LVX / Lv. X are one token
   const depad = s => String(s == null ? "" : s).toLowerCase().trim().replace(/^0+(?=\d)/, "");
+  // The level printed on DP / Platinum cards (Derek, 2026-11-18: "Crobat G LV.64 30th Classic Collection never returns a
+  // result"): the model reads it as part of the name ("Crobat G LV.44", "Exeggutor LV.46", "Arceus LV.100"), and no
+  // catalog name carries it, so all 9 such scans since Nov 1 matched nothing. LV.X stays: that is the card's name.
+  const dropLevel = s => String(s || "").replace(/\s*\b(?:lv|lvl|level)\s*\.?\s*\d{1,3}\b/gi, "").replace(/\s+/g, " ").trim();
+  window.recogDropLevel = dropLevel;
   const price = c => (typeof bestMarket === "function" ? bestMarket(c) : 0) || 0;
   // A stamp on the card names its product line. Tests in order: the first one that matches a candidate wins.
   //   anniversary logos: 30th -> 30th Celebration (+ Classic Collection), 25th -> Celebrations; either one falls back to
@@ -117,6 +122,7 @@
   // and Haiku then invents plausible ones (live test: 7 of 7 numbers on a 720p stream were wrong).
   function autoMatch(read, ctx) {
     read = read || {}; ctx = ctx || {};
+    if (read.name && dropLevel(read.name) !== read.name) read = Object.assign({}, read, { name: dropLevel(read.name) });
     const rl = String(read.language || "").toLowerCase();
     // Chinese / Korean / other: the catalog is English and Japanese only (TCGplayer lists neither Chinese nor Korean).
     // Show the English printings for reference, never as the card: no suggestion, a loud note.
