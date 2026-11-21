@@ -78,11 +78,38 @@ For logic changes (classifiers, bid math, phonetic keys), write a tiny standalon
 Max bid is **margin-driven**, not a percent of market:
 
 ```
-bidForMargin(market, mf) = netProceeds(listSale(market)) / (1 + mf)
-listSale(m)   = m * (1 + listmarkup%/100)
-netProceeds(s)= s*(1-feePct) - flat - (s >= thresh ? track : 0)
+bidForMargin(market, mf, ctx) = npOf(market, ctx) / (1 + mf)      // ctx = saleCtx(card, cond): condition, year, set, language, game, sealed
+npOf(m, ctx)  = saleOf(m, ctx).net
+saleOf(m,ctx) = list = sheetList(m, ctx)                         // the Pull Sheet's list price for that card and condition
+                net  = regular, or Direct for NM/LP English Pokemon singles listed $2.50+ (settings "sale channel")
 mf            = getNum("tgtmargin",10)/100   // "target margin %" setting; Derek runs 10%
 ```
+
+List price and channel (Derek, 2026-11-21: "now that we're on Direct, our bid amounts need a different fee and shipping cost
+model, which also varies by card market value"; spec, engine and snapshot in `docs/pricing/`). `sheetList` is a port of the
+Pull Sheet's `engine.js` `listPrice` (Pricing tab): markup by "market up to $" band, x era premium for NM / LP from $2.50
+market (`eraOf`: year cut points <2003 WOTC, <2007 EX, <2010 DP, 2010 HGSS, <2014 BW, <2017 XY, <2020 SM, <2023 SWSH, <2025 SV,
+else ME; set names decide 2003 / 2007 / 2011 / 2025; Japanese, Chinese copies and other games "other"), the MP-and-below
+table (`nd_markup`, no era) for MP / HP / DMG and sealed, the $0.40 floor route, then rounding (.99 charm, $5.00-5.20 ->
+$4.99, $50-52 -> $49.99). Copies held 1, no cheapest listing, no Direct Low, no markdowns: each only raises the sheet's price,
+so bids stay on the safe side. Nets: `netRegular` = the Shipped Log model (10.75% commission to $75, 2.5% processing on price
++ the buyer's $1.49 shipping under $5, x1.07 tax, + $0.30, envelope $0.97 / tracked $6.18 from $49.99 / +$4 signature from
+$250; sealed keeps its weight-tier postage `buildSealedFeeTiers`), `netDirect` = $1.12 + 8.95% (to $75) + 2.5% + ~$0.15 RI
+shipping and insurance a card (under $2.50 it pays 50%: those stay regular). Settings "sale channel" (`cfg-chan`, saved with
+the other settings, now including selects): lower of the two (default, cautious), 2/3 Direct + 1/3 regular, or regular only.
+Under ~$8 Direct nets less; above it regular's tracked postage makes Direct the higher one. Settings feed: the sheet's
+published "CardComp Settings" tab (`PRICING_CSV`, CSV `group,key,value,what`; `pricingFromCSV`, `pricingOK` rejects a wrong
+format, empty markup, markups outside 0.5-3, `dl_cap_x` outside 1-3): ingest.js embeds it in data.json as `pricing` (keeps
+the previous copy on a failed read), the browser also reads it live (`pricingLive`, `cache:"no-cache"`; Google's CORS for
+it is unverified, a failure is silent) and keeps the last good copy in localStorage `cardcomp_pricing`; the newest valid copy
+by `built` wins over data.json's and the built-in `PRICING_BUILTIN` (the 2026-11-20 snapshot). Settings shows where it came
+from (`#pricingsrc`). The open card's bid table says what the bids assume ("NM lists $27.50 · nets $22.10 Direct (regular
+$23.94)", `saleLine`). The old `listmarkup` setting is gone. Every caller passes a context: `snapCtx` for logged snapshots
+(stats `np`), `rowCtx` for stats rows, `{zh:true}` for Chinese copies (regular, no era), `saleCtx(it, "sealed", {tiers})` for
+sealed; phone pills pass `saleCtx(card, cond)`. Bids rose on most cards (the markup is 1.10-1.40 vs the old 1.04, plus the era
+premium: Lugia Neo Genesis $1,300 NM $1,016 -> $1,255, Pikachu Crown Zenith $32.91 $25 -> $30); cheap NM / LP cards that would
+go Direct can drop (Nidorina Jungle LP $1 -> $0). `node scripts/pricing-check.js`: 1,500 cases against engine.js, the spec's
+cases and channel table, era boundaries, the CSV reader on the spec's shape, feed validation.
 
 So the bid is the highest price that still nets the target margin, and never leaves less than the **min profit per card**
 (settings, `cfg-minprofit`, default $0.25 (Derek's pick; first shipped at $0.50), `minProfit()`; Derek, 2026-10-30: "bid $2 for a net profit of 9 cents, not
@@ -93,7 +120,7 @@ margin is the larger cut and nothing changes. Do **not** reintroduce flat %-of-m
 
 Bids go out as **whole dollars** (Whatnot rejects cents), rounded by `wholeBid(exact, np)` (Derek, 2026-10-23: "a max of $8.99 went in as $8, should be 9; but rounding up sometimes eats too much margin"): round UP when the profit at the rounded-up bid stays at or above the min profit per card and is still >= 75% (`ROUND_KEEP`) of the profit at the exact max, or rounding up costs $0.25 of profit or less (`ROUND_CENTS`; Holon Fossil RH 2026-10-23: NM $3.89 and LP $3.83 both sent $3, though $4 cost only $0.11 / $0.17), else down. At the $0.25 default the Holon Fossil case still rounds up: NM $3.89 sends $4 (nets $0.28). $8.99 -> 9, $7.85 -> 8 (keeps 81%), $8.05 -> 8, $6.58 -> 6 (up keeps 45%), $2.46 -> 2, $54.54 -> 55, $214.49 -> 215. Applied where whole bids are made: condition grid (button shows "$215" with the exact "214.49" small beside it; net and % mkt at the sent bid), bid table "margin" tap, tile chips / collapsed rows (`put`), the your-bid box start, the cart total, the flat bid. `copyAmt` still floors whatever it is handed (sub-$1 -> "under $1"); profit buttons already send floor(np - $N). The copy flash restores the button's markup (`_t0` = innerHTML).
 
-**Break-even** (b/e) = the bid that nets exactly $0 after fees and shipping at that condition's price: `bidForProfit(price, 0)` = `netProceeds(listSale(price))`, never `bidForMargin(price, 0)` (that also keeps the min profit). One price per condition everywhere (Derek, 2026-11-02: "break-even should be the price where I'd make $0, consistent by condition"): `condPrices(base, key, year, pid)` is the only place a condition's price is decided (verified read / cascade / caps / tier), used by the condition grid, and `nmPrice(card, printing)` is its NM row, used by the open card's top bid table, the result tiles and NM tap snapshots. Before, the top table and tiles bid off the catalog's all-condition market ($7.53 Gardevoir TG05 SIT) while the NM row and the phone used TCGplayer's NM read ($7.31), and the phone's b/e also subtracted the min profit: three b/e numbers for one card. phone-check: "NM break-even is one number".
+**Break-even** (b/e) = the bid that nets exactly $0 after fees and shipping at that condition's price: `bidForProfit(price, 0, ctx)` = `npOf(price, ctx)`, never `bidForMargin(price, 0)` (that also keeps the min profit). One price per condition everywhere (Derek, 2026-11-02: "break-even should be the price where I'd make $0, consistent by condition"): `condPrices(base, key, year, pid)` is the only place a condition's price is decided (verified read / cascade / caps / tier), used by the condition grid, and `nmPrice(card, printing)` is its NM row, used by the open card's top bid table, the result tiles and NM tap snapshots. Before, the top table and tiles bid off the catalog's all-condition market ($7.53 Gardevoir TG05 SIT) while the NM row and the phone used TCGplayer's NM read ($7.31), and the phone's b/e also subtracted the min profit: three b/e numbers for one card. phone-check: "NM break-even is one number".
 
 Each condition row and the collapsed card also show the **net $ profit** at that bid. `thinFlag()` marks bids built on shaky price data (no market, low-listing-only, or wide spread).
 
