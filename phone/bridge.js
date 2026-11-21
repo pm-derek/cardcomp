@@ -838,7 +838,7 @@
   // with cents (Derek, 2026-10-29: "b/e needs to show cents"): it is a ceiling to judge against, not a bid to send
   // break-even = what a sale nets after fees (bidForProfit at $0), same as the open card's b/e. Not bidForMargin(mkt, 0):
   // that also keeps the min profit per card ($0.25), so the small card read $0.25 under the full view (2026-10-31)
-  const beOf = (mkt) => { try { const v = mkt > 0 && typeof bidForProfit === "function" ? bidForProfit(mkt, 0) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
+  const beOf = (mkt, ctx) => { try { const v = mkt > 0 && typeof bidForProfit === "function" ? bidForProfit(mkt, 0, ctx) : 0; return v > 0 ? "$" + (v >= 1000 ? Math.floor(v).toLocaleString("en-US") : v.toFixed(2)) : "–"; } catch (_) { return "–"; } };
   // Every card shown gets the TCGplayer fast read in the background (Derek, 2026-10-23): LP / MP / HP / DMG then come
   // from TCGplayer's own market, listings and sales instead of the usual shares of NM. Same request a condition link
   // sends (extension/tcgfast.js through the app); the app applies every condition and the grid, which the small card
@@ -921,7 +921,7 @@
           `<div class="prow${miss ? " dim" : ""}">` + rows.map((x) =>
             `<span class="pb${x.b ? "" : " wait"}${flash(x.c) ? " fl" : ""}" data-t="bid" data-c="${x.c}"><em style="color:${col(x.c)}">${x.c}</em>` +
             `<b>${esc(flash(x.c) || x.bid)}</b>` +
-            `<small><i>mkt</i>${x.mkt > 0 ? money(x.mkt) : "–"}</small><small><i>b/e</i>${esc(beOf(x.mkt))}</small></span>`).join("") +
+            `<small><i>mkt</i>${x.mkt > 0 ? money(x.mkt) : "–"}</small><small><i>b/e</i>${esc(beOf(x.mkt, typeof saleCtx === "function" ? saleCtx(r, x.c) : undefined))}</small></span>`).join("") +
           `</div>` +
         `</div>` +
       `</div>` + pchips;
@@ -945,7 +945,7 @@
   const zhById = (id) => (typeof BY_ID !== "undefined" && BY_ID.get && BY_ID.get(id)) || (typeof CARDS !== "undefined" ? CARDS.find((c) => c.id === id) : null);
   const zm = (v) => (typeof zhMoney === "function" ? zhMoney(v) : money(v));
   function zhBidOf(est) {
-    try { const mf = (typeof getNum === "function" ? getNum("tgtmargin", 10) : 10) / 100, np = netProceeds(listSale(est)), b = wholeBid(bidForMargin(est, mf), np); return b >= 1 ? b : 0; } catch (_) { return 0; }
+    try { const mf = (typeof getNum === "function" ? getNum("tgtmargin", 10) : 10) / 100, zc = { zh: true, cond: "NM" }, np = npOf(est, zc), b = wholeBid(bidForMargin(est, mf, zc), np); return b >= 1 ? b : 0; } catch (_) { return 0; }
   }
   function zhStart(id) {
     const c = zhById(id); if (!c || (ZH_ONE[id] && (ZH_ONE[id].pending || Date.now() - ZH_ONE[id].at < 10 * 60e3))) return;
@@ -965,7 +965,7 @@
       const b = zhBidOf(s.est), on = pk.use === k;
       return `<span class="pb${on ? "" : " alt"}"${b ? ` data-t="zhbid" data-zh="${esc(ZH_PICK || "")}" data-mkt="${(+s.est).toFixed(2)}" data-zhsrc="${k}" data-bid="${b}"` : ""} title="max bid at ${zm(s.est)} from the Chinese ${k === "sold" ? "sales" : "listings"}">` +
         `<em>${k === "sold" ? "中 SOLD" : "中 LISTED"}</em><b>${b ? "$" + b : "–"}</b>` +
-        `<small><i>mkt</i>${zm(s.est)}</small><small><i>b/e</i>${esc(beOf(s.est))}</small></span>`;
+        `<small><i>mkt</i>${zm(s.est)}</small><small><i>b/e</i>${esc(beOf(s.est, { zh: true, cond: "NM" }))}</small></span>`;
     };
     const ks = pk.use === "listed" ? ["listed", "sold"] : ["sold", "listed"];
     return `<div class="prow zp">${ks.map(one).join("")}</div>`;

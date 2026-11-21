@@ -273,9 +273,9 @@
       <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-speed" checked style="width:auto"> speed-based margin (fast cards keep the target above, slow cards up to 25%)</label>
       <label>target profit $ (break-even = 0)<input id="cfg-tgtprofit" type="number" value="0"></label>
       <label>min profit per card $ (cheap cards: the bid always leaves this)<input id="cfg-minprofit" type="number" value="0.25" step="0.25" min="0"></label>
-      <label>list markup %<input id="cfg-listmarkup" type="number" value="4"></label>
+      <label>sale channel for NM / LP $2.50+ (what a bid assumes it nets)<select id="cfg-chan" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:13px"><option value="low">lower of Direct and regular (cautious)</option><option value="mix">2/3 Direct, 1/3 regular</option><option value="reg">regular orders only</option></select></label>
     </div>
-    <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">Fees &amp; shipping are modeled from verified TCGplayer rates (commission, txn, PWE/tracked postage, thresholds) — no longer manual.</div>
+    <div class="muted" style="font-size:11px;color:var(--faint);margin-top:6px">List prices follow the Pull Sheet's Pricing tab (markup by price, era premium for NM / LP, played-card table, rounding; settings <span id="pricingsrc">built in</span>). Nets: regular orders (Shipped Log fees, postage, the buyer's $1.49 under $5) and TCGplayer Direct (NM / LP English singles listed $2.50+).</div>
     <h4 style="margin-top:13px">condition multipliers</h4>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);margin-bottom:8px"><input type="checkbox" id="cfg-autotier" checked style="width:auto"> Auto by era + price (recommended) — overrides the manual values below</label>
     <div class="multrow">
@@ -1578,7 +1578,7 @@ function checkStale(){
 async function boot(){
   const st=$("#status"); if(st) st.textContent="loading catalog\u2026";
   // no-cache = revalidate: a 304 when prices have not changed since the last load (no-store re-downloaded ~1.4 MB every load)
-  try{ const d=await (await fetch("./data.json",{cache:"no-cache"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; }
+  try{ const d=await (await fetch("./data.json",{cache:"no-cache"})).json(); CARDS=d.cards||[]; SET_SIZE=d.sz||{}; DATA_UPDATED=d.updated||""; if(d.pricing) pricingUse(d.pricing, "data.json (daily)"); pricingLive(); }
   catch(e){ CARDS=[]; }
   buildIndex(); window.__ready=true; setGame(GAME); checkStale(); if(location.hash==="#dash") dashOpen(true);
   if(window.parent!==window) document.body.classList.add("framed");   // extension side panel: tighter grid
@@ -1596,6 +1596,11 @@ const CONDS = ["NM","LP","MP","HP","DMG"];
 const COND_COLORS = {NM:"#5fd6a0",LP:"#9ed36a",MP:"#f5b301",HP:"#ff9e4a",DMG:"#ff6b6b"};
 const MULT_DEF = {NM:1,LP:0.85,MP:0.70,HP:0.55,DMG:0.40};
 function getNum(id,def){ const el=$("#cfg-"+id); const v=el?parseFloat(el.value):NaN; return isNaN(v)?def:v; }
+function getStr(id){ const el=$("#cfg-"+id); return el?String(el.value||""):""; }
+// the sale a stored row or tap snapshot is priced on (Chinese copies: regular orders, no era)
+function snapCtx(c){ return c && c.zh ? {zh:true, cond:c.cond||"NM"} : saleCtx(c, c && c.cond); }
+function rowCtx(r){ return r.zh ? {zh:true, cond:r.c||"NM"} : saleCtx((typeof BY_ID!=="undefined" && r.id && BY_ID.get(r.id)) || {lang:r.la}, r.c); }
+function paintPricingSrc(){ const el=document.getElementById("pricingsrc"); if(el) el.textContent=`from ${PRICING.src}, built ${PRICING.built||"?"}`; }
 function mult(cond){ const el=document.querySelector('.multrow input[data-c="'+cond+'"]'); const v=el?parseFloat(el.value):NaN; return isNaN(v)?MULT_DEF[cond]:v; }
 // Condition multipliers (share of NM). Measured 2026-10 from a TCGplayer pricing export of 13 full sets,
 // every condition (Base Set through Phantasmal Flames, ~13.5k prices): era drives the discount, price
@@ -1649,11 +1654,155 @@ function buildSealedFeeTiers(key){   // sealed never ships PWE; postage from pic
 }
 const FEE_TIERS = buildFeeTiers();
 function feeTierFor(p, tiers){ tiers=tiers||FEE_TIERS; return tiers.find(x=>p>=x.lo && p<x.hi) || tiers[tiers.length-1]; }
-function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B
+function netProceeds(sale, tiers){ const t=feeTierFor(sale, tiers); return t.A*sale - t.B; }   // A*p - B (sealed postage tiers; singles use netRegular / netDirect below)
+/* ---- List price and channel (Derek, 2026-11-21: "now that we're on Direct, bids need a different fee and shipping
+   model, which also varies by card market value"). Spec: CARDCOMP-PRICING-SPEC.md from the Pull Sheet.
+   A bid is what Derek can pay and still net the margin when the card sells at the price the Pull Sheet would list it at,
+   through the channel it would sell in:
+   - list price = the sheet's Pricing tab (port of engine.js listPrice): markup by price band, era premium for NM/LP from
+     $2.50 market, the MP-and-below table for played cards and sealed, rounding (.99 charm, $5 / $50 snaps). Copies held = 1,
+     no cheapest listing, no Direct Low, no markdowns: each of those only raises the sheet's price, so leaving them out
+     keeps bids on the safe side.
+   - regular order: the Shipped Log's model (10.75% commission to $75, 2.5% processing on price + shipping x 1.07 tax +
+     $0.30, envelope $0.97 / tracked $6.18 from $49.99 / +$4 signature from $250, the buyer's $1.49 shipping under $5).
+   - TCGplayer Direct (NM/LP, English Pokemon singles, list $2.50+): $1.12 + 8.95% commission (to $75) + 2.5%, about
+     $0.15 a card of RI shipping and insurance; under $2.50 it pays 50% (those stay regular).
+   - which net a bid uses (settings "sale channel"): the lower of the two (default, Derek: "I'd rather something sit too long
+     than price it too low"), a 2/3 Direct mix (the share of $2.50+ NM/LP sales that went Direct in the first two RIs), or
+     regular only.
+   Settings come from the sheet's published "CardComp Settings" tab: the newest valid copy of the live CSV (this
+   browser), the last one this browser read, data.json's (ingest.js, daily), and the copy built in here. ---- */
+const PRICING_CSV="https://docs.google.com/spreadsheets/d/e/2PACX-1vRRY1fDkV2lPZlAPOd7vQzKH0MRhsNxcPqqbiOTIw5SrwQxxRrdlk9fNkD5Kbddf8gj8MJmK550Uc99/pub?gid=644984281&single=true&output=csv";
+const PRICING_BUILTIN={ format:"cardcomp-pricing-1", built:"2026-11-20", src:"built-in",
+  setting:{ ship_under_free:1.49, free_from:5, floor_at:0.4, floor_price:0.5, snap5_to:5.2, snap50_to:52, charm:0.01, low_markup:false,
+    md_min:3, md_floor:1, cost_x:1.35, era_from:2.5, dl_from:2.5, dl_cap_x:1.5, dl_cap_add:2, own_from:2.5, own_probe:1 },
+  markup:[[1,1.4],[2,1.3],[3,1.35],[5,1.3],[10,1.3],[25,1.25],[100,1.2],[1000000,1.1]],
+  nd_markup:[[1,1.25],[2,1.15],[5,1.08],[10,1.05],[25,1.03],[100,1.02],[1000000,1.01]],
+  copies:[[0,1],[1,1],[2,1.02],[3,1.04],[4,1.06],[5,1.08],[6,1.08],[7,1.08],[8,1.08],[9,1.08],[10,1.08]],
+  floor_copies:[[0,1],[1,1],[2,1.03],[3,1.06],[4,1.09],[5,1.12],[6,1.15],[7,1.18],[8,1.21],[9,1.24],[10,1.27]],
+  era:{ WOTC:1.1, EX:1.1, DP:1.06, HGSS:1.06, BW:1.06, XY:1.04, SM:1.02, SWSH:1, SV:1, ME:1, other:1 },
+  lang:{ EN:{adjust:0, md_days:null, md_week:0.02, md_max:0.15}, JP:{adjust:0, md_days:null, md_week:0.03, md_max:0.2} } };
+let PRICING=PRICING_BUILTIN;
+// the published tab, one row per value: group,key,value,what it is (blank key = unused row)
+function pricingFromCSV(text){
+  const rows=[]; let row=[], f="", q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=ch; }
+    else if(ch==='"') q=true; else if(ch===","){ row.push(f); f=""; }
+    else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&text[i+1]==="\n") i++; row.push(f); rows.push(row); row=[]; f=""; }
+    else f+=ch; }
+  if(f!==""||row.length){ row.push(f); rows.push(row); }
+  const num=v=>{ const s=String(v==null?"":v).trim(); if(s==="") return null; const n=+s.replace(/[$,%]/g,""); return isFinite(n)?n:null; };
+  const S={ setting:{}, markup:[], nd_markup:[], copies:[], floor_copies:[], era:{}, lang:{} };
+  for(const r of rows){ const g=String(r[0]||"").trim(), k=String(r[1]||"").trim(), v=r[2];
+    if(!g || g==="group" || k==="") continue;
+    if(g==="meta"){ S[k]=String(v||"").trim(); continue; }
+    if(g==="setting"){ S.setting[k]=/^(true|false)$/i.test(String(v).trim()) ? /^true$/i.test(String(v).trim()) : num(v); continue; }
+    if(["markup","nd_markup","copies","floor_copies"].includes(g)){ const a=num(k), b=num(v); if(a!=null && b!=null) S[g].push([a,b]); continue; }
+    if(g==="era"){ const b=num(v); if(b!=null) S.era[k]=b; continue; }
+    const lm=/^lang_(adjust|md_days|md_week|md_max)$/.exec(g);
+    if(lm){ (S.lang[k]=S.lang[k]||{})[lm[1]]=num(v); continue; }
+  }
+  return S;
+}
+function pricingOK(S){
+  if(!S || S.format!=="cardcomp-pricing-1" || !Array.isArray(S.markup) || !S.markup.length) return false;
+  const st=S.setting||{}, x=v=>typeof v==="number" && isFinite(v);
+  if(!S.markup.every(r=>x(r[1]) && r[1]>=0.5 && r[1]<=3) || !(S.nd_markup||[]).every(r=>x(r[1]) && r[1]>=0.5 && r[1]<=3)) return false;
+  if(!(x(st.dl_cap_x) && st.dl_cap_x>=1 && st.dl_cap_x<=3)) return false;
+  return ["floor_at","floor_price","snap5_to","snap50_to","charm","era_from"].every(k=>x(st[k]) && st[k]>=0 && st[k]<100);
+}
+const PRICING_KEY="cardcomp_pricing";
+function pricingUse(S, src){   // the newest valid copy wins ("built" from the sheet)
+  if(!pricingOK(S)) return false;
+  const fill=Object.assign({}, PRICING_BUILTIN, S, { src, era:Object.assign({}, PRICING_BUILTIN.era, S.era||{}),
+    lang:Object.assign({}, PRICING_BUILTIN.lang, S.lang||{}), setting:Object.assign({}, PRICING_BUILTIN.setting, S.setting||{}) });
+  if(PRICING.src!=="built-in" && String(fill.built||"")<String(PRICING.built||"")) return false;
+  PRICING=fill; paintPricingSrc(); return true;
+}
+try{ const v=JSON.parse(localStorage.getItem(PRICING_KEY)||"null"); if(v) pricingUse(v, "this browser's last copy"); }catch(_){ }
+async function pricingLive(){   // the sheet itself, when Google lets this page read it (no-cache: changes within minutes)
+  try{
+    const r=await fetch(PRICING_CSV, {cache:"no-cache"}); if(!r.ok) return;
+    const S=pricingFromCSV(await r.text());
+    if(pricingUse(S, "the sheet (live)")){ try{ localStorage.setItem(PRICING_KEY, JSON.stringify(S)); }catch(_){ } }
+  }catch(_){ }   // blocked or offline: data.json's copy or the built-in one stands
+}
+// era by set and year (spec section 6; the sheet maps by set name, years are close; boundary years by set name)
+function eraOf(C){
+  if(C.zh || (C.game && C.game!=="pkmn") || C.lang==="jp" || !(C.y>0)) return "other";   // Japanese: the sheet's names are English sets
+  const y=+C.y, s=String(C.s||"").toLowerCase();
+  if(y<2003) return "WOTC";
+  if(y===2003) return /^(ex\b|ruby|sandstorm)/.test(s) ? "EX" : "WOTC";
+  if(y<2007) return "EX";
+  if(y===2007) return /power keepers|pop series [1-5]\b/.test(s) ? "EX" : "DP";
+  if(y<2010) return "DP";
+  if(y===2010) return "HGSS";
+  if(y===2011) return /call of legends|heartgold|hgss|unleashed|undaunted|triumphant/.test(s) ? "HGSS" : "BW";
+  if(y<2014) return "BW";
+  if(y<2017) return "XY";
+  if(y<2020) return "SM";
+  if(y<2023) return "SWSH";
+  if(y===2025) return /mega evolution|phantasmal|^me\b/.test(s) ? "ME" : "SV";
+  return y<2025 ? "SV" : "ME";
+}
+const pUpTo=(t,v)=>{ const s=(t||[]).filter(r=>r[0]!=="" && r[0]!=null).sort((a,b)=>a[0]-b[0]); for(const [b,x] of s) if(v<=b) return x; return s.length?s[s.length-1][1]:1; };
+const pFrom=(t,v)=>{ let x=1; for(const [b,y] of (t||[]).filter(r=>r[0]!=="" && r[0]!=null).sort((a,b)=>a[0]-b[0])) if(v>=b) x=y; return x; };
+function pSnap(p, S){
+  const st=S.setting, sp=Math.round(p*100)/100, sk=Math.floor(sp)-0.01;
+  let out=sp;
+  if(sp>=5 && sp<=st.snap5_to) out=4.99;
+  else if(sp>=50 && sp<=st.snap50_to) out=49.99;
+  else if(sk<sp && sp-sk<=sp*st.charm+1e-9) out=sk;
+  return Math.round(out*100)/100;
+}
+// ctx: {cond:"NM"|"LP"|..|"sealed", y, s, lang, game, sealed, zh, tiers (sealed postage)}; a bare array is old-style tiers
+function normCtx(ctx){ if(Array.isArray(ctx)) return {tiers:ctx, sealed:true}; return ctx||{}; }
+function saleCtx(card, cond, extra){
+  card=card||{}; const sealed=!!card.sealed || cond==="sealed";
+  return Object.assign({ cond:sealed?"sealed":(cond||"NM"), y:card.y, s:card.s, lang:card.lang||"en", game:card.game||"pkmn", sealed }, extra||{});
+}
+function sheetList(m, ctx){   // what the Pull Sheet would list this card at (its condition's market m)
+  const C=normCtx(ctx), S=PRICING, st=S.setting;
+  if(!(m>0)) return 0;
+  if(m<=st.floor_at) return pSnap(st.floor_price*pFrom(S.floor_copies,1), S);
+  const nmlp=!C.sealed && (!C.cond || C.cond==="NM" || C.cond==="LP");
+  const base=m*pUpTo(S.markup, m)*pFrom(S.copies,1);
+  const L=S.lang[C.lang==="jp"?"JP":"EN"]||{}, lang=1+(L.adjust||0);
+  const era=nmlp && m>=st.era_from ? (S.era[eraOf(C)] ?? 1) : 1;
+  const price=nmlp ? base*lang*era : m*pUpTo(S.nd_markup, m)*pFrom(S.copies,1)*lang;   // MP and below, sealed: their own table, no era
+  return pSnap(price, S);
+}
+const REG={ comm:0.1075, commCap:75, proc:0.025, tax:1.07, perOrder:0.30, buyerShip:1.49, freeFrom:5, env:0.97, trackFrom:49.99, tracked:6.18, sigFrom:250, sig:4 };
+function netRegular(s, tiers){   // one card, Derek ships; sealed keeps its weight-tier postage model
+  if(tiers) return netProceeds(s, tiers);
+  const ship=s<REG.freeFrom?REG.buyerShip:0, comm=Math.min(REG.comm*s, REG.commCap), proc=REG.proc*(s+ship)*REG.tax+REG.perOrder;
+  const post=(s>=REG.trackFrom?REG.tracked:REG.env)+(s>=REG.sigFrom?REG.sig:0);
+  return s-comm-proc-post+ship;
+}
+const DIR={ from:2.5, under:0.5, flat:1.12, comm:0.0895, commCap:75, txn:0.025, ri:0.15 };
+function netDirect(s){ return s<DIR.from ? DIR.under*s : s-DIR.flat-Math.min(DIR.comm*s, DIR.commCap)-DIR.txn*s-DIR.ri; }
+function directOK(C, s){ return !C.sealed && !C.zh && (!C.cond || C.cond==="NM" || C.cond==="LP") && C.lang!=="jp" && (C.game||"pkmn")==="pkmn" && s>=DIR.from; }
+const chanMode=()=>{ const v=(getStr("chan")||"low"); return ["low","mix","reg"].includes(v)?v:"low"; };
+function saleOf(m, ctx){   // -> {list, net, ch, reg, dir}: the sale a bid is built on
+  const C=normCtx(ctx), list=sheetList(m, C), reg=netRegular(list, C.tiers || (C.sealed ? buildSealedFeeTiers("M") : null));
+  if(!directOK(C, list)) return { list, net:reg, ch:"regular", reg, dir:null };
+  const dir=netDirect(list), mode=chanMode();
+  if(mode==="reg") return { list, net:reg, ch:"regular", reg, dir };
+  if(mode==="mix") return { list, net:dir*2/3+reg/3, ch:"mix", reg, dir };
+  return dir<=reg ? { list, net:dir, ch:"Direct", reg, dir } : { list, net:reg, ch:"regular", reg, dir };
+}
+const npOf=(m, ctx)=>saleOf(m, ctx).net;
+function listSale(market, ctx){ return sheetList(market, ctx); }   // kept for older callers: the sheet's list price
+function saleLine(m, ctx){   // "lists $27.50 · nets $21.73 Direct (regular $23.94)" for the open card
+  const o=saleOf(m, ctx); if(!(o.list>0)) return "";
+  const alt=o.dir!=null ? (o.ch==="Direct" ? ` <span style="color:var(--faint)">(regular $${o.reg.toFixed(2)})</span>` : o.ch==="regular" ? ` <span style="color:var(--faint)">(Direct $${o.dir.toFixed(2)})</span>` : ` <span style="color:var(--faint)">(Direct $${o.dir.toFixed(2)}, regular $${o.reg.toFixed(2)})</span>`) : "";
+  return `lists $${o.list.toFixed(2)} · nets $${o.net.toFixed(2)} ${o.ch==="mix"?"2/3 Direct mix":o.ch}${alt}`;
+}
 // Min profit per card (Derek, 2026-10-30: "bid $2 for a net profit of 9 cents, not worth my time"): on cheap cards the
 // margin alone nets cents (10% of a $2 card is $0.18), so the bid also leaves at least this many dollars.
 const minProfit=()=>Math.max(0, getNum("minprofit", 0.25));
-function bidForMargin(market, mf, tiers){ const np=netProceeds(listSale(market), tiers); return np>0 ? Math.max(0, Math.min(np/(1+mf), np-minProfit())) : 0; }  // highest cost that still nets >= mf margin and >= the min profit
+function bidForMargin(market, mf, ctx){ const np=npOf(market, ctx); return np>0 ? Math.max(0, Math.min(np/(1+mf), np-minProfit())) : 0; }  // highest cost that still nets >= mf margin and >= the min profit
 /* ---- Velocity-tiered margin (see CLAUDE.md "Planned: velocity-tiered margin").
    From 12 months of Derek's TCGplayer sales + one inventory snapshot. Pokemon singles only.
    Snapshot can only bias toward "slow", so fast traits are trusted and slow ones damped. ---- */
@@ -1699,15 +1848,15 @@ function speedExplain(sp, price){
   return `${lab}${cap(band)} cards ${sp.tier==="fast"?"sell in":"take"} ${mo(sp.months)}${sp.tier==="fast"?"":" to sell"} in your sales history, ${marginTxt}.`;
 }
 function speedReason(sp){ return `${sp.tier||"normal"}: ${sp.why}, ~${sp.months<1?"<1":Math.round(sp.months)} mo to sell, ${Math.round(sp.margin*100)}% margin`; }
-function flatBidTag(sp, mkt, tiers){   // the bid at your flat settings margin, shown only when speed lowered the bid
+function flatBidTag(sp, mkt, ctx){   // the bid at your flat settings margin, shown only when speed lowered the bid
   const floor=getNum("tgtmargin",10)/100;
   if(!sp || !(sp.margin>floor+1e-9) || !(mkt>0)) return "";
-  const fb=bidForMargin(mkt, floor, tiers), wf=wholeBid(fb, netProceeds(listSale(mkt), tiers)), w=wf>=1?String(wf):fb.toFixed(2);
-  if(fb-bidForMargin(mkt, sp.margin, tiers) < 1) return "";   // under a dollar apart: not worth the space
+  const fb=bidForMargin(mkt, floor, ctx), wf=wholeBid(fb, npOf(mkt, ctx)), w=wf>=1?String(wf):fb.toFixed(2);
+  if(fb-bidForMargin(mkt, sp.margin, ctx) < 1) return "";   // under a dollar apart: not worth the space
   return `<span class="blab">flat</span><b class="cpy flat" data-bid="${w}" title="flat ${Math.round(floor*100)}% bid, ignores speed · tap to copy">$${w}</b>`;
 }
 // one short line under the margin bid: pill + flat bid. Kept off the margin row so the bid column never widens
-function speedRow(sp, mkt){ const h=speedPill(sp)+flatBidTag(sp, mkt); return h ? `<div class="brow bs">${h}</div>` : ""; }
+function speedRow(sp, mkt, ctx){ const h=speedPill(sp)+flatBidTag(sp, mkt, ctx); return h ? `<div class="brow bs">${h}</div>` : ""; }
 function speedPill(sp){ return sp.tier ? `<span class="spd ${sp.tier}" title="${escH(speedReason(sp))}">${sp.tier}</span>` : ""; }
 const PROFIT_NICE=[1,2,3,5,10,15,20,30,50,75,100,150,200,300,500];
 function profitSteps(mkt, atRec){   // round profits under what the recommended bid nets (atRec), down to ~3% of market, biggest first, up to 4
@@ -1727,7 +1876,7 @@ function wholeBid(exact, np){
   const p0=np-exact, p1=np-up;
   return (p1>0 && p1>=minProfit()-1e-9 && (p1>=ROUND_KEEP*p0 || p0-p1<=ROUND_CENTS)) ? up : fl;   // cheap cards: a few cents is a big % of a small profit (Holon Fossil RH NM $3.89 -> $4 costs $0.11 of $0.39)
 }
-function bidForProfit(market, d, tiers){ const np=netProceeds(listSale(market), tiers); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
+function bidForProfit(market, d, ctx){ const np=npOf(market, ctx); return Math.max(0, np - d); }   // highest cost that still nets >= $d profit (d=0 -> break even)
 // TCGplayer defaults the product page to its own printing, so a card sitting on "1st Edition"
 // would open showing Unlimited and look like the wrong card. Carry the printing in the URL.
 const TCG_PRINTINGS=new Set(["Normal","Holofoil","Reverse Holofoil","1st Edition","Unlimited","1st Edition Holofoil","Unlimited Holofoil","Foil","Cold Foil"]);
@@ -1780,7 +1929,6 @@ function bestMarket(r){   // top printing market for the collapsed card
   return best;
 }
 function topPrint(r){ let k="", best=-1; for(const p in (r&&r.px)||{}){ const v=r.px[p], m=(v.m!=null?v.m:v.l)||0; if(m>best){ best=m; k=p; } } return k; }   // the printing bestMarket prices (collapsed bids use it)
-function listSale(market){ return market*(1+getNum("listmarkup",4)/100); }                       // you list above market
 function prettyPrinting(p){ let s=/\s/.test(p)?p:p.replace(/([A-Z])/g," $1"); return s.replace(/^./,c=>c.toUpperCase()).replace(/Holofoil/g,"Holo").replace(/\s+/g," ").replace("1st Edition","1st Ed").trim(); }
 function copyAmt(val, el){
   const s=String(Math.max(0, Math.floor(parseFloat(String(val).replace(/[^0-9.]/g,""))||0)));  // whole dollars, floored (Whatnot takes no cents, never round up past ceiling)
@@ -1830,9 +1978,9 @@ function sendToWhatnot(s, el, show, labelOnly){
       LAST_TAP=Object.assign(cardFields(LAST_TAP), { bid:+s, at:Date.now() }); name=LAST_TAP.n||"";
     } else if(ds.cart){   // cart total: one lot holding several cards; label it with all of them
       const cards=CART.map(it=>{ const r=CARDS.find(x=>x.id===it.id), cond=it.sealed?"sealed":(it.cond||"NM"), atc=it.sealed?it.market:it.market*condMult(cond, it.y, it.market);
-        return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin).toFixed(2)}); });
+        return Object.assign(cardSnap(r, cond, it.printing, atc, it.n), {bid:+bidForMargin(atc, it.sealed?getNum("tgtmargin",10)/100:speedOf(it, atc, cond).margin, it.sealed?saleCtx(it, "sealed", {tiers:buildSealedFeeTiers(it.wtier||"M")}):saleCtx(it, cond)).toFixed(2)}); });
       name=`${cards.length} cards`;
-      LAST_TAP=Object.assign({ id:"", n:name, multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });
+      LAST_TAP=Object.assign({ id:"", n:cartName(cards), multi:true, cards, cond:"" }, { bid:+s, at:Date.now() });   // named by its cards (Derek, 2026-11-16)
     } else {
       const c=el&&el.closest(".card"), r=c&&CARDS.find(x=>x.id===c.dataset.id), pk=c&&c.querySelector(".pchip.on");
       // the "your bid" send has no condition of its own: keep the condition last tapped on this card
@@ -2073,7 +2221,7 @@ function zhHTML(res, opt){
   const dbg=' <a class="zhdbg" style="color:var(--blue);cursor:pointer">copy debug</a>';
   if(!res.ok) return `<span style="color:var(--red)">Chinese price: ${escH((res.errs||[])[0]||"failed")}</span>`+dbg;
   if(!res.hits.length && !res.sold.length) return `<span style="color:var(--faint)">no TCGplayer listing or recent sale says Chinese (${res.checked} product${res.checked===1?"":"s"} checked, English + Japanese)</span>`+dbg;
-  const pk=zhPick(res), mf=getNum("tgtmargin",10)/100, est=(pk.use==="sold"?pk.sold:pk.list).est, np=netProceeds(listSale(est)), b=wholeBid(bidForMargin(est, mf), np);
+  const pk=zhPick(res), mf=getNum("tgtmargin",10)/100, est=(pk.use==="sold"?pk.sold:pk.list).est, zc={zh:true, cond:"NM"}, np=npOf(est, zc), b=wholeBid(bidForMargin(est, mf, zc), np);
   const day=t=>t?new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
   const how=(s, lab)=>s.all.length===1 ? `1 ${lab}` : `${s===pk.sold?"weighted avg (newest counts most)":"avg"} of ${s.used.length===s.all.length?"":s.used.length+" of "}the ${s.all.length} ${lab}`;
   const cap=s=>s===pk.sold && s.capped ? ` <span style="color:var(--gold)" title="the sales say ${zhMoney(s.raw)}, but Chinese copies are listed for less: you would resell against those asks">(sales ${zhMoney(s.raw)}, capped at the listings: asks are lower, price falling)</span>` : "";
@@ -2283,7 +2431,7 @@ function paintLot(){
   let nudge="";   // inline in the live line now (its own line with a tall button moved the results when you got priced out)
   const pricedOut=!d.ended && !d.me && tap && tap.bid>=1 && d.next!=null && (over || (LOT_UNDER && LOT_UNDER.at>=LOT_START));
   if(pricedOut){
-    const mkt=tap.condMarket||tap.market||0, net=mkt>0 ? netProceeds(listSale(mkt))-d.next : null;
+    const mkt=tap.condMarket||tap.market||0, net=mkt>0 ? npOf(mkt, snapCtx(tap))-d.next : null;
     nudge=`<span style="color:var(--red)">priced out: next $${d.next}</span> `+
       `<button class="lotnudge" data-bid="${d.next}" data-keep="1" style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:6px;color:var(--ink);font:inherit;font-size:12px;line-height:16px;padding:1px 10px;cursor:pointer;vertical-align:1px">bid $${d.next}</button>`+
       (net!=null?` <span style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)} at $${d.next}</span>`:"");
@@ -2381,7 +2529,7 @@ async function zhReprice(seller){
     const pk=zhPick(res), nm=pk.use ? (pk.use==="sold"?pk.sold.est:pk.list.est) : 0;
     const m=nm>0 && r.c && r.c!=="NM" && CONDS.includes(r.c) ? nm*condMult(r.c, card.y, nm) : nm;   // Chinese copies list as NM: played ones by the usual ratio
     const n=/^中 /.test(r.n||"") ? r.n : "中 "+(r.n||card.n);
-    try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n, m:+m.toFixed(2), np:m>0?+netProceeds(listSale(m)).toFixed(2):null, zh:1 }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+    try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { n, m:+m.toFixed(2), np:m>0?+npOf(m, {zh:true, cond:r.c||"NM"}).toFixed(2):null, zh:1 }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
     const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
     if(st!=="" && st!=null){
       const ack=new Promise(ok=>{ ZH_ACK=ok; setTimeout(()=>ok(null), 20000); });
@@ -2396,17 +2544,25 @@ async function zhReprice(seller){
 }
 // after a failed lookup, not again on every repaint for 10 min
 function zhRepriceAll(){ if(ZH_RUN || Date.now()-ZH_FAIL_AT<10*60e3) return; for(const s of zhSellers()) if(loadLots().some(r=>r.s===s && zhWaits(r))){ zhReprice(s); return; } }
+// a cart lot's name: its cards, the same card twice once with its count ("Muk x2")
+function cartName(cards){
+  const seen=new Map(); for(const x of cards||[]){ const n=String(x.n||"?").trim(); seen.set(n, (seen.get(n)||0)+1); }
+  return [...seen].map(([n,k])=>k>1?`${n} x${k}`:n).join(" + ");
+}
 function lotRow(rec){
     const c=rec.card||null, multi=c&&c.multi&&c.cards;
     const mkt=multi ? c.cards.reduce((s,x)=>s+(x.condMarket||0),0) : (c ? (c.condMarket||c.market||0) : 0);
-    const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?netProceeds(listSale(x.condMarket)):0),0) : (mkt>0 ? netProceeds(listSale(mkt)) : null);
+    const np=multi ? c.cards.reduce((s,x)=>s+(x.condMarket>0?npOf(x.condMarket, snapCtx(x)):0),0) : (mkt>0 ? npOf(mkt, snapCtx(c)) : null);
     const row={ s:rec.seller||"?", at:rec.at||Date.now(), f:rec.final, b:rec.bids, w:rec.winner||"", me:!!rec.me,
       n:c?(c.n||""):"", c:c?(c.cond||""):"", zh:c&&c.zh?1:0, lab:c?(c.label||"tap"):"", m:+(+mkt).toFixed(2), np:np!=null?+np.toFixed(2):null,
       mx:c&&c.myMax>0?c.myMax:null, pm:rec.placedMax||null, nm:c&&!multi&&c.market>0?+(+c.market).toFixed(2):null,   // nm: the card's NM market when bought (top printing), for "worth today"
       id:c&&!multi?(c.id||""):"", pr:c&&!multi?(c.printing||""):"", sh:rec.ship!=null?rec.ship:null,   // id / printing: dashboard "worth today"; sh: shipping shown on the lot
       t:(rec.title||"").slice(0,60), src:rec.src==="phone"?"phone":"", cp:rec.coupon>0?+rec.coupon:0,
       nu:c&&!multi?(c.num||""):"", se:c&&!multi?(c.s||""):"", pid:c&&!multi?(c.pid||""):"", la:c&&!multi?(c.lang||""):"", mu:multi?c.cards.length:0,
+      cs:multi?c.cards.map(x=>({ n:x.n||"", c:x.cond||"", m:x.condMarket>0?+(+x.condMarket).toFixed(2):0, nm:x.market>0?+(+x.market).toFixed(2):null, id:x.id||"", pr:x.printing||"",
+        nu:x.num||"", se:x.s||"", pid:x.pid||"", la:x.lang||"" })):undefined,   // cart lot: every card (Derek, 2026-11-16: "multi card wins should include the cards in the cart")
       st:rec.startedAt>0?rec.startedAt:null, ac:lotAct(rec) };   // purchases export   // cp: coupon on your win   // t / src: the same lot from the phone and this browser is one lot   // st / ac: sourcing time (lot start, your last action on it)
+    if(row.cs) row.n=cartName(row.cs);   // "Frigibax + Baxcalibur + Arctibax", not "3 cards" (older log rows too)
     row.k=`${rec.seller||""}|${rec.startedAt!=null?rec.startedAt:""}|${rec.at}`;   // same lot seen by two CardComp copies (or synced back from the log): keep one, the labeled one
     return row;
 }
@@ -2512,7 +2668,7 @@ function likelyOther(r){
   if(!(r && r.m>0 && r.f>0)) return false;
   if(r.me && (r.lab==="tap" || r.lab==="fixed")) return false;
   if(r.f<OFF_PCT*r.m) return true;
-  return !!(r.me && r.lab==="view" && r.pm>0 && r.pm<0.5*bidForMargin(r.m, getNum("tgtmargin",10)/100));
+  return !!(r.me && r.lab==="view" && r.pm>0 && r.pm<0.5*bidForMargin(r.m, getNum("tgtmargin",10)/100, rowCtx(r)));
 }
 // A win's net if listed at market: proceeds after fees, minus what it cost you (coupons in) and its share of the
 // stream's shipping. Every money net in the stats, the strip, the dashboard and the leaderboard uses it.
@@ -2746,6 +2902,7 @@ function dashOpen(on){
   else if(location.hash==="#dash") history.replaceState(null, "", location.pathname+location.search);
 }
 function dashNow(r){   // today's price for a won card at its printing and condition, or null
+  if(r.cs && r.cs.length && !r.zh && !r.zhWait){ let t=0; for(const x of r.cs){ const v=dashNow(Object.assign({}, x, {cs:null})); if(v==null) return null; t+=v; } return t; }   // cart lot: every card, or nothing
   if(!r.id || r.zh || r.zhWait || typeof CARDS==="undefined") return null;   // a Chinese copy: the catalog price is the English / Japanese card's
   if(!DASH_IDX){ DASH_IDX=new Map(); for(const c of CARDS) DASH_IDX.set(c.id, c); }
   const c=DASH_IDX.get(r.id); if(!c || !c.px) return null;
@@ -2980,7 +3137,16 @@ async function exportPurchases(btn){
   const wins=loadLots().filter(r=>r && r.me && r.f>0).slice().sort((a,b)=>a.at-b.at);
   const pidOf=r=>{ if(r.pid) return r.pid; const c=r.id && DASH_IDX && DASH_IDX.get(r.id); if(!c) return "";
     const pr=c.px && (c.px[r.pr] || (!r.pr && c.px[topPrint(c)])); return String((pr&&pr.p)||c.pid||""); };
-  const cache=skuCache(), need=[...new Set(wins.map(pidOf).filter(p=>p && !cache[p]))];
+  // a cart lot is one row per card (Derek, 2026-11-16): price, coupon and shipping split by each card's share of the lot's
+  // market (equal when no market is known), flagged so a split cost is never mistaken for one paid per card
+  const lines=[];
+  for(const r of wins){
+    if(!(r.cs && r.cs.length)){ lines.push({r, x:r, part:1, key:r.k, flag:""}); continue; }
+    const tot=r.cs.reduce((a,x)=>a+(x.m>0?x.m:0),0), n=r.cs.length;
+    r.cs.forEach((x,i)=>lines.push({ r, x:Object.assign({}, x, {k:r.k, lab:r.lab}), part:tot>0?(x.m>0?x.m:0)/tot:1/n, key:`${r.k}#${i+1}`,
+      flag:n>1?`cart lot ${i+1} of ${n}: cost split by market`:"" }));
+  }
+  const cache=skuCache(), need=[...new Set(lines.map(l=>pidOf(l.x)).filter(p=>p && !cache[p]))];
   if(need.length && WN_EXT){
     for(let i=0;i<need.length;i+=40){
       say(`SKUs ${Math.min(i+40,need.length)}/${need.length}…`);
@@ -2993,18 +3159,18 @@ async function exportPurchases(btn){
   const head=["Key","Won","Won At","Seller","Card","Number","Set","Language","Printing","Condition","Label","Price","Coupon","Cost","Ship Share",
               "Product ID","SKU","SKUs (printing)","Flag","Card ID","Market at buy","NM market at buy"];   // market at buy: the price CardComp bid from (that condition), last so older readers keep their columns
   let withSku=0;
-  const out=wins.map(r=>{
-    const c=r.id && DASH_IDX && DASH_IDX.get(r.id), pid=pidOf(r), list=skusFor(cache[pid], r.pr || (c && !r.pr ? topPrint(c) : ""));
-    const own=list.find(x=>x.c===r.c), flag=r.mu ? `cart lot (${r.mu} cards)` : !r.n ? "no card" : likelyOther(r) ? "likely another printing" : r.lab==="view" ? "opened only" : "";
+  const out=lines.map(({r, x, part, key, flag:cartFlag})=>{
+    const c=x.id && DASH_IDX && DASH_IDX.get(x.id), pid=pidOf(x), list=skusFor(cache[pid], x.pr || (c && !x.pr ? topPrint(c) : ""));
+    const own=list.find(s=>s.c===x.c), flag=cartFlag || (r.mu ? `cart lot (${r.mu} cards)` : !r.n ? "no card" : likelyOther(r) ? "likely another printing" : r.lab==="view" ? "opened only" : "");
     if(list.length) withSku++;
-    return [r.k, ymd(r.at), new Date(r.at).toISOString(), r.s, r.n||"", r.nu||(c&&c.num)||"", r.se||(c&&c.s)||"", r.la||(c&&(c.lang||"en"))||"",
-      r.pr||"", r.c||"", r.lab||"", (+r.f).toFixed(2), (+r.cp||0).toFixed(2), costOf(r).toFixed(2), shipOf(r).toFixed(2),
-      pid, own?own.s:"", list.map(x=>x.c+":"+x.s).join(" "), flag, r.id||"", r.m>0&&!r.mu?(+r.m).toFixed(2):"", r.nm>0?(+r.nm).toFixed(2):""];
+    return [key, ymd(r.at), new Date(r.at).toISOString(), r.s, x.n||"", x.nu||(c&&c.num)||"", x.se||(c&&c.s)||"", x.la||(c&&(c.lang||"en"))||"",
+      x.pr||"", x.c||"", r.lab||"", (r.f*part).toFixed(2), ((+r.cp||0)*part).toFixed(2), (costOf(r)*part).toFixed(2), (shipOf(r)*part).toFixed(2),
+      pid, own?own.s:"", list.map(s=>s.c+":"+s.s).join(" "), flag, x.id||"", x.m>0&&!x.mu?(+x.m).toFixed(2):"", x.nm>0?(+x.nm).toFixed(2):""];   // a cart lot's row: that card's own market at buy
   });
   const csv=[head].concat(out).map(row=>row.map(v=>{ v=String(v==null?"":v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(",")).join("\n");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
   a.download=`CardComp purchases ${ymd(Date.now())}.csv`; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
-  say(`exported ${out.length} wins · ${withSku} with SKUs${WN_EXT?"":" (no extension: SKUs need desktop)"}`);
+  say(`exported ${wins.length} wins${out.length>wins.length?` (${out.length} rows: cart lots one per card)`:""} · ${withSku} with SKUs${WN_EXT?"":" (no extension: SKUs need desktop)"}`);
   setTimeout(()=>say("export purchases"), 8000);
 }
 window.exportPurchases=exportPurchases; window.skusFor=skusFor;
@@ -3104,7 +3270,7 @@ function lotTable(S){   // the table view: last labeled lots plus every win (lab
   const rows=S.rows.filter(r=>(r.m>0 && r.f>0) || (r.me && r.f>0)).slice(-12).reverse(); if(!rows.length) return "";
   return `<table class="lstab"><thead><tr><th>card</th><th>sold</th><th>% mkt</th><th>winner</th><th>net at price</th><th></th></tr></thead><tbody>${rows.map(r=>{ const n=r.np!=null?r.np-costOf(r):null, pick=LOT_PICK!=null && LOT_PICK===r.at;
     const sh=shipOf(r), net2=n!=null?n-sh:null, off=likelyOther(r);   // off: likely another printing, shown dim with "?" and left out of net
-    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${r.me&&r.cp>0?`<div class="lsmuted" style="font-size:10px" title="coupon used on this win">−${(+r.cp).toFixed(2)} coupon</div>`:""}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null||off?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${off?' title="under 40% of market: likely another printing, left out of net"':sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)+(off?"?":"")}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button>${r.me?`<button class="lsaddb lscpb" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button>`:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
+    return `<tr class="${r.me?"me":""}${pick?" pick":""}" data-at="${r.at}"><td${r.cs?` title="${escH(r.cs.map(x=>`${x.n} ${x.c} $${(+x.m||0).toFixed(2)}`).join("\n"))}"`:""}>${r.n?escH(r.n.slice(0,26)):'<span class="lsmuted">no card</span>'} <span class="lsmuted">${escH(r.c||"")}</span></td><td>$${r.f}${r.me&&r.cp>0?`<div class="lsmuted" style="font-size:10px" title="coupon used on this win">−${(+r.cp).toFixed(2)} coupon</div>`:""}${sh>0?`<div class="lsmuted" style="font-size:10px" title="your share of this stream's shipping">+${sh.toFixed(2)} ship</div>`:""}</td><td>${r.m>0?Math.round(r.f/r.m*100)+"%":"–"}</td><td>${r.me?'<span class="lsyou">✓ you</span>':escH((r.w||"").slice(0,14))}</td><td style="color:${net2==null||off?"var(--dim)":net2>=0?"var(--green)":"var(--red)"}"${off?' title="under 40% of market: likely another printing, left out of net"':sh>0?' title="after your share of shipping"':""}>${net2==null?"–":(net2>=0?"+":"−")+"$"+Math.abs(net2).toFixed(2)+(off?"?":"")}</td><td class="lsdel"></td></tr>${pick?`<tr class="lsact" data-at="${r.at}"><td colspan="6">${lotCondOK(r)?`<span class="lscond">${CONDS.map(c=>`<button class="lscb${c===r.c?" on":""}" data-cond="${c}" title="the card was ${c}">${c}</button>`).join("")}</span>`:""}<button class="lsaddb" title="search the card and tap its condition">${r.n?"change card":"+ card"}</button>${r.me?`<button class="lsaddb lscpb" title="a coupon you used on this win">${r.cp>0?"coupon $"+(+r.cp).toFixed(2):"+ coupon"}</button>`:""}<button class="lsdelb" title="remove this lot from stats and the log">✕ remove</button></td></tr>`:""}`; }).join("")}</tbody></table>`;
 }
 function wireLotTable(el){   // tap a row: show its ✕; tap ✕: remove that one lot here and in the GitHub log
   el.querySelectorAll(".lstab:not(.lslead) tbody tr").forEach(tr=>tr.onclick=(e)=>{
@@ -3152,10 +3318,10 @@ function assignPick(card, cond, k){
   const snap=Object.assign(cardSnap(card, cond, k, condM), { label:"fixed", fixedAt:Date.now() });
   try{
     const rows=loadLots(), r=rows.find(x=>x.k===P.k);
-    if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+netProceeds(listSale(condM)).toFixed(2):null, id:card.id, pr:k||"", nm:snap.market>0?+(+snap.market).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
+    if(r){ Object.assign(r, { n:snap.n, c:cond, lab:"fixed", m:+condM.toFixed(2), np:condM>0?+npOf(condM, saleCtx(card, cond)).toFixed(2):null, id:card.id, pr:k||"", nm:snap.market>0?+(+snap.market).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); }
   }catch(_){ }
   PICK=null; BUYERS=null; document.querySelectorAll(".pickrow").forEach(x=>x.remove());
-  const net=condM>0?netProceeds(listSale(condM))-P.f:null;
+  const net=condM>0?npOf(condM, saleCtx(card, cond))-P.f:null;
   PICK_MSG=`<b>Added ${escH(snap.n)} ${escH(cond)}</b>${k?" · "+escH(prettyPrinting(k)):""} to ${P.whose} $${P.f} ${P.what}${net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only (open CardComp with the extension to save it to the log)"}</span>`;
   if(WN_EXT && P.startedAt!=null) extPost({type:"cardcomp-log-edit", key:{seller:P.s, startedAt:P.startedAt, at:P.at}, card:snap});
   clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
@@ -3174,9 +3340,9 @@ function setLotCond(r, cond){
   const m=CONDS.includes(r.c) && r.m>0 ? r.m*condMult(cond, card.y, nm)/condMult(r.c, card.y, nm) : nm*condMult(cond, card.y, nm);
   const was=r.c;
   BUYERS=null;
-  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { c:cond, m:+m.toFixed(2), np:m>0?+netProceeds(listSale(m)).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
+  try{ const rows=loadLots(), x=rows.find(y=>y.k===r.k); if(x){ Object.assign(x, { c:cond, m:+m.toFixed(2), np:m>0?+npOf(m, saleCtx(card, cond)).toFixed(2):null }); localStorage.setItem(LOTS_KEY, JSON.stringify(rows)); } }catch(_){ }
   const parts=String(r.k||"").split("|"), at=+parts[parts.length-1], st=parts[parts.length-2];
-  const net=m>0?netProceeds(listSale(m))-r.f:null;
+  const net=m>0?npOf(m, saleCtx(card, cond))-r.f:null;
   PICK_MSG=`<b>${escH(r.n||"Card")} ${escH(was||"?")} → ${cond}</b> on ${r.me?"your $"+r.f+" win":"the $"+r.f+" lot"} · market $${m.toFixed(2)}${r.me&&net!=null?` · net if listed <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b>`:""} <span class="pickst">${WN_EXT?"· saving to your log…":"· this browser only"}</span>`;
   if(WN_EXT && st!=="" && st!=null) extPost({type:"cardcomp-log-edit", key:{seller:r.s, startedAt:+st, at:at||r.at}, patch:{cond, condMarket:+m.toFixed(2), condFixedAt:Date.now()}});
   clearTimeout(PICK_MSG_T); PICK_MSG_T=setTimeout(()=>{ PICK_MSG=""; paintPick(); }, 12000);
@@ -3462,7 +3628,7 @@ function condGridHTML(prices, key, mf, year, pid, card){
   // A verified price above the condition above it is capped too (Charizard 30th CC: MP market $153.92 over LP $145.60,
   // so MP bid more than LP): a thin or stale market for the worse condition never buys it for more ("≤LP" tag).
   const rows=condPrices(base, key, year, pid).map(({cond, lv, tierP, atc, dv, cap, stale, pre, aboveC})=>{
-    const bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf), np=netProceeds(listSale(atc)), wb=wholeBid(bid, np), net=np-(wb>=1?wb:bid);   // each condition row: its own price and speed; sends / nets the whole-dollar bid
+    const sc=saleCtx(card, cond), so=saleOf(atc, sc), bid=bidForMargin(atc, card ? speedOf(card, atc, cond).margin : mf, sc), np=so.net, wb=wholeBid(bid, np), net=np-(wb>=1?wb:bid);   // each condition row: its own price and speed; sends / nets the whole-dollar bid
     const col=COND_COLORS[cond], ncol=net>0?"var(--green)":"var(--red)";
     const cu=tcgProductUrl(pid, key, cond);
     const clab=cu?`<a class="clink" href="${cu}" target="_blank" rel="noopener" title="see ${cond} listings for this printing on TCGplayer" style="color:${col}">${cond} <span class="carr">\u2197</span></a>`:cond;
@@ -3516,9 +3682,9 @@ function renderPrices(host, data, prices, src){
     const v=parseInt(ovrIn.value,10)||0, st=stepOf(v), {cond,mkt,rec}=ovrMkt();
     dnB.textContent="−"+st; upB.textContent="+"+st;
     if(!(mkt>0) || !(v>=1)){ netEl.textContent=""; goEl.style.display="none"; return; }
-    const np=netProceeds(listSale(mkt)), net=np-v;
+    const np=npOf(mkt, saleCtx(card, cond)), net=np-v;
     netEl.innerHTML=`<span style="color:var(--faint)">${cond}</span> <b style="color:${net>=0?"var(--green)":"var(--red)"}">${net>=0?"+":"−"}$${Math.abs(net).toFixed(2)}</b> <span style="color:var(--faint)">${Math.round(net/v*100)}%</span>`;
-    netEl.title=`net if you list ${cond} at market ($${mkt.toFixed(2)}) and it sells, after TCGplayer fees and shipping`;
+    netEl.title=`net if it sells at the Pull Sheet's price (${saleLine(mkt, saleCtx(card, cond)).replace(/<[^>]+>/g,"")}), after fees and shipping`;
     // profit buttons (Derek, 2026-10-22: "bid by target profit, not by margin"): one tap sends the bid that nets $5 / $10 /
     // $15 / $20 if listed at market, straight to Whatnot's Custom box like a grid tap; shown whatever the margin bid says
     // steps UP from the recommended max (Derek, 2026-10-23: "a $15 card won't give $5 profit"; "relative to the max bid from
@@ -3550,15 +3716,15 @@ function renderPrices(host, data, prices, src){
     const base=prices[sel].market??prices[sel].mid??0;
     const low=prices[sel].low;
     const yr=card?card.y:0;
-    const nm=card ? nmPrice(card, sel) : base, sp=speedOf(card, nm, "NM"), bid=bidForMargin(nm, sp.margin);   // the NM grid row's price, so this table's bids and b/e match the NM row
-    const pbid=bidForProfit(nm, td);
+    const nm=card ? nmPrice(card, sel) : base, sp=speedOf(card, nm, "NM"), nc=saleCtx(card, "NM"), bid=bidForMargin(nm, sp.margin, nc);   // the NM grid row's price, so this table's bids and b/e match the NM row
+    const pbid=bidForProfit(nm, td, nc);
     const tf=thinFlag(prices[sel]);
-    const np=netProceeds(listSale(nm));
+    const np=npOf(nm, nc);
     // one short line: margin + speed reason, flat bid only when it's $1+ higher, low listing, data warning
-    const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl);
+    const fl=getNum("tgtmargin",10)/100, fb=bidForMargin(nm, fl, nc);
     const spdTxt = "";   // the why now gets its own sentence below (speedExplain)
     const flatTxt = (sp.margin>fl+1e-9 && fb-bid>=1) ? ` · flat <b class="cpy" data-bid="${fb.toFixed(2)}" style="cursor:pointer;text-decoration:underline dotted">$${fb.toFixed(2)}</b>` : "";
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>${speedExplain(sp, nm)?`<span class="mbsub" style="display:block;margin-top:4px">${speedExplain(sp, nm)}</span>`:""}`;
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, nm, td)+`<span class="mbsub">NM ${Math.round(sp.margin*100)}%${spdTxt}${flatTxt}${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>${speedExplain(sp, nm)?`<span class="mbsub" style="display:block;margin-top:4px">${speedExplain(sp, nm)}</span>`:""}${saleLine(nm, nc)?`<span class="mbsub bsale" style="display:block;margin-top:4px" title="what the bids assume: the card sells at the Pull Sheet's list price and nets what that channel pays, after fees and shipping (settings: sale channel)">NM ${saleLine(nm, nc)}</span>`:""}`;
     // the collapsed row above shows this card's bids; keep it on the printing actually selected,
     // otherwise the header keeps quoting 1st Edition while the detail is showing Unlimited
     const cardEl=host.closest?host.closest(".card"):null;
@@ -3569,14 +3735,14 @@ function renderPrices(host, data, prices, src){
         const fl=Math.floor(val);
         if(ex){ ex.textContent="$"+val.toFixed(2); ex.dataset.bid=val.toFixed(2); }
         else if(b){ b.textContent="$"+val.toFixed(2); b.dataset.bid=val.toFixed(2); }
-        const wv=wholeBid(val, netProceeds(listSale(mkt)));
+        const wv=wholeBid(val, npOf(mkt, nc));
         if(ex) ex.dataset.bid=wv>=1?String(wv):val.toFixed(2);
         if(rd){ rd.textContent=wv>=1?"$"+wv:"$"+val.toFixed(2); rd.dataset.bid=wv>=1?String(wv):val.toFixed(2); }
         if(pc) pc.textContent=pctMkt(val,mkt);
       };
       put(".bids .bm", bid, nm);
       const oldRow=cardEl.querySelector(".bids .bs"); if(oldRow) oldRow.remove();
-      const srow=speedRow(sp, nm), bmRow=cardEl.querySelector(".bids .bm");
+      const srow=speedRow(sp, nm, nc), bmRow=cardEl.querySelector(".bids .bm");
       if(srow && bmRow){ bmRow.insertAdjacentHTML("afterend", srow); const f=cardEl.querySelector(".bids .bs .flat"); if(f) f.onclick=(e)=>{ e.stopPropagation(); copyAmt(f.dataset.bid, f); }; }
       put(".bids .bp", pbid, nm);
     }
@@ -3610,11 +3776,11 @@ function renderSealed(host, prices, card, pid){
   const draw=()=>{
     const st=buildSealedFeeTiers(wsel);
     const base=prices[sel].market??prices[sel].mid??0, low=prices[sel].low;
-    const bid=bidForMargin(base, mf, st);
-    const pbid=bidForProfit(base, td, st);
+    const sc=saleCtx(card, "sealed", {tiers:st}), bid=bidForMargin(base, mf, sc);
+    const pbid=bidForProfit(base, td, sc);
     const tf=thinFlag(prices[sel]);
-    const np=netProceeds(listSale(base), st);
-    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>`;
+    const np=npOf(base, sc);
+    mbEl.innerHTML=bidTableHTML(np, bid, pbid, base, td)+`<span class="mbsub">$${base.toFixed(2)} mkt · ${Math.round(mf*100)}% target${low!=null?` · low $${low.toFixed(2)}`:""}${trendLine(card)}${tf?` · <b style="color:var(--gold)">⚠ ${tf}, verify</b>`:""}</span>${saleLine(base, sc)?`<span class="mbsub bsale" style="display:block;margin-top:4px">${saleLine(base, sc)}</span>`:""}`;
     mbEl.querySelectorAll(".cpy").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); copyAmt(el.dataset.bid, el); });
     const u=tcgProductUrl((prices[sel]&&prices[sel].p)||pid, sel);
     lnkEl.innerHTML=u?`<a href="${u}" target="_blank" rel="noopener" style="color:var(--gold);font-size:12px;text-decoration:none">view on TCGplayer ↗</a>`:"";
@@ -3671,7 +3837,7 @@ function renderCart(){
     const cond = sealed ? "sealed" : (it.cond||"NM");
     const atc = sealed ? it.market : it.market*condMult(cond, it.y, it.market);
     const tiers = sealed ? buildSealedFeeTiers(it.wtier||"M") : undefined;   // sealed uses its picked weight postage
-    const bid=bidForMargin(atc, sealed ? mf : speedOf(it, atc, cond).margin, tiers); totMkt+=atc; totBid+=bid; totNp+=netProceeds(listSale(atc), tiers);
+    const sc=sealed ? saleCtx(it, "sealed", {tiers}) : saleCtx(it, cond), bid=bidForMargin(atc, sealed ? mf : speedOf(it, atc, cond).margin, sc); totMkt+=atc; totBid+=bid; totNp+=npOf(atc, sc);
     const pk = (it.game||"pkmn")==="pkmn";
     const badge = pk ? ((it.lang==="jp") ? '<span style="color:var(--gold);font-weight:700">JP</span> ' : '<span style="color:var(--faint)">EN</span> ') : "";
     return `<div class="citem" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer">
@@ -4254,10 +4420,10 @@ function render(res, literal, newestFirst){
     const el = document.createElement("div"); el.className = "card"; el.dataset.id = r.id;
     const best=nmPrice(r);   // NM of the top printing, same price as its NM grid row (verified read when there is one)
     const sp = best>0 ? speedOf(r, best, "NM") : null;
-    const mb = best>0 ? bidForMargin(best, sp.margin) : null;
-    const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0)) : null;
+    const tc = saleCtx(r, "NM"), mb = best>0 ? bidForMargin(best, sp.margin, tc) : null;
+    const pb = best>0 ? bidForProfit(best, getNum("tgtprofit",0), tc) : null;
     const bidHTML = best>0 ? `<div class="bids">
-        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${wholeBid(mb,netProceeds(listSale(best)))>=1?wholeBid(mb,netProceeds(listSale(best))):mb.toFixed(2)}" title="${cpTitle()}">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${wholeBid(mb,netProceeds(listSale(best)))>=1?wholeBid(mb,netProceeds(listSale(best))):mb.toFixed(2)}" title="whole dollars (rounded up when that keeps 75%+ of the profit) · tap to copy">${wholeBid(mb,netProceeds(listSale(best)))>=1?`$${wholeBid(mb,netProceeds(listSale(best)))}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
+        <div class="brow bm"><span class="blab">margin</span><b class="cpy exact" data-bid="${wholeBid(mb,npOf(best, tc))>=1?wholeBid(mb,npOf(best, tc)):mb.toFixed(2)}" title="${cpTitle()}">$${mb.toFixed(2)}</b><b class="cpy rounded" data-bid="${wholeBid(mb,npOf(best, tc))>=1?wholeBid(mb,npOf(best, tc)):mb.toFixed(2)}" title="whole dollars (rounded up when that keeps 75%+ of the profit) · tap to copy">${wholeBid(mb,npOf(best, tc))>=1?`$${wholeBid(mb,npOf(best, tc))}`:`$${mb.toFixed(2)}`}</b><span class="bpc">${pctMkt(mb,best)}</span></div>${speedRow(sp,best)}
         <div class="brow bp"><span class="blab">${getNum("tgtprofit",0)===0?"b/e":"profit"}</span><b class="cpy" data-bid="${pb.toFixed(2)}" title="${cpTitle()}">$${pb.toFixed(2)}</b><span class="bpc">${pctMkt(pb,best)}</span></div>
       </div>` : "";
     el.innerHTML = `
@@ -4455,8 +4621,8 @@ $("#q").addEventListener("blur", ()=>setTimeout(renderSug,120));
 $("#sug").addEventListener("pointerdown", e=>e.preventDefault());   // tapping a chip must not blur the input (keyboard stays up)
 
 /* settings: persist (safe if storage blocked), toggle, zoom close */
-function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
-function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem("cardcomp_cfg")||"{}"); document.querySelectorAll("#settings input").forEach(i=>{ const k=i.id||("m_"+i.dataset.c); if(o[k]!=null){ if(i.type==="checkbox") i.checked=!!o[k]; else if(o[k]!=="") i.value=o[k]; } }); }catch(e){} }
+function saveCfg(){ try{ const o={}; document.querySelectorAll("#settings input, #settings select").forEach(i=>o[i.id||("m_"+i.dataset.c)]=(i.type==="checkbox"?i.checked:i.value)); localStorage.setItem("cardcomp_cfg",JSON.stringify(o)); }catch(e){} }
+function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem("cardcomp_cfg")||"{}"); document.querySelectorAll("#settings input, #settings select").forEach(i=>{ const k=i.id||("m_"+i.dataset.c); if(o[k]!=null){ if(i.type==="checkbox") i.checked=!!o[k]; else if(o[k]!=="") i.value=o[k]; } }); }catch(e){} }
 function migrateCfg(){   // 2026-10: speed-based margin treats this setting as its floor and assumes 10%
   try{
     if(localStorage.getItem("cardcomp_m10")) return;
@@ -4466,7 +4632,7 @@ function migrateCfg(){   // 2026-10: speed-based margin treats this setting as i
   }catch(e){}
 }
 loadCfg(); migrateCfg();
-document.querySelectorAll("#settings input").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
+document.querySelectorAll("#settings input, #settings select").forEach(i=>i.addEventListener("change", ()=>{ saveCfg(); renderCart(); if(window.__ready && $("#q").value.trim()) run($("#q").value); }));
 $("#gear").onclick = ()=>{ $("#settings").classList.toggle("open"); };
 $("#srctimer").onclick = ()=>{ DASH.per="1"; if(window.__ready) dashOpen(true); else location.hash="#dash"; };
 setInterval(()=>{ try{ paintSrcTimer(); }catch(_){ } }, 10000); setTimeout(()=>{ try{ paintSrcTimer(); paintStatsBtn(); }catch(_){ } }, 0); window.addEventListener("resize", ()=>{ try{ fitHdr(); }catch(_){ } });

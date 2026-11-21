@@ -205,7 +205,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
   ok(h2 > 100 && h2 < 178, "small card with a result: card picture + condition pills + printing buttons, " + h2 + " css px tall at 250 px wide");
   const rows = await page.evaluate(() => Array.from(document.querySelectorAll("#phonebar .pb")).map((r) => { const sm = r.querySelectorAll("small"); return { c: r.dataset.c, bid: r.querySelector("b").textContent.trim(), px: sm[0].textContent.replace("mkt", "").trim(), be: sm[1].textContent.replace("b/e", "").trim() }; }));
   ok(rows.length === 5 && rows[4].c === "DMG" && rows.every((x) => /^\$\d+$/.test(x.bid) && /^\$[\d,.]+$/.test(x.px)), "condition pills NM to DMG mirror the grid: " + rows.map((x) => `${x.c} ${x.bid} (mkt ${x.px}, b/e ${x.be})`).join(" | "));
-  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForProfit(m, 0), shown = +x.be.replace(/[$,]/g, "");   // mkt of $100+ shows no cents, so allow $1 of rounding there
+  const beOK = await page.evaluate((rows) => rows.every((x) => { const m = +x.px.replace(/[$,]/g, ""), be = bidForProfit(m, 0, saleCtx(BY_ID.get(document.querySelector("#results .card.open").dataset.id), x.c)), shown = +x.be.replace(/[$,]/g, "");   // mkt of $100+ shows no cents, so allow $1 of rounding there
     return (m >= 100 ? Math.abs(shown - be) <= 1.5 : x.be === "$" + be.toFixed(2)) && shown >= +x.bid.slice(1).replace(/,/g, ""); }), rows);
   ok(beOK, "break-even on each pill = the app's bidForProfit(price, 0) (fees only, same as the open card) with cents, never below the suggested bid: " + rows.map((x) => x.be).join(" "));
   const gridNM = await page.evaluate(() => { const b = document.querySelector("#results .card.open .condgrid .bd.cpy[data-cond='NM']"); return b ? b.dataset.bid : ""; });   // what a grid tap sends (whole dollars, rounded up when that keeps 75%+ of the profit)
@@ -224,7 +224,7 @@ const READ = { visible: true, name: "Charizard", lang: "en", num: "4", total: "1
     LIVE[liveKey(v.p || c.pid, k, "NM")] = { r: 0.9, m: nm * 0.9, nm, src: "market", at: Date.now() }; if (LIVE_REDRAW) LIVE_REDRAW(); });
   await page.waitForTimeout(500);
   const be1 = await beAll();
-  const chk = await page.evaluate(([a, b]) => { const n = (x) => +String(x).replace(/[$,]/g, ""), f = (x) => x.top && x.tile && x.pill && Math.abs(n(x.top) - n(x.tile)) <= 1 && Math.abs(n(x.top) - n(x.pill)) <= 1 && Math.abs(n(x.top) - bidForProfit(x.mkt, 0)) <= 1; return [f(a), f(b)]; }, [be0, be1]);
+  const chk = await page.evaluate(([a, b]) => { const n = (x) => +String(x).replace(/[$,]/g, ""), f = (x) => x.top && x.tile && x.pill && Math.abs(n(x.top) - n(x.tile)) <= 1 && Math.abs(n(x.top) - n(x.pill)) <= 1 && Math.abs(n(x.top) - bidForProfit(x.mkt, 0, saleCtx(BY_ID.get(document.querySelector("#results .card.open").dataset.id), "NM"))) <= 1; return [f(a), f(b)]; }, [be0, be1]);
   await page.evaluate(() => { for (const k of Object.keys(LIVE)) delete LIVE[k]; if (LIVE_REDRAW) LIVE_REDRAW(); }); await page.waitForTimeout(400);   // the read must not leak into later checks
   ok(await page.evaluate(() => { const b = document.querySelector("#dashbtn"); return !b || getComputedStyle(b).display === "none"; }), "no dashboard button on the phone (Derek, 2026-11-04: it got in the way)");
   ok(chk[0] && chk[1] && be1.mkt < be0.mkt, `NM break-even is one number on the top table, the tile and the NM pill, also after a verified NM read: ${JSON.stringify(be0)} -> ${JSON.stringify(be1)}`);

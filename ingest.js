@@ -52,6 +52,39 @@ const norm = s => (s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
 const setTail = n => { const p = n.split(/:\s|\s-\s/); return p[p.length-1].trim(); };
 const r2 = c => c == null ? null : Math.round(c * 100) / 100;
 
+// Pull Sheet pricing settings (Derek, 2026-11-21): the published "CardComp Settings" tab, embedded in data.json as
+// `pricing` so the app prices bids the way the sheet lists cards. Same parser and checks as index.html.
+const PRICING_CSV = process.env.PRICING_CSV || "https://docs.google.com/spreadsheets/d/e/2PACX-1vRRY1fDkV2lPZlAPOd7vQzKH0MRhsNxcPqqbiOTIw5SrwQxxRrdlk9fNkD5Kbddf8gj8MJmK550Uc99/pub?gid=644984281&single=true&output=csv";
+// the published tab, one row per value: group,key,value,what it is (blank key = unused row)
+function pricingFromCSV(text){
+  const rows=[]; let row=[], f="", q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=ch; }
+    else if(ch==='"') q=true; else if(ch===","){ row.push(f); f=""; }
+    else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&text[i+1]==="\n") i++; row.push(f); rows.push(row); row=[]; f=""; }
+    else f+=ch; }
+  if(f!==""||row.length){ row.push(f); rows.push(row); }
+  const num=v=>{ const s=String(v==null?"":v).trim(); if(s==="") return null; const n=+s.replace(/[$,%]/g,""); return isFinite(n)?n:null; };
+  const S={ setting:{}, markup:[], nd_markup:[], copies:[], floor_copies:[], era:{}, lang:{} };
+  for(const r of rows){ const g=String(r[0]||"").trim(), k=String(r[1]||"").trim(), v=r[2];
+    if(!g || g==="group" || k==="") continue;
+    if(g==="meta"){ S[k]=String(v||"").trim(); continue; }
+    if(g==="setting"){ S.setting[k]=/^(true|false)$/i.test(String(v).trim()) ? /^true$/i.test(String(v).trim()) : num(v); continue; }
+    if(["markup","nd_markup","copies","floor_copies"].includes(g)){ const a=num(k), b=num(v); if(a!=null && b!=null) S[g].push([a,b]); continue; }
+    if(g==="era"){ const b=num(v); if(b!=null) S.era[k]=b; continue; }
+    const lm=/^lang_(adjust|md_days|md_week|md_max)$/.exec(g);
+    if(lm){ (S.lang[k]=S.lang[k]||{})[lm[1]]=num(v); continue; }
+  }
+  return S;
+}
+function pricingOK(S){
+  if(!S || S.format!=="cardcomp-pricing-1" || !Array.isArray(S.markup) || !S.markup.length) return false;
+  const st=S.setting||{}, x=v=>typeof v==="number" && isFinite(v);
+  if(!S.markup.every(r=>x(r[1]) && r[1]>=0.5 && r[1]<=3) || !(S.nd_markup||[]).every(r=>x(r[1]) && r[1]>=0.5 && r[1]<=3)) return false;
+  if(!(x(st.dl_cap_x) && st.dl_cap_x>=1 && st.dl_cap_x<=3)) return false;
+  return ["floor_at","floor_price","snap5_to","snap50_to","charm","era_from"].every(k=>x(st[k]) && st[k]>=0 && st[k]<100);
+}
+
 async function getJSON(url){   // 3 tries with backoff: a transient TCGCSV hiccup must not silently drop a set
   let err;
   for (let i = 0; i < 3; i++){
@@ -504,7 +537,17 @@ function coverageProblems(kept){
     for (const k of ["atk", "hp"]) if (o[k] === "") delete o[k];
     return o;
   };
+  // pricing settings: a failed or invalid read keeps the copy already in data.json and never fails the run
+  let pricing = null;
+  try {
+    const res = await fetch(PRICING_CSV, { headers: { "User-Agent": UA } });
+    if (!res.ok) console.log("pricing: HTTP " + res.status + ", kept the previous copy");
+    else { const S = pricingFromCSV(await res.text()); if (pricingOK(S)) pricing = S; else console.log("pricing: the published tab did not validate (format / markup / ranges), kept the previous copy"); }
+  } catch (e) { console.log("pricing: " + e.message + ", kept the previous copy"); }
+  if (pricing) console.log(`pricing: Pull Sheet settings built ${pricing.built || "?"}, ${pricing.markup.length} markup rows, era WOTC x${pricing.era.WOTC}`);
+  else { try { pricing = JSON.parse(fs.readFileSync("data.json", "utf8")).pricing || null; } catch { pricing = null; } }
   const out = { updated, floor: FLOOR, sz, cards: kept.map(slim) };
+  if (pricing) out.pricing = pricing;
   fs.writeFileSync("data.json", JSON.stringify(out));
   console.log(`\nWrote data.json — ${kept.length} entries >= $${FLOOR} (Pkmn EN ${en} / JP ${jp}; Lorcana ${lor}; One Piece ${op}; ${sealedN} sealed) · ${Math.round(JSON.stringify(out).length/1048576*10)/10} MB`);
 })();

@@ -1,0 +1,20 @@
+{
+  "format": "cardcomp-pricing-1",
+  "asOf": "2026-11-20",
+  "source": "Pull Sheet > Pricing tab (live copy: 'CardComp Settings' tab, published as CSV)",
+  "setting": {
+    "ship_under_free": 1.49, "free_from": 5, "floor_at": 0.4, "floor_price": 0.5,
+    "snap5_to": 5.2, "snap50_to": 52, "charm": 0.01, "low_markup": false,
+    "md_min": 3, "md_floor": 1, "cost_x": 1.35,
+    "era_from": 2.5, "dl_from": 2.5, "dl_cap_x": 1.5, "dl_cap_add": 2, "own_from": 2.5, "own_probe": 1
+  },
+  "markup": [[1, 1.4], [2, 1.3], [3, 1.35], [5, 1.3], [10, 1.3], [25, 1.25], [100, 1.2], [1000000, 1.1]],
+  "nd_markup": [[1, 1.25], [2, 1.15], [5, 1.08], [10, 1.05], [25, 1.03], [100, 1.02], [1000000, 1.01]],
+  "copies": [[0, 1], [1, 1], [2, 1.02], [3, 1.04], [4, 1.06], [5, 1.08], [6, 1.08], [7, 1.08], [8, 1.08], [9, 1.08], [10, 1.08]],
+  "floor_copies": [[0, 1], [1, 1], [2, 1.03], [3, 1.06], [4, 1.09], [5, 1.12], [6, 1.15], [7, 1.18], [8, 1.21], [9, 1.24], [10, 1.27]],
+  "era": {"WOTC": 1.1, "EX": 1.1, "DP": 1.06, "HGSS": 1.06, "BW": 1.06, "XY": 1.04, "SM": 1.02, "SWSH": 1, "SV": 1, "ME": 1, "other": 1},
+  "lang": {
+    "EN": {"adjust": 0, "md_days": null, "md_week": 0.02, "md_max": 0.15},
+    "JP": {"adjust": 0, "md_days": null, "md_week": 0.03, "md_max": 0.2}
+  }
+}
