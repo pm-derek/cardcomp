@@ -35,6 +35,12 @@ ok(so(4, "NM").ch === "Direct" && so(4, "MP").ch === "regular" && so(4, "NM", { 
   "Direct only for NM / LP English Pokemon singles listed $2.50+ (MP, JP, under $2.50, Chinese copies, sealed: regular)");
 ctx.chan = "mix"; const mx = so(4, "NM"); ok(mx.ch === "mix" && Math.abs(mx.net - (mx.dir * 2 / 3 + mx.reg / 3)) < 1e-9, "mix setting: 2/3 Direct + 1/3 regular");
 ctx.chan = "reg"; ok(so(4, "NM").net === so(4, "NM").reg, "regular-only setting"); ctx.chan = "low";
+// never net less by asking more (Bulbasaur 064/063 JP, 2026-11-25: NM mkt $5.13 b/e $3.35 under LP mkt $4.62 b/e $4.34)
+{ const jn = (m, c) => so(m, c || "NM", { lang: "jp" }); let prev = 0, mono = true, at = "";
+  for (let m = 1.5; m <= 300; m = Math.round((m + 0.05) * 100) / 100) { const n = jn(m).net; if (n < prev - 1e-9 && !at) { mono = false; at = m + ": " + prev.toFixed(2) + " -> " + n.toFixed(2); } prev = n; }
+  const nm = jn(5.13), lp = jn(4.62, "LP"), hi = jn(52);
+  ok(mono && nm.list === 4.99 && nm.net > lp.net && Math.abs(nm.net - 4.50) < 0.01 && hi.list === 49.98,
+    `regular net never drops as the market rises (${at || "$1.50-300 checked"}): NM $5.13 lists $4.99 nets $${nm.net.toFixed(2)} > LP $4.62 nets $${lp.net.toFixed(2)}; $52 lists $49.98 (under tracking)`); }
 // 5. era by year + set name at boundary years
 const E = (y, s) => A.eraOf({ y, s, lang: "en", game: "pkmn" });
 ok(E(2003, "Skyridge") === "WOTC" && E(2003, "Ruby & Sapphire") === "EX" && E(2003, "EX Dragon") === "EX" && E(2007, "Power Keepers") === "EX" && E(2007, "Diamond & Pearl") === "DP" &&

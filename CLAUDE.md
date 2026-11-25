@@ -111,6 +111,13 @@ premium: Lugia Neo Genesis $1,300 NM $1,016 -> $1,255, Pikachu Crown Zenith $32.
 go Direct can drop (Nidorina Jungle LP $1 -> $0). `node scripts/pricing-check.js`: 1,500 cases against engine.js, the spec's
 cases and channel table, era boundaries, the CSV reader on the spec's shape, feed validation.
 
+Never net less by asking more (Derek, 2026-11-25, Bulbasaur 064/063 JP: "this looks non sensible", NM mkt $5.13 b/e $3.35
+under LP mkt $4.62 b/e $4.34): a $5+ sale loses the buyer's $1.49 shipping and pays the $0.97 envelope, so the NM's $5.34
+sale netted less than the LP's $4.80. `regSale(list)` takes the better of the assumed price and a price just under each
+regular cliff below it ($4.99, $49.98 tracking, $249.99 signature), and `saleOf` reports that list ("lists $4.99"). $4.99
+wins up to a $6.66 sale (market ~$6.40). Direct and the channel choice are unchanged (cheap English NM / LP still take the
+lower Direct net by default). pricing-check: "regular net never drops as the market rises".
+
 So the bid is the highest price that still nets the target margin, and never leaves less than the **min profit per card**
 (settings, `cfg-minprofit`, default $0.25 (Derek's pick; first shipped at $0.50), `minProfit()`; Derek, 2026-10-30: "bid $2 for a net profit of 9 cents, not
 worth my time"): `bidForMargin` returns min(np / (1 + mf), np - minProfit). On cheap cards the margin alone nets cents
