@@ -1829,7 +1829,10 @@ function speedOf(card, price, cond){
   if(FAST_RARITY.has(card.r)) why.push("promo");
   let mult=1;
   if(why.length) mult=0.5;                                    // fast traits: trusted (snapshot can't fake fast)
-  else if((card.lang||"en")==="jp"){ mult=1.8; why.push("JP"); }   // damped from the measured 2.7x
+  // JP (damped from the measured 2.7x) counts with the fast traits, not instead of them (Derek, 2026-11-25, Sawsbuck JP:
+  // NM asked 20% and LP 10%, since "played" used to cancel "JP" outright; the played / vintage speedup was measured on
+  // mostly English cards). A Japanese played card: 0.5 x 1.8 = 0.9 of the band's time to sell.
+  if((card.lang||"en")==="jp"){ mult*=1.8; why.push("JP"); }
   const months=bandMonths(price)*mult;
   const margin=Math.max(floor, Math.min(SPEED_CAP, SPEED_RATE*months/12));
   const tier = months<=1.5 ? "fast" : months>=4.5 ? "slow" : "";
@@ -1844,11 +1847,12 @@ function speedExplain(sp, price){
   const band=price<2?"under $2":"$"+(price<5?"2-5":price<10?"5-10":price<25?"10-25":price<50?"25-50":price<100?"50-100":"100+");
   const base=bandMonths(price), w=sp.why.split(", ");
   const traits=w.filter(x=>["vintage","played","promo"].includes(x));
-  const marginTxt = sp.margin>floor+1e-9
+  const marginTxt = Math.round(sp.margin*100)>Math.round(floor*100)   // 10.1% reads as your 10%, not "10% instead of your 10%"
     ? `so the bid uses a ${pct(sp.margin)} margin instead of your ${pct(floor)} (aiming for ~50%/yr on money tied up)`
     : `so the margin stays at your ${pct(floor)}`;
   const lab = sp.tier==="fast" ? `<b style="color:var(--green)">Fast seller.</b> ` : sp.tier==="slow" ? `<b style="color:var(--gold)">Slow seller.</b> ` : "";
   const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+  if(traits.length && w.includes("JP")) return `${lab}${cap(traits.join(" + "))} cards sell about 2x faster, JP ~1.8x slower: ${mo(sp.months)} to sell vs ${mo(base)} typical at ${band}, ${marginTxt}.`;
   if(traits.length) return `${lab}${cap(traits.join(" + "))} cards sell about 2x faster than others: ${mo(sp.months)} to sell vs ${mo(base)} typical at ${band}, ${marginTxt}.`;
   if(w.includes("JP")) return `${lab}JP cards sell ~1.8x slower than English: ${mo(sp.months)} to sell at ${band} (English ${mo(base)}), ${marginTxt}.`;
   return `${lab}${cap(band)} cards ${sp.tier==="fast"?"sell in":"take"} ${mo(sp.months)}${sp.tier==="fast"?"":" to sell"} in your sales history, ${marginTxt}.`;
