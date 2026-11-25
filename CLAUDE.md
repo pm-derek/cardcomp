@@ -631,6 +631,12 @@ normal            10%   10%    11%     13%     20%     25%
 JP                10%   16%    20%     24%     25%     25%
 ```
 
+- JP counts with the fast traits (Derek, 2026-11-25, Sawsbuck 074/071 JP: "why is the target profit between NM and LP so
+  different"): "played" / "vintage" / "promo" used to cancel "JP" outright, so a JP LP card was a 10% fast seller next to a
+  20-25% JP NM. The speedup was measured on mostly English cards, so now months = band x 0.5 (any fast trait) x 1.8 (JP):
+  JP LP $30 10% -> 12%, $70 10% -> 18%, $150 10% -> 25%; JP vintage NM $70 10% -> 18%; under $25 JP played stays 10%
+  (Sawsbuck LP $11.03: ~2.4 mo, the floor). English cards unchanged. `speedExplain` names both ("Played cards sell about 2x
+  faster, JP ~1.8x slower"), and a margin that rounds to the floor reads "stays at your 10%" (was "10% instead of your 10%").
 - fast = vintage (pre-2014), played (LP or worse), promos. normal = everything else. Price band uses the condition row's own price (spec §12). Rare/Holo Rare was dropped as a fast trait: split by era, modern NM rares sell only x0.85 vs their price band (the fast reading was vintage holos); modern NM promos hold up at x0.58.
 - Snapshot caveat: the inventory export has no listing dates, so months-to-sell (stock / sales rate) can only be biased toward slow. "Fast" readings are trustworthy; "slow" ones may be recent buy-ins. That is why SIR/SWSH/XY-SM/ME (1.1-1.3x) are treated as normal and JP is damped from 2.7x to 1.8x. Re-run quarterly with fresh exports before trusting the $50+ steps.
 - UI: a one-word pill next to the bid, only for fast or slow cards (normal shows nothing). Green "fast", amber "slow". The pill is a passive label, not tappable (Derek found tap-to-explain annoying in the list); tapping it opens the card like the rest of the row. The open card explains it in one sentence under the bid table (`speedExplain`), shown whenever the card is fast/slow or its margin differs from the floor: what made it fast/slow (vintage / played / promo / JP / price band), months to sell vs typical, and the resulting margin. Opening the card is the mobile "hover": no long-press or tap-to-reveal (both fought live use). Never swap text into the pill or bid column: any width change there squeezes the card name to nothing (shipped once, broke live). No icons or ratings. Keep it lean.
