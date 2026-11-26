@@ -115,8 +115,13 @@ Never net less by asking more (Derek, 2026-11-25, Bulbasaur 064/063 JP: "this lo
 under LP mkt $4.62 b/e $4.34): a $5+ sale loses the buyer's $1.49 shipping and pays the $0.97 envelope, so the NM's $5.34
 sale netted less than the LP's $4.80. `regSale(list)` takes the better of the assumed price and a price just under each
 regular cliff below it ($4.99, $49.98 tracking, $249.99 signature), and `saleOf` reports that list ("lists $4.99"). $4.99
-wins up to a $6.66 sale (market ~$6.40). Direct and the channel choice are unchanged (cheap English NM / LP still take the
-lower Direct net by default). pricing-check: "regular net never drops as the market rises".
+wins up to a $6.66 sale (market ~$6.40). Then the Direct line (2026-11-26, Grant Crown Zenith GG: NM mkt $2.45 b/e $0.99
+under LP mkt $2.38 b/e $2.33): a $2.50+ English NM / LP sale is Direct-eligible and the cautious "lower of the two" took
+Direct's $1.12 flat fee, so $2.55 netted $0.99 where $2.49 nets $2.34. Now `saleOf` = the best of `saleAt(list)` and
+`saleAt(c)` for each line c below the list (`SALE_CLIFFS`: $2.49, $4.99, $49.98, $249.99), each under the channel setting
+(`regSale` is gone); sealed keeps its weight-tier postage. English NM lists $2.49 from market ~$2.40 to ~$3.90. Net never
+drops as the market rises, for NM / LP / MP / JP under all 3 channel settings (pricing-check). Still by design: under "lower
+of the two" an English NM card at $4-8 can net less than a cheaper MP copy, since MP never goes Direct.
 
 So the bid is the highest price that still nets the target margin, and never leaves less than the **min profit per card**
 (settings, `cfg-minprofit`, default $0.25 (Derek's pick; first shipped at $0.50), `minProfit()`; Derek, 2026-10-30: "bid $2 for a net profit of 9 cents, not
