@@ -1782,15 +1782,12 @@ function netRegular(s, tiers){   // one card, Derek ships; sealed keeps its weig
   return s-comm-proc-post+ship;
 }
 // Never net less by asking more (Derek, 2026-11-25, Bulbasaur 064/063 JP: NM mkt $5.13 showed b/e $3.35, LP mkt $4.62 b/e
-// $4.34): a sale of $5+ loses the buyer's $1.49 shipping and pays the $0.97 envelope, so $5.34 netted $3.35 where $4.99
-// nets $4.50. A seller lists a card like that at $4.99, so the regular net is the better of the assumed price and a price
-// just under each cliff below it ($4.99 free shipping, $49.98 tracking, $249.99 signature). Up to a $6.66 sale, $4.99 wins.
-function regSale(list, tiers){
-  if(tiers || !(list>0)) return { l:list, n:netRegular(list, tiers) };
-  let best={ l:list, n:netRegular(list) };
-  for(const c of [REG.freeFrom, REG.trackFrom, REG.sigFrom].map(x=>Math.round((x-0.01)*100)/100)) if(list>c){ const n=netRegular(c); if(n>best.n+1e-9) best={ l:c, n }; }
-  return best;
-}
+// $4.34; then 2026-11-26, Grant Crown Zenith GG: NM mkt $2.45 b/e $0.99, LP mkt $2.38 b/e $2.33). Each fee line makes a step
+// down: $5+ loses the buyer's $1.49 shipping and pays the envelope; $2.50+ is Direct-eligible, and Direct's $1.12 flat fee
+// (taken by the cautious "lower of the two" setting) left a $2.55 sale netting $0.99 where $2.49 nets $2.34. A seller lists
+// just under such a line, so the sale is the best of the assumed price and a price just under each line below it
+// ($2.49 Direct, $4.99 free shipping, $49.98 tracking, $249.99 signature), each priced the usual way for its channel.
+const SALE_CLIFFS=[2.5, 5, 49.99, 250].map(x=>Math.round((x-0.01)*100)/100);
 const DIR={ from:2.5, under:0.5, flat:1.12, comm:0.0895, commCap:75, txn:0.025, ri:0.15 };
 function netDirect(s){ return s<DIR.from ? DIR.under*s : s-DIR.flat-Math.min(DIR.comm*s, DIR.commCap)-DIR.txn*s-DIR.ri; }
 function directOK(C, s){ return !C.sealed && !C.zh && (!C.cond || C.cond==="NM" || C.cond==="LP") && C.lang!=="jp" && (C.game||"pkmn")==="pkmn" && s>=DIR.from; }
@@ -1801,12 +1798,18 @@ function saleOf(m, ctx){   // -> {list, net, ch, reg, dir}: the sale a bid is bu
   // what the sale is assumed to be (Derek, 2026-11-21, live: "Fossil holo Raichu mkt 31 and it told me to bid 31"): the sheet's
   // list price is an ask (x1.20 markup x1.10 WOTC = $40.92), not what the card reliably sells for, so bidding off it reached
   // 100% of market. Default back to market +4% (the old assumption) with the new channel fees; the sheet price is a setting.
-  const C=normCtx(ctx), list=listBasis()==="sheet" ? sheetList(m, C) : (m>0 ? Math.round(m*LIST_UP*100)/100 : 0), R=regSale(list, C.tiers || (C.sealed ? buildSealedFeeTiers("M") : null)), reg=R.n;
-  if(!directOK(C, list)) return { list:R.l, net:reg, ch:"regular", reg, dir:null };
+  const C=normCtx(ctx), list=listBasis()==="sheet" ? sheetList(m, C) : (m>0 ? Math.round(m*LIST_UP*100)/100 : 0);
+  let best=saleAt(list, C);
+  if(!C.tiers && !C.sealed) for(const c of SALE_CLIFFS) if(list>c){ const o=saleAt(c, C); if(o.net>best.net+1e-9) best=o; }   // sealed keeps its weight-tier postage
+  return best;
+}
+function saleAt(list, C){   // the sale at one list price, under the "sale channel" setting
+  const reg=netRegular(list, C.tiers || (C.sealed ? buildSealedFeeTiers("M") : null));
+  if(!directOK(C, list)) return { list, net:reg, ch:"regular", reg, dir:null };
   const dir=netDirect(list), mode=chanMode();
-  if(mode==="reg") return { list:R.l, net:reg, ch:"regular", reg, dir };
+  if(mode==="reg") return { list, net:reg, ch:"regular", reg, dir };
   if(mode==="mix") return { list, net:dir*2/3+reg/3, ch:"mix", reg, dir };
-  return dir<=reg ? { list, net:dir, ch:"Direct", reg, dir } : { list:R.l, net:reg, ch:"regular", reg, dir };
+  return dir<=reg ? { list, net:dir, ch:"Direct", reg, dir } : { list, net:reg, ch:"regular", reg, dir };
 }
 const npOf=(m, ctx)=>saleOf(m, ctx).net;
 function listSale(market, ctx){ return sheetList(market, ctx); }   // kept for older callers: the sheet's list price

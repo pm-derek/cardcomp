@@ -36,11 +36,15 @@ ok(so(4, "NM").ch === "Direct" && so(4, "MP").ch === "regular" && so(4, "NM", { 
 ctx.chan = "mix"; const mx = so(4, "NM"); ok(mx.ch === "mix" && Math.abs(mx.net - (mx.dir * 2 / 3 + mx.reg / 3)) < 1e-9, "mix setting: 2/3 Direct + 1/3 regular");
 ctx.chan = "reg"; ok(so(4, "NM").net === so(4, "NM").reg, "regular-only setting"); ctx.chan = "low";
 // never net less by asking more (Bulbasaur 064/063 JP, 2026-11-25: NM mkt $5.13 b/e $3.35 under LP mkt $4.62 b/e $4.34)
-{ const jn = (m, c) => so(m, c || "NM", { lang: "jp" }); let prev = 0, mono = true, at = "";
-  for (let m = 1.5; m <= 300; m = Math.round((m + 0.05) * 100) / 100) { const n = jn(m).net; if (n < prev - 1e-9 && !at) { mono = false; at = m + ": " + prev.toFixed(2) + " -> " + n.toFixed(2); } prev = n; }
-  const nm = jn(5.13), lp = jn(4.62, "LP"), hi = jn(52);
-  ok(mono && nm.list === 4.99 && nm.net > lp.net && Math.abs(nm.net - 4.50) < 0.01 && hi.list === 49.98,
-    `regular net never drops as the market rises (${at || "$1.50-300 checked"}): NM $5.13 lists $4.99 nets $${nm.net.toFixed(2)} > LP $4.62 nets $${lp.net.toFixed(2)}; $52 lists $49.98 (under tracking)`); }
+// and the Direct line (Grant Crown Zenith GG, 2026-11-26: NM mkt $2.45 b/e $0.99 under LP mkt $2.38 b/e $2.33)
+{ const jn = (m, c) => so(m, c || "NM", { lang: "jp" }); let at = "";
+  for (const mode of ["low", "mix", "reg"]) { ctx.chan = mode;
+    for (const [c, x] of [["NM", {}], ["LP", {}], ["MP", {}], ["NM", { lang: "jp" }]]) { let prev = 0;
+      for (let m = 1.5; m <= 400; m = Math.round((m + 0.01) * 100) / 100) { const n = so(m, c, x).net; if (n < prev - 0.005 && !at) at = mode + " " + c + (x.lang ? " jp" : "") + " $" + m + ": " + prev.toFixed(2) + " -> " + n.toFixed(2); prev = n; } } }
+  ctx.chan = "low";
+  const nm = jn(5.13), lp = jn(4.62, "LP"), hi = jn(52), gn = so(2.45, "NM"), gl = so(2.38, "LP");
+  ok(!at && nm.list === 4.99 && nm.net > lp.net && Math.abs(nm.net - 4.50) < 0.01 && hi.list === 49.98 && gn.list === 2.49 && gn.ch === "regular" && gn.net > gl.net,
+    `net never drops as the market rises (${at || "NM / LP / MP / JP x 3 channel settings, $1.50-400"}): JP NM $5.13 lists $4.99 nets $${nm.net.toFixed(2)} > LP $4.62 $${lp.net.toFixed(2)}; $52 lists $49.98; Grant NM $2.45 lists $2.49 nets $${gn.net.toFixed(2)} > LP $2.38 $${gl.net.toFixed(2)} (was $0.99 Direct)`); }
 // 5. era by year + set name at boundary years
 const E = (y, s) => A.eraOf({ y, s, lang: "en", game: "pkmn" });
 ok(E(2003, "Skyridge") === "WOTC" && E(2003, "Ruby & Sapphire") === "EX" && E(2003, "EX Dragon") === "EX" && E(2007, "Power Keepers") === "EX" && E(2007, "Diamond & Pearl") === "DP" &&
